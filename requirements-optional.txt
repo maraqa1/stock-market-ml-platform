@@ -1,0 +1,6 @@
+lightgbm
+xgboost
+plotly
+pyarrow
+fastparquet
+ta
