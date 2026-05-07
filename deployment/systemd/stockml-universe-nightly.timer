@@ -1,0 +1,10 @@
+[Unit]
+Description=Run StockML US equity universe pipeline every night
+
+[Timer]
+OnCalendar=*-*-* 02:10:00
+Persistent=true
+Unit=stockml-universe-nightly.service
+
+[Install]
+WantedBy=timers.target

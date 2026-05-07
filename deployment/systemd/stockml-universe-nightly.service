@@ -1,0 +1,11 @@
+[Unit]
+Description=StockML nightly US equity universe pipeline
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/massa/stock-market-ml-platform
+ExecStart=/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_universe_pipeline.py
+User=root
+Group=root

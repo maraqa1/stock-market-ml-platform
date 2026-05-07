@@ -1,0 +1,11 @@
+[Unit]
+Description=StockML nightly Yahoo price-history delta pipeline
+Wants=network-online.target
+After=network-online.target stockml-universe-nightly.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/massa/stock-market-ml-platform
+ExecStart=/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_price_pipeline.py
+User=root
+Group=root

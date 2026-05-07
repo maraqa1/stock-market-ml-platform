@@ -1,0 +1,10 @@
+[Unit]
+Description=Run StockML Yahoo price-history delta pipeline every night
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+Persistent=true
+Unit=stockml-price-history-nightly.service
+
+[Install]
+WantedBy=timers.target
