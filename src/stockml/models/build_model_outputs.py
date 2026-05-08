@@ -7,7 +7,7 @@ from typing import Dict, Optional
 from stockml.common.logging_utils import log
 from stockml.common.paths import MODEL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.models.gold_loader import load_gold_dataset
-from stockml.models.ranking_model import ModelArtifacts, train_predict_from_gold
+from stockml.models.ranking_model import ModelArtifacts, model_config_json, train_predict_from_gold
 
 
 def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
@@ -21,6 +21,15 @@ def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
         "feature_importance": MODEL_OUTPUTS_DIR / f"advanced_model_feature_importance_{stamp}.csv",
         "model_status": MODEL_OUTPUTS_DIR / f"advanced_model_model_status_{stamp}.csv",
         "data_dictionary": MODEL_OUTPUTS_DIR / f"advanced_model_data_dictionary_{stamp}.csv",
+        "walk_forward_predictions": MODEL_OUTPUTS_DIR / f"walk_forward_predictions_{stamp}.csv",
+        "fold_metrics": MODEL_OUTPUTS_DIR / f"fold_metrics_{stamp}.csv",
+        "feature_audit": MODEL_OUTPUTS_DIR / f"feature_audit_{stamp}.csv",
+        "rejected_features": MODEL_OUTPUTS_DIR / f"rejected_features_{stamp}.csv",
+        "model_config": MODEL_OUTPUTS_DIR / f"model_config_{stamp}.json",
+        "model_predictions_latest": MODEL_OUTPUTS_DIR / "model_predictions_latest.csv",
+        "validation_leaderboard_latest": MODEL_OUTPUTS_DIR / "validation_leaderboard.csv",
+        "feature_audit_latest": MODEL_OUTPUTS_DIR / "feature_audit.csv",
+        "rejected_features_latest": MODEL_OUTPUTS_DIR / "rejected_features.csv",
     }
     artifacts.predictions.to_csv(outputs["predictions"], index=False)
     artifacts.signal_table.to_csv(outputs["signal_table"], index=False)
@@ -31,6 +40,15 @@ def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
     artifacts.feature_importance.to_csv(outputs["feature_importance"], index=False)
     artifacts.model_status.to_csv(outputs["model_status"], index=False)
     artifacts.data_dictionary.to_csv(outputs["data_dictionary"], index=False)
+    artifacts.walk_forward_predictions.to_csv(outputs["walk_forward_predictions"], index=False)
+    artifacts.fold_metrics.to_csv(outputs["fold_metrics"], index=False)
+    artifacts.feature_audit.to_csv(outputs["feature_audit"], index=False)
+    artifacts.rejected_features.to_csv(outputs["rejected_features"], index=False)
+    outputs["model_config"].write_text(model_config_json(artifacts.model_config), encoding="utf-8")
+    artifacts.predictions.to_csv(outputs["model_predictions_latest"], index=False)
+    artifacts.validation_leaderboard.to_csv(outputs["validation_leaderboard_latest"], index=False)
+    artifacts.feature_audit.to_csv(outputs["feature_audit_latest"], index=False)
+    artifacts.rejected_features.to_csv(outputs["rejected_features_latest"], index=False)
     return outputs
 
 
@@ -58,4 +76,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
