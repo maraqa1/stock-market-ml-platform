@@ -13,6 +13,12 @@
 {% else %}
   <section class="warning critical">Alpaca paper order submission is enabled. Each order must still pass account, buying-power, duplicate-order, and asset-tradability pre-flight checks before submission.</section>
 {% endif %}
+{% if request.args.get("action_status") %}
+  <section class="warning">
+    Manual action for {{ request.args.get("action_symbol") }}:
+    {{ request.args.get("action_status") }} - {{ request.args.get("action_message")|reason }}
+  </section>
+{% endif %}
 <section class="kpi-grid">
   <article class="kpi"><span>Orders Planned</span><strong>{{ orders_planned|fmt }}</strong></article>
   <article class="kpi"><span>Orders Submitted</span><strong>{{ orders_submitted|fmt }}</strong></article>
@@ -32,10 +38,57 @@
       <div><span>Total Return</span><strong>{{ position_unrealized_plpc|fmt }}</strong></div>
     </div>
   </div>
+  <p class="muted">Keep records an operator override for audit. Close submits a paper close request only when paper submission is enabled; live trading remains blocked.</p>
   {% if not position_rows %}
     <div class="empty small">No paper positions were returned. This is expected before orders are submitted or filled.</div>
   {% else %}
-    {{ table(position_rows, position_columns) }}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Qty</th>
+            <th>Market Value</th>
+            <th>Cost Basis</th>
+            <th>Unrealized P&amp;L</th>
+            <th>Unrealized Return</th>
+            <th>Current Price</th>
+            <th>Operator Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in position_rows %}
+            <tr>
+              <td>{{ row.symbol }}</td>
+              <td>{{ row.qty|fmt }}</td>
+              <td>{{ row.market_value|fmt }}</td>
+              <td>{{ row.cost_basis|fmt }}</td>
+              <td>{{ row.unrealized_pl|fmt }}</td>
+              <td>{{ row.unrealized_plpc|fmt }}</td>
+              <td>{{ row.current_price|fmt }}</td>
+              <td>
+                <div class="action-buttons">
+                  <form method="post" action="/trading/positions/{{ row.symbol }}/keep">
+                    <button class="button-link" type="submit">Keep</button>
+                  </form>
+                  <form method="post" action="/trading/positions/{{ row.symbol }}/close">
+                    <button class="button-link danger" type="submit">Close Paper Position</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</section>
+<section class="panel">
+  <h2>Manual Position Actions</h2>
+  {% if not operator_action_rows %}
+    <div class="empty small">No manual keep or close actions have been recorded yet.</div>
+  {% else %}
+    {{ table(operator_action_rows, operator_action_columns) }}
   {% endif %}
 </section>
 <section class="grid-2">

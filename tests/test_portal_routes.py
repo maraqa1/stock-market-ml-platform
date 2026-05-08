@@ -50,6 +50,23 @@ def test_trading_refresh_data_returns_json(client, monkeypatch):
     assert payload["orders_tracked"] == 3
 
 
+def test_trading_position_action_redirects(client, monkeypatch):
+    called = {}
+
+    def fake_action(root, symbol, action):
+        called["root"] = root
+        called["symbol"] = symbol
+        called["action"] = action
+        return {"status": "recorded", "message": "operator_keep_position"}
+
+    monkeypatch.setattr("portal.app.position_action", fake_action)
+    response = client.post("/trading/positions/FLEX/keep")
+    assert response.status_code == 302
+    assert "action_status=recorded" in response.headers["Location"]
+    assert called["symbol"] == "FLEX"
+    assert called["action"] == "keep"
+
+
 def test_stock_detail_missing_ticker_returns_200(client):
     response = client.get("/stock/AAPL")
     assert response.status_code == 200

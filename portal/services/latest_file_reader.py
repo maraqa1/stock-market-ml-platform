@@ -22,6 +22,7 @@ DATA_DIRS = {
     "paper_positions": "data/trading/paper_positions",
     "agent_decisions": "data/trading/agent_decisions",
     "execution_reports": "data/trading/execution_reports",
+    "operator_actions": "data/trading/operator_actions",
 }
 
 

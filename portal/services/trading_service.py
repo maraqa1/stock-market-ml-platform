@@ -7,6 +7,7 @@ import pandas as pd
 from portal.services.latest_file_reader import file_status, latest_file, safe_read_csv
 from stockml.decisions.reason_formatter import format_reasons
 from stockml.trading.config import alpaca_config
+from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
 from stockml.trading.trade_journal import build_trade_journal, write_trade_journal
@@ -81,6 +82,12 @@ def _position_summary(positions: pd.DataFrame) -> dict[str, float | int]:
     }
 
 
+def position_action(root: Path, symbol: str, action: str) -> dict:
+    result = apply_manual_position_action(symbol, action)
+    refresh_trading_artifacts(root)
+    return result
+
+
 def refresh_trading_artifacts(root: Path) -> dict[str, str | int]:
     refreshed = refresh_order_tracking()
     plan_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
@@ -151,10 +158,12 @@ def trading_context(root: Path) -> dict:
     result_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_results_*.csv")
     tracking_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
+    actions_file = latest_file(root, "operator_actions", "operator_position_actions_*.csv")
     plan = safe_read_csv(plan_file, nrows=500)
     results = safe_read_csv(result_file, nrows=500)
     tracking = safe_read_csv(tracking_file, nrows=500)
     positions = safe_read_csv(positions_file, nrows=500)
+    actions = safe_read_csv(actions_file, nrows=100)
     status_counts = _status_counts(results)
     tracking_status_counts = _status_counts(tracking, "alpaca_status")
     dry_run = not config.submit_orders or bool(status_counts.get("dry_run", 0))
@@ -190,6 +199,7 @@ def trading_context(root: Path) -> dict:
         "result_rows": _records(results),
         "tracking_rows": _records(tracking),
         "position_rows": _records(positions),
+        "operator_action_rows": _records(actions, limit=10),
         "plan_columns": [
             "symbol", "trade_quality_status", "trade_quality_reason", "side", "notional", "approved_notional",
             "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "risk_tier",
@@ -206,10 +216,12 @@ def trading_context(root: Path) -> dict:
             "suggested_quantity", "filled_qty", "filled_avg_price", "updated_at", "message", "http_status", "request_id",
         ],
         "position_columns": ["symbol", "qty", "market_value", "cost_basis", "unrealized_pl", "unrealized_plpc", "current_price"],
+        "operator_action_columns": ["timestamp", "symbol", "operator_action", "status", "message", "order_id", "alpaca_status"],
         "files": [
             file_status(plan_file, "Alpaca order plan"),
             file_status(result_file, "Alpaca order results"),
             file_status(tracking_file, "Alpaca order tracking"),
             file_status(positions_file, "Alpaca positions"),
+            file_status(actions_file, "Manual position actions"),
         ],
     }

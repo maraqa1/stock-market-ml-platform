@@ -87,6 +87,16 @@ class AlpacaPaperClient:
         _raise_for_status("GET", url, response)
         return response.json()
 
+    def close_position(self, symbol: str) -> dict[str, Any]:
+        url = f"{self.config.base_url}/v2/positions/{symbol.upper()}"
+        response = requests.delete(
+            url,
+            headers=self._headers(),
+            timeout=self.timeout_seconds,
+        )
+        _raise_for_status("DELETE", url, response)
+        return response.json()
+
     def list_positions(self) -> list[dict[str, Any]]:
         url = f"{self.config.base_url}/v2/positions"
         response = requests.get(

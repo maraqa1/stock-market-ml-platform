@@ -349,6 +349,22 @@ h2 { font-size: 17px; margin-bottom: 14px; color: #4d5667; }
   color: #fff;
 }
 
+.button-link.danger {
+  border-color: #b94b3a;
+  background: #fff5f3;
+  color: #9f3427;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action-buttons form {
+  margin: 0;
+}
+
 .auto-refresh-status {
   display: inline-flex;
   align-items: center;

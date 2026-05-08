@@ -14,7 +14,7 @@ from portal.services.latest_file_reader import count_rows, file_status, latest_f
 from portal.services.model_validation_service import model_validation_context
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.stock_detail_service import stock_detail_context
-from portal.services.trading_service import lifecycle_context, refresh_trading_artifacts, trading_context
+from portal.services.trading_service import lifecycle_context, position_action, refresh_trading_artifacts, trading_context
 from portal.services.universe_service import universe_context
 
 
@@ -156,6 +156,18 @@ def create_app(root: Path | None = None) -> Flask:
     def trading_refresh_data():
         refreshed = refresh_trading_artifacts(root_path())
         return jsonify({"status": "ok", **refreshed})
+
+    @app.route("/trading/positions/<symbol>/<action>", methods=["POST"])
+    def trading_position_action(symbol: str, action: str):
+        result = position_action(root_path(), symbol, action)
+        return redirect(
+            url_for(
+                "trading",
+                action_status=result.get("status", ""),
+                action_symbol=symbol.upper(),
+                action_message=result.get("message", ""),
+            )
+        )
 
     @app.route("/trading/lifecycle")
     def trading_lifecycle():
