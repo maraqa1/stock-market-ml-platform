@@ -12,9 +12,9 @@ def stock_detail_context(ticker: str, root: Optional[Path] = None) -> dict:
     gold_file = latest_file(root, "gold", "06_us_gold_ml_dataset_*.csv")
     signal_file = latest_file(root, "model_outputs", "advanced_model_signal_table_*.csv", fallback_keys=["portal_outputs"])
     price_file = project_price_file(root)
-    latest = latest_gold_for_ticker(clean)
-    db_signals = model_artifacts("signal_table", limit=10000)
-    using_db = bool(latest) or not db_signals.empty
+    latest = latest_gold_for_ticker(clean) if root is None else {}
+    db_signals = model_artifacts("signal_table", limit=10000) if root is None else safe_read_csv(signal_file)
+    using_db = root is None and (bool(latest) or not db_signals.empty)
 
     if not latest:
         gold = safe_read_csv(gold_file)
@@ -33,7 +33,7 @@ def stock_detail_context(ticker: str, root: Optional[Path] = None) -> dict:
         reason = latest.get("signal_reason", latest.get("no_decision_reason", latest.get("reason", "")))
         latest["reason_readable"] = readable_reason(reason)
 
-    price_rows = price_history_for_ticker(clean, limit=50)
+    price_rows = price_history_for_ticker(clean, limit=50) if root is None else []
     if not price_rows:
         prices = safe_read_csv(price_file)
         if not prices.empty and "ticker" in prices.columns:

@@ -14,9 +14,10 @@ def _latest_signal_table(root: Optional[Path]):
 
 
 def _model_status(root: Optional[Path]) -> pd.DataFrame:
-    db_status = model_artifacts("model_status", limit=5)
-    if not db_status.empty:
-        return db_status
+    if root is None:
+        db_status = model_artifacts("model_status", limit=5)
+        if not db_status.empty:
+            return db_status
     path = latest_file(root, "model_outputs", "advanced_model_model_status_*.csv", fallback_keys=["portal_outputs"])
     return safe_read_csv(path, nrows=5)
 
@@ -66,7 +67,7 @@ def _sort_by_confidence(frame: pd.DataFrame) -> pd.DataFrame:
 def signal_context(root: Optional[Path] = None) -> dict:
     signal_file = _latest_signal_table(root)
     status_file = latest_file(root, "model_outputs", "advanced_model_model_status_*.csv", fallback_keys=["portal_outputs"])
-    db_signals = model_artifacts("signal_table", limit=5000)
+    db_signals = model_artifacts("signal_table", limit=5000) if root is None else pd.DataFrame()
     signals = _normalize_signals(db_signals if not db_signals.empty else safe_read_csv(signal_file, nrows=5000))
     status = _model_status(root)
     status_row = status.iloc[0].to_dict() if not status.empty else {"decision_grade": "diagnostic_only", "reason": "model_status_missing"}
@@ -122,7 +123,7 @@ def signal_context(root: Optional[Path] = None) -> dict:
 
 
 def no_decision_context(root: Optional[Path] = None) -> dict:
-    db_signals = model_artifacts("signal_table", limit=10000)
+    db_signals = model_artifacts("signal_table", limit=10000) if root is None else pd.DataFrame()
     signals = _normalize_signals(db_signals if not db_signals.empty else safe_read_csv(_latest_signal_table(root), nrows=10000))
     if signals.empty or "trade_action" not in signals.columns:
         rows = []
