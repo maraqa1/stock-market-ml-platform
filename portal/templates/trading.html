@@ -21,10 +21,22 @@
   <article class="kpi"><span>Tracked Orders</span><strong>{{ orders_tracked|fmt }}</strong></article>
   <article class="kpi"><span>Open Orders</span><strong>{{ open_orders|fmt }}</strong></article>
   <article class="kpi"><span>Filled Orders</span><strong>{{ filled_orders|fmt }}</strong></article>
-  <article class="kpi"><span>Position Value</span><strong>{{ position_market_value|fmt }}</strong></article>
-  <article class="kpi"><span>Cost Basis</span><strong>{{ position_cost_basis|fmt }}</strong></article>
-  <article class="kpi pnl-{{ position_pnl_class }}"><span>Total Gain / Loss</span><strong>{{ position_unrealized_pl|fmt }}</strong></article>
-  <article class="kpi pnl-{{ position_pnl_class }}"><span>Total Return</span><strong>{{ position_unrealized_plpc|fmt }}</strong></article>
+</section>
+<section class="panel positions-panel">
+  <div class="panel-title-row">
+    <h2>Paper Positions</h2>
+    <div class="position-summary pnl-{{ position_pnl_class }}">
+      <div><span>Position Value</span><strong>{{ position_market_value|fmt }}</strong></div>
+      <div><span>Cost Basis</span><strong>{{ position_cost_basis|fmt }}</strong></div>
+      <div><span>Total Gain / Loss</span><strong>{{ position_unrealized_pl|fmt }}</strong></div>
+      <div><span>Total Return</span><strong>{{ position_unrealized_plpc|fmt }}</strong></div>
+    </div>
+  </div>
+  {% if not position_rows %}
+    <div class="empty small">No paper positions were returned. This is expected before orders are submitted or filled.</div>
+  {% else %}
+    {{ table(position_rows, position_columns) }}
+  {% endif %}
 </section>
 <section class="grid-2">
   <article class="panel">
@@ -54,14 +66,6 @@
     <div class="empty small">No tracking snapshot exists yet. Run <code>scripts/run_alpaca_paper_trader.py --track-only</code> after an order run to refresh status.</div>
   {% else %}
     {{ table(tracking_rows, tracking_columns) }}
-  {% endif %}
-</section>
-<section class="panel">
-  <h2>Paper Positions</h2>
-  {% if not position_rows %}
-    <div class="empty small">No paper positions were returned. This is expected before orders are submitted or filled.</div>
-  {% else %}
-    {{ table(position_rows, position_columns) }}
   {% endif %}
 </section>
 <section class="panel">
