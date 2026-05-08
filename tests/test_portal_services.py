@@ -76,13 +76,19 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     )
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_results_1.csv",
-        [{"symbol": "AAA", "status": "dry_run", "order_id": "", "message": "disabled"}],
+        [{"symbol": "AAA", "status": "dry_run", "order_id": "", "client_order_id": "stockml-AAA", "message": "disabled"}],
+    )
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_tracking_1.csv",
+        [{"symbol": "AAA", "status": "dry_run", "alpaca_status": "", "order_id": "", "client_order_id": "stockml-AAA"}],
     )
     ctx = trading_context(tmp_path)
     assert ctx["orders_planned"] == 1
     assert ctx["orders_submitted"] == 0
     assert ctx["dry_run"] is True
     assert ctx["total_notional"] == 500
+    assert ctx["orders_tracked"] == 1
+    assert ctx["tracking_rows"][0]["client_order_id"] == "stockml-AAA"
 
 
 def test_trading_context_sorts_plan_by_confidence(tmp_path):

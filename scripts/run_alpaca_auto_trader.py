@@ -9,16 +9,15 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from stockml.trading.paper_trader import refresh_order_tracking, run_paper_trading
+from stockml.trading.auto_trader import run_auto_trader
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--signal-file", type=Path, default=None)
-    parser.add_argument("--track-only", action="store_true", help="Refresh order/position tracking from the latest result file without creating a new plan.")
-    parser.add_argument("--result-file", type=Path, default=None, help="Result CSV to refresh when --track-only is used.")
+    parser.add_argument("--force", action="store_true", help="Bypass the UTC auto-trade time window. Does not bypass submission flags.")
     args = parser.parse_args()
-    result = refresh_order_tracking(args.result_file) if args.track_only else run_paper_trading(args.signal_file)
+    result = run_auto_trader(signal_file=args.signal_file, force=args.force)
     for key, value in result.items():
         print(f"{key}: {value}")
     return 0

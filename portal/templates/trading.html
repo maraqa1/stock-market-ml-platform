@@ -11,6 +11,9 @@
   <article class="kpi"><span>Orders Submitted</span><strong>{{ orders_submitted|fmt }}</strong></article>
   <article class="kpi"><span>Rejected / Error</span><strong>{{ orders_rejected|fmt }}</strong></article>
   <article class="kpi"><span>Basket Notional</span><strong>{{ total_notional|fmt }}</strong></article>
+  <article class="kpi"><span>Tracked Orders</span><strong>{{ orders_tracked|fmt }}</strong></article>
+  <article class="kpi"><span>Open Orders</span><strong>{{ open_orders|fmt }}</strong></article>
+  <article class="kpi"><span>Filled Orders</span><strong>{{ filled_orders|fmt }}</strong></article>
 </section>
 <section class="grid-2">
   <article class="panel">
@@ -29,9 +32,26 @@
     <div class="summary-list">
       <div><span>Side mix</span><strong>{{ side_counts }}</strong></div>
       <div><span>Result status</span><strong>{{ status_counts }}</strong></div>
+      <div><span>Alpaca status</span><strong>{{ tracking_status_counts }}</strong></div>
       <div><span>Order source</span><strong>Latest model signal table</strong></div>
     </div>
   </article>
+</section>
+<section class="panel">
+  <h2>Order Tracking</h2>
+  {% if not tracking_rows %}
+    <div class="empty small">No tracking snapshot exists yet. Run <code>scripts/run_alpaca_paper_trader.py --track-only</code> after an order run to refresh status.</div>
+  {% else %}
+    {{ table(tracking_rows, tracking_columns) }}
+  {% endif %}
+</section>
+<section class="panel">
+  <h2>Paper Positions</h2>
+  {% if not position_rows %}
+    <div class="empty small">No paper positions were returned. This is expected before orders are submitted or filled.</div>
+  {% else %}
+    {{ table(position_rows, position_columns) }}
+  {% endif %}
 </section>
 <section class="panel">
   <h2>Latest Order Plan</h2>

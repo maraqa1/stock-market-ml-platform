@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh StockML Alpaca paper order tracking during market hours
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 15,16,17,18,19,20:00:00 UTC
+Persistent=true
+Unit=stockml-alpaca-tracking.service
+
+[Install]
+WantedBy=timers.target

@@ -40,10 +40,10 @@ def _side_counts(plan) -> dict[str, int]:
     return {str(key): int(value) for key, value in plan["side"].value_counts().to_dict().items()}
 
 
-def _status_counts(results) -> dict[str, int]:
-    if results.empty or "status" not in results.columns:
+def _status_counts(results, column: str = "status") -> dict[str, int]:
+    if results.empty or column not in results.columns:
         return {}
-    return {str(key): int(value) for key, value in results["status"].value_counts().to_dict().items()}
+    return {str(key): int(value) for key, value in results[column].fillna("").value_counts().to_dict().items() if str(key)}
 
 
 def _total_notional(plan) -> float:
@@ -56,9 +56,14 @@ def trading_context(root: Path) -> dict:
     config = alpaca_config()
     plan_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
     result_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_results_*.csv")
+    tracking_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
+    positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     plan = safe_read_csv(plan_file, nrows=500)
     results = safe_read_csv(result_file, nrows=500)
+    tracking = safe_read_csv(tracking_file, nrows=500)
+    positions = safe_read_csv(positions_file, nrows=500)
     status_counts = _status_counts(results)
+    tracking_status_counts = _status_counts(tracking, "alpaca_status")
     dry_run = not config.submit_orders or bool(status_counts.get("dry_run", 0))
 
     guardrails = [
@@ -78,13 +83,26 @@ def trading_context(root: Path) -> dict:
         "orders_planned": len(plan),
         "orders_submitted": int(status_counts.get("submitted", 0)),
         "orders_rejected": int(status_counts.get("error", 0)),
+        "orders_tracked": len(tracking),
+        "open_orders": int(tracking_status_counts.get("new", 0) + tracking_status_counts.get("accepted", 0) + tracking_status_counts.get("pending_new", 0)),
+        "filled_orders": int(tracking_status_counts.get("filled", 0)),
         "total_notional": _total_notional(plan),
         "side_counts": _side_counts(plan),
         "status_counts": status_counts,
+        "tracking_status_counts": tracking_status_counts,
         "guardrails": guardrails,
         "plan_rows": _records(plan),
         "result_rows": _records(results),
+        "tracking_rows": _records(tracking),
+        "position_rows": _records(positions),
         "plan_columns": ["symbol", "side", "notional", "trade_action", "side_probability", "probability_edge", "risk_adjusted_score", "signal_reason"],
-        "result_columns": ["symbol", "status", "order_id", "message"],
-        "files": [file_status(plan_file, "Alpaca order plan"), file_status(result_file, "Alpaca order results")],
+        "result_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "filled_qty", "filled_avg_price", "message"],
+        "tracking_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "updated_at", "message"],
+        "position_columns": ["symbol", "qty", "market_value", "cost_basis", "unrealized_pl", "unrealized_plpc", "current_price"],
+        "files": [
+            file_status(plan_file, "Alpaca order plan"),
+            file_status(result_file, "Alpaca order results"),
+            file_status(tracking_file, "Alpaca order tracking"),
+            file_status(positions_file, "Alpaca positions"),
+        ],
     }

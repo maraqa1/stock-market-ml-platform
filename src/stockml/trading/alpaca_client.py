@@ -51,6 +51,24 @@ class AlpacaPaperClient:
         response.raise_for_status()
         return response.json()
 
+    def get_order(self, order_id: str) -> dict[str, Any]:
+        response = requests.get(
+            f"{self.config.base_url}/v2/orders/{order_id}",
+            headers=self._headers(),
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_positions(self) -> list[dict[str, Any]]:
+        response = requests.get(
+            f"{self.config.base_url}/v2/positions",
+            headers=self._headers(),
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def get_asset(self, symbol: str) -> Optional[dict[str, Any]]:
         response = requests.get(
             f"{self.config.base_url}/v2/assets/{symbol.upper()}",
@@ -61,4 +79,3 @@ class AlpacaPaperClient:
             return None
         response.raise_for_status()
         return response.json()
-

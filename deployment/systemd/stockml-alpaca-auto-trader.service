@@ -1,0 +1,13 @@
+[Unit]
+Description=Run StockML Alpaca paper auto-trader
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/massa/stock-market-ml-platform
+EnvironmentFile=-/home/massa/stock-market-ml-platform/.env
+EnvironmentFile=-/etc/stockml/stockml.env
+ExecStart=/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_alpaca_auto_trader.py
+User=root
+Group=root
