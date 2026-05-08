@@ -1,0 +1,11 @@
+risk_policy:
+  min_price: 5.0
+  min_market_cap: 300000000
+  min_avg_dollar_volume_20d: 5000000
+  max_position_pct: 0.03
+  max_sector_pct: 0.20
+  max_basket_notional: 10000
+  max_daily_orders: 10
+  allow_short_selling: false
+  min_expected_trade_return: 0.002
+  min_risk_adjusted_score: 0.005

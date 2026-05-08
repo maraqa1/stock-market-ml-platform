@@ -13,10 +13,13 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
     side = side_for_action(str(row.get("trade_action", "")))
     symbol = str(row.get("ticker", row.get("symbol", ""))).upper()
     date_part = str(row.get("date", "latest")).replace("-", "")
-    approved = str(row.get("trade_quality_status", "")).lower() == "approved"
+    status = str(row.get("trade_quality_status", "")).lower()
+    approved = status in {"approved", "reduced"}
     notional = float(row.get("approved_notional", 0) or 0)
     return {
         "symbol": symbol,
+        "company": row.get("company", ""),
+        "sector": row.get("sector", ""),
         "notional": round(notional, 2),
         "side": side,
         "type": "market",
@@ -31,16 +34,17 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
         "risk_adjusted_score": row.get("risk_adjusted_score"),
         "signal_reason": row.get("signal_reason", ""),
         "no_decision_reason": row.get("no_decision_reason", ""),
-        "sector": row.get("sector", ""),
         "close": row.get("close", ""),
         "current_price": row.get("current_price", ""),
         "open_price": row.get("open_price", ""),
         "intraday_high": row.get("intraday_high", ""),
         "intraday_low": row.get("intraday_low", ""),
         "intraday_volume": row.get("intraday_volume", ""),
-        "market_cap": row.get("market_cap", ""),
         "price_position_in_intraday_range": row.get("price_position_in_intraday_range", ""),
         "intraday_return_from_open": row.get("intraday_return_from_open", ""),
+        "market_cap": row.get("market_cap", ""),
+        "avg_dollar_volume_20d": row.get("avg_dollar_volume_20d", ""),
+        "volatility_20d": row.get("volatility_20d", ""),
         "volatility_tier": row.get("volatility_tier", ""),
         "liquidity_tier": row.get("liquidity_tier", ""),
         "risk_tier": row.get("risk_tier", ""),
@@ -49,6 +53,7 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
         "stop_loss_price": row.get("stop_loss_price", ""),
         "take_profit_price": row.get("take_profit_price", ""),
         "max_holding_days": row.get("max_holding_days", ""),
-        "trade_quality_status": "approved" if approved else "rejected",
+        "trade_quality_status": status if approved else "rejected",
         "trade_quality_reason": row.get("trade_quality_reason", ""),
+        "order_eligible": bool(row.get("order_eligible", approved and notional > 0)),
     }

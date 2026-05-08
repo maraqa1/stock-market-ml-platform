@@ -6,6 +6,8 @@ from typing import Iterable, Optional
 
 import pandas as pd
 
+from stockml.decisions.reason_formatter import format_reasons
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIRS = {
@@ -91,5 +93,5 @@ def readable_reason(value: object) -> str:
     text = str(value or "").strip()
     if not text:
         return "Not provided"
-    parts = [mapping.get(part.strip(), part.strip().replace("_", " ").capitalize()) for part in text.split("|")]
+    parts = [mapping.get(part.strip(), format_reasons(part.strip())) for part in text.split("|")]
     return "; ".join(parts)

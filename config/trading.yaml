@@ -1,0 +1,5 @@
+trading:
+  mode: paper
+  dry_run: true
+  live_trading_enabled: false
+  paper_trading_enabled: true

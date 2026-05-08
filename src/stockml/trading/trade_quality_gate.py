@@ -7,7 +7,7 @@ import pandas as pd
 
 from stockml.common.paths import INTERIM_DIR, RAW_DIR, latest_file
 from stockml.trading.config import AlpacaConfig
-from stockml.trading.position_sizing import approved_notional, suggested_quantity
+from stockml.trading.position_sizing import approved_notional, base_notional, suggested_quantity
 from stockml.trading.risk_checks import liquidity_tier, numeric, reject_reasons, risk_tier, volatility_tier
 from stockml.trading.stop_take_profit import stop_take_profit_prices
 
@@ -21,6 +21,12 @@ def _has_inline_market_context(signals: pd.DataFrame) -> bool:
     source_columns_present = all(column in signals.columns for column in SOURCE_MARKET_COLUMNS)
     quality_columns_present = all(column in signals.columns for column in QUALITY_MARKET_COLUMNS)
     return source_columns_present or quality_columns_present
+
+
+def _numeric_column(frame: pd.DataFrame, column: str, default: float = 0.0) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(default, index=frame.index, dtype="float64")
+    return pd.to_numeric(frame[column], errors="coerce").fillna(default)
 
 
 def latest_price_snapshot(tickers: list[str], price_file: Optional[Path] = None) -> pd.DataFrame:
@@ -91,6 +97,8 @@ def _prepare_market_context(
         out = out.drop(columns=["metadata_market_cap"])
     if "market_cap" not in out.columns:
         out["market_cap"] = pd.NA
+    if "avg_dollar_volume_20d" not in out.columns:
+        out["avg_dollar_volume_20d"] = out["current_price"].apply(lambda _: pd.NA)
     return out
 
 
@@ -113,6 +121,11 @@ def apply_trade_quality_gate(
     out["intraday_high"] = pd.to_numeric(out["intraday_high"], errors="coerce")
     out["intraday_low"] = pd.to_numeric(out["intraday_low"], errors="coerce")
     out["intraday_volume"] = pd.to_numeric(out["intraday_volume"], errors="coerce").fillna(0)
+    out["market_cap"] = pd.to_numeric(out["market_cap"], errors="coerce")
+    out["avg_dollar_volume_20d"] = pd.to_numeric(out["avg_dollar_volume_20d"], errors="coerce")
+    out["expected_trade_return"] = _numeric_column(out, "expected_trade_return")
+    out["risk_adjusted_score"] = _numeric_column(out, "risk_adjusted_score")
+    out["side_probability"] = _numeric_column(out, "side_probability")
     range_width = out["intraday_high"] - out["intraday_low"]
     out["price_position_in_intraday_range"] = ((out["current_price"] - out["intraday_low"]) / range_width.replace(0, pd.NA)).clip(0, 1)
     out["intraday_return_from_open"] = out["current_price"] / out["open_price"] - 1
@@ -121,30 +134,36 @@ def apply_trade_quality_gate(
     out["risk_tier"] = out.apply(risk_tier, axis=1)
 
     rows = []
+    base = base_notional(config.account_equity, config.max_position_pct, config.max_total_notional, config.max_orders)
     for _, row in out.iterrows():
         reasons = reject_reasons(row, config)
-        if row["risk_tier"] == "reject":
-            reasons.append("risk_tier_reject")
         side = "sell" if str(row.get("trade_action", "")).lower() == "short" else "buy"
-        notional = approved_notional(config.max_notional_per_order, row["risk_tier"]) if not reasons else 0.0
+        hard_reject = bool(reasons) or row["risk_tier"] == "reject"
+        notional = approved_notional(base, row["risk_tier"], numeric(row.get("side_probability"), default=0)) if not hard_reject else 0.0
         quantity = suggested_quantity(notional, numeric(row.get("current_price"), default=0))
         stop = {"stop_loss_price": pd.NA, "take_profit_price": pd.NA, "max_holding_days": pd.NA}
         try:
             if numeric(row.get("current_price"), default=0) > 0:
-                stop = stop_take_profit_prices(float(row["current_price"]), side, str(row["volatility_tier"]))
+                stop = stop_take_profit_prices(float(row["current_price"]), side, str(row["volatility_tier"]), str(row["risk_tier"]))
         except Exception:
-            reasons.append("stop_loss_cannot_be_calculated")
+            reasons.extend(["stop_loss_unavailable", "take_profit_unavailable"])
+            hard_reject = True
         if notional > 0 and quantity <= 0:
-            reasons.append("quantity_below_one_share")
+            reasons.append("quantity_below_one")
+            hard_reject = True
+        status = "rejected"
+        if not hard_reject and not reasons:
+            status = "approved" if row["risk_tier"] == "high_quality" else "reduced"
         row = row.to_dict()
         row.update(
             {
                 "risk_tier": row.get("risk_tier", "reject"),
-                "approved_notional": notional if not reasons else 0.0,
-                "suggested_quantity": quantity if not reasons else 0,
+                "approved_notional": notional if status in {"approved", "reduced"} else 0.0,
+                "suggested_quantity": quantity if status in {"approved", "reduced"} else 0,
                 **stop,
-                "trade_quality_status": "approved" if not reasons else "rejected",
-                "trade_quality_reason": "approved" if not reasons else "|".join(dict.fromkeys(reasons)),
+                "trade_quality_status": status,
+                "trade_quality_reason": status if status in {"approved", "reduced"} else "|".join(dict.fromkeys(reasons or ["risk_tier_reject"])),
+                "order_eligible": bool(status in {"approved", "reduced"} and quantity >= 1),
             }
         )
         rows.append(row)

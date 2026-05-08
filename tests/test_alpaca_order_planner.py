@@ -36,8 +36,8 @@ def test_filter_tradeable_signals_keeps_only_gated_long_short():
             {"ticker": "DDD", "trade_action": "Long", "side_probability": 0.51, "probability_edge": 0.01, "close": 40, "risk_adjusted_score": 0.1},
         ]
     )
-    filtered = filter_tradeable_signals(signals, config())
-    assert set(filtered["ticker"]) == {"AAA", "BBB"}
+    filtered = filter_tradeable_signals(signals, config(max_orders=10))
+    assert set(filtered["ticker"]) == {"AAA", "BBB", "CCC", "DDD"}
 
 
 def test_build_order_plan_uses_notional_paper_orders():
@@ -52,7 +52,7 @@ def test_build_order_plan_uses_notional_paper_orders():
     plan = build_order_plan(signals, config(max_notional_per_order=250.0, extended_hours=True))
     assert plan.iloc[0]["symbol"] == "AAA"
     assert plan.iloc[0]["side"] == "buy"
-    assert plan.iloc[0]["notional"] == 250.0
+    assert plan.iloc[0]["notional"] == 375.0
     assert plan.iloc[0]["trade_quality_status"] == "approved"
     assert bool(plan.iloc[0]["extended_hours"]) is True
     assert plan.iloc[0]["client_order_id"] == "stockml-20260508-AAA-buy"
@@ -73,7 +73,8 @@ def test_order_plan_applies_price_and_total_notional_guards():
     )
     plan = build_order_plan(signals, config(max_orders=3, max_notional_per_order=500.0, max_total_notional=500.0))
     approved = plan[plan["trade_quality_status"].eq("approved")]
-    assert list(approved["symbol"]) == ["BBB"]
+    assert "AAA" not in list(approved["symbol"])
+    assert set(approved["symbol"]) == {"BBB", "CCC"}
 
 
 def test_order_plan_limits_sector_concentration_when_sector_is_available():

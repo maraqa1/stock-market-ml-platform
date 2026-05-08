@@ -14,9 +14,6 @@ from stockml.trading.trade_quality_gate import apply_trade_quality_gate
 REQUIRED_SIGNAL_COLUMNS = {
     "ticker",
     "trade_action",
-    "side_probability",
-    "probability_edge",
-    "close",
 }
 
 
@@ -48,27 +45,21 @@ def _notional_order(row: pd.Series, config: AlpacaConfig) -> dict:
     }
 
 
+def _numeric_column(frame: pd.DataFrame, column: str, default: float = 0.0) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(default, index=frame.index, dtype="float64")
+    return pd.to_numeric(frame[column], errors="coerce").fillna(default)
+
+
 def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
     if signals.empty or not REQUIRED_SIGNAL_COLUMNS.issubset(signals.columns):
         return pd.DataFrame()
     frame = signals.copy()
-    if "diagnostic_only" in frame.columns:
-        frame = frame[~frame["diagnostic_only"].astype(str).str.lower().isin({"true", "1", "yes"})]
-    if frame.empty:
-        return frame
-    frame = frame[frame["trade_action"].apply(_valid_action)]
-    if frame.empty:
-        return frame
-    frame["side_probability"] = pd.to_numeric(frame["side_probability"], errors="coerce")
-    frame["probability_edge"] = pd.to_numeric(frame["probability_edge"], errors="coerce")
-    frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
-    frame["risk_adjusted_score"] = pd.to_numeric(frame.get("risk_adjusted_score", 0), errors="coerce").fillna(0)
-    frame = frame[
-        frame["side_probability"].ge(config.min_side_probability)
-        & frame["probability_edge"].abs().ge(config.min_abs_probability_edge)
-    ]
-    if frame.empty:
-        return frame
+    frame["side_probability"] = _numeric_column(frame, "side_probability")
+    frame["probability_edge"] = _numeric_column(frame, "probability_edge")
+    if "close" in frame.columns:
+        frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+    frame["risk_adjusted_score"] = _numeric_column(frame, "risk_adjusted_score")
     frame["_sort_score"] = frame["risk_adjusted_score"].abs()
     frame = frame.sort_values("_sort_score", ascending=False)
     frame = _limit_sector_concentration(frame, config)
@@ -109,14 +100,15 @@ def build_order_plan(
     gated = apply_trade_quality_gate(filtered, config, price_snapshot=price_snapshot, metadata=metadata)
     running_notional = 0.0
     for idx, row in gated.iterrows():
-        if str(row.get("trade_quality_status", "")).lower() != "approved":
+        if str(row.get("trade_quality_status", "")).lower() not in {"approved", "reduced"}:
             continue
         approved = float(row.get("approved_notional") or 0)
         if running_notional + approved > config.max_total_notional:
             gated.loc[idx, "trade_quality_status"] = "rejected"
-            gated.loc[idx, "trade_quality_reason"] = "max_total_notional_breached"
+            gated.loc[idx, "trade_quality_reason"] = "max_basket_notional_reached"
             gated.loc[idx, "approved_notional"] = 0.0
             gated.loc[idx, "suggested_quantity"] = 0
+            gated.loc[idx, "order_eligible"] = False
         else:
             running_notional += approved
     return pd.DataFrame([order_row(row, config) for _, row in gated.iterrows()])

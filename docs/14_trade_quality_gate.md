@@ -1,67 +1,23 @@
 # Trade Quality Gate
 
-The paper-trading order plan is no longer a simple equal-notional conversion of model Long and Short rows.
+The trade quality gate converts model signals into auditable paper-trading candidates. It does not enable live trading.
 
-Before any paper order can be submitted, StockML creates an auditable order plan with a trade-quality decision for each candidate.
+Workflow:
 
-## Inputs
+1. Check signal eligibility.
+2. Enrich missing quote fields from the latest price-history store.
+3. Apply price, liquidity, market-cap, volatility, anomaly, and score gates.
+4. Assign risk tier.
+5. Size position by account, basket, tier, and confidence.
+6. Calculate stop loss, take profit, and max holding days.
+7. Mark only approved or reduced rows as order eligible.
 
-- latest `advanced_model_signal_table_*.csv`
-- latest price history from `data/raw/03_us_price_history_store.csv`
-- latest metadata enrichment when available
+Statuses:
 
-## Approval Rules
+- `approved`: high-quality liquid stock with full risk-adjusted size.
+- `reduced`: medium or speculative stock with reduced notional.
+- `rejected`: hard rule failure; no order may be submitted.
 
-Only `Long` and `Short` rows can enter the order planner. `No Decision` and `diagnostic_only` rows create no order.
+Core rejection reasons include `price_below_minimum`, `market_cap_below_minimum`, `liquidity_below_minimum`, `volatility_extreme`, `bottom_intraday_range_after_gap_down`, `expected_trade_return_below_threshold`, `risk_adjusted_score_below_threshold`, `shorting_disabled`, `quantity_below_one`, `stop_loss_unavailable`, and `take_profit_unavailable`.
 
-The gate rejects candidates when:
-
-- current price is missing or non-positive
-- intraday return from open is below `-8%`
-- price is in the bottom 20% of the intraday range after a gap down
-- intraday volume is below `STOCKML_ALPACA_MIN_INTRADAY_VOLUME`
-- market cap is below `STOCKML_ALPACA_MIN_MARKET_CAP`
-- volatility tier is extreme
-- expected trade return is below configured transaction cost
-- risk-adjusted score is below `STOCKML_ALPACA_MIN_RISK_ADJUSTED_SCORE`
-- stop loss cannot be calculated
-
-## Risk Tiers
-
-- `large_liquid`: full configured notional
-- `mid_risk`: 50% of configured notional
-- `speculative`: 25% of configured notional
-- `reject`: zero notional and no submission
-
-## Stop And Take Profit
-
-Default:
-
-- stop loss: 3%
-- take profit: 6%
-- max holding days: 5
-
-High-volatility/speculative:
-
-- stop loss: 5%
-- take profit: 10%
-- max holding days: 10
-
-Short orders reverse the stop/take-profit direction.
-
-## Order Plan Fields
-
-The order plan includes:
-
-- current price, open, high, low, volume
-- market cap
-- intraday range position
-- intraday return from open
-- volatility, liquidity, and risk tier
-- approved notional
-- suggested quantity
-- stop loss and take profit
-- max holding days
-- trade quality status and reason
-
-Rejected trades remain in the plan for auditability but are never submitted.
+Only rows with `trade_quality_status` in `approved` or `reduced`, `order_eligible = true`, and `suggested_quantity >= 1` can reach Alpaca paper submission.

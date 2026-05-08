@@ -5,6 +5,7 @@ from typing import Optional
 
 import pandas as pd
 
+from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
@@ -90,13 +91,17 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     plan.to_csv(plan_path, index=False)
 
     result_rows = []
-    if config.submit_orders and not plan.empty:
+    can_submit = config.submit_orders and config.paper_trading_enabled and not config.live_trading_enabled
+    if config.submit_orders and config.live_trading_enabled:
+        raise RuntimeError("Live trading is disabled by policy for this platform")
+    if can_submit and not plan.empty:
         client = AlpacaPaperClient(config)
         context = load_submission_context(client)
         seen_client_ids: set[str] = set()
         for order in plan.to_dict("records"):
-            if str(order.get("trade_quality_status", "")).lower() != "approved":
-                result_rows.append(_result_row(order, "rejected", message=str(order.get("trade_quality_reason", "trade_quality_rejected"))))
+            eligible = bool(order.get("order_eligible")) and int(order.get("suggested_quantity", 0) or 0) >= 1
+            if str(order.get("trade_quality_status", "")).lower() not in {"approved", "reduced"} or not eligible:
+                result_rows.append(_result_row(order, "rejected", message=format_reasons(order.get("trade_quality_reason", "trade_quality_rejected"))))
                 continue
             request = {key: order[key] for key in ["symbol", "notional", "side", "type", "time_in_force", "extended_hours", "client_order_id"]}
             try:
@@ -110,8 +115,9 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
                 result_rows.append(_result_row(order, "error", message=str(exc)))
     else:
         for order in plan.to_dict("records"):
-            if str(order.get("trade_quality_status", "")).lower() != "approved":
-                result_rows.append(_result_row(order, "rejected", message=str(order.get("trade_quality_reason", "trade_quality_rejected"))))
+            eligible = bool(order.get("order_eligible")) and int(order.get("suggested_quantity", 0) or 0) >= 1
+            if str(order.get("trade_quality_status", "")).lower() not in {"approved", "reduced"} or not eligible:
+                result_rows.append(_result_row(order, "rejected", message=format_reasons(order.get("trade_quality_reason", "trade_quality_rejected"))))
             else:
                 result_rows.append(_result_row(order, "dry_run", message="STOCKML_ALPACA_SUBMIT_ORDERS is false"))
 
@@ -120,7 +126,7 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     tracking_path, positions_path = _write_tracking_snapshot(results, config, stamp)
     return {
         "orders_planned": len(plan),
-        "orders_approved": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower() == "approved").sum()) if not plan.empty else 0,
+        "orders_approved": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower().isin(["approved", "reduced"])).sum()) if not plan.empty else 0,
         "orders_rejected": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower() == "rejected").sum()) if not plan.empty else 0,
         "orders_submitted": sum(1 for row in result_rows if row["status"] == "submitted"),
         "dry_run": not config.submit_orders,

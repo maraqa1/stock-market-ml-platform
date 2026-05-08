@@ -5,13 +5,18 @@ from pathlib import Path
 import pandas as pd
 
 from portal.services.latest_file_reader import file_status, latest_file, safe_read_csv
+from stockml.decisions.reason_formatter import format_reasons
 from stockml.trading.config import alpaca_config
 
 
 def _records(frame, limit: int = 50) -> list[dict]:
     if frame.empty:
         return []
-    return _sort_by_confidence(frame).head(limit).fillna("").to_dict("records")
+    out = _sort_by_confidence(frame).head(limit).fillna("")
+    for column in ["trade_quality_reason", "message"]:
+        if column in out.columns:
+            out[column] = out[column].apply(format_reasons)
+    return out.to_dict("records")
 
 
 def _sort_by_confidence(frame):
@@ -98,8 +103,9 @@ def trading_context(root: Path) -> dict:
         "plan_columns": [
             "symbol", "trade_quality_status", "trade_quality_reason", "side", "notional", "approved_notional",
             "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "risk_tier",
-            "volatility_tier", "liquidity_tier", "confidence_score", "side_probability", "probability_edge",
-            "risk_adjusted_score", "no_decision_reason",
+            "volatility_tier", "liquidity_tier", "market_cap", "avg_dollar_volume_20d", "volatility_20d",
+            "confidence_score", "side_probability", "probability_edge", "risk_adjusted_score",
+            "order_eligible", "no_decision_reason",
         ],
         "result_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "message"],
         "tracking_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "updated_at", "message"],

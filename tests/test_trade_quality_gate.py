@@ -21,7 +21,7 @@ def config(**overrides):
         "min_abs_probability_edge": 0.05,
         "min_intraday_volume": 100000,
         "min_market_cap": 300000000.0,
-        "min_risk_adjusted_score": 0.001,
+        "min_risk_adjusted_score": 0.005,
         "transaction_cost_bps": 10.0,
     }
     values.update(overrides)
@@ -31,16 +31,18 @@ def config(**overrides):
 def signal(**overrides):
     row = {
         "ticker": "FLEX",
+        "company": "Flex Ltd.",
+        "sector": "Technology",
         "date": "2026-05-08",
         "trade_action": "Long",
         "side_probability": 0.75,
         "probability_edge": 0.25,
         "expected_trade_return": 0.02,
         "risk_adjusted_score": 0.02,
-        "close": 50,
-        "open": 49,
-        "high": 51,
-        "low": 48,
+        "close": 139,
+        "open": 138,
+        "high": 141,
+        "low": 137,
         "volume": 2_000_000,
         "avg_dollar_volume_20d": 100_000_000,
         "market_cap": 20_000_000_000,
@@ -54,44 +56,56 @@ def test_flex_like_large_liquid_stock_is_allowed():
     gated = apply_trade_quality_gate(pd.DataFrame([signal()]), config())
     row = gated.iloc[0]
     assert row["trade_quality_status"] == "approved"
-    assert row["risk_tier"] == "large_liquid"
-    assert row["approved_notional"] == 1000
-    assert row["suggested_quantity"] == 20
+    assert row["risk_tier"] == "high_quality"
+    assert row["suggested_quantity"] > 0
+    assert row["stop_loss_price"] < row["current_price"]
+    assert row["take_profit_price"] > row["current_price"]
 
 
-def test_akan_like_unstable_stock_is_rejected():
-    gated = apply_trade_quality_gate(
-        pd.DataFrame([signal(ticker="AKAN", close=4.5, open=5.5, high=5.6, low=4.4, volatility_20d=0.13, market_cap=100_000_000)]),
-        config(),
-    )
-    row = gated.iloc[0]
+def test_akan_like_low_market_cap_stock_is_rejected():
+    row = apply_trade_quality_gate(pd.DataFrame([signal(ticker="AKAN", market_cap=100_000_000)]), config()).iloc[0]
     assert row["trade_quality_status"] == "rejected"
-    assert "intraday_drop_below_minus_8pct" in row["trade_quality_reason"]
+    assert "market_cap_below_minimum" in row["trade_quality_reason"]
+
+
+def test_price_below_minimum_rejects():
+    row = apply_trade_quality_gate(pd.DataFrame([signal(ticker="BLDP", close=4.5)]), config()).iloc[0]
+    assert row["trade_quality_status"] == "rejected"
+    assert "price_below_minimum" in row["trade_quality_reason"]
+
+
+def test_intraday_issue_is_explained():
+    row = apply_trade_quality_gate(pd.DataFrame([signal(ticker="ACLS", close=91, open=100, high=101, low=90)]), config()).iloc[0]
+    assert row["trade_quality_status"] == "rejected"
+    assert "bottom_intraday_range_after_gap_down" in row["trade_quality_reason"]
 
 
 def test_speculative_stock_gets_reduced_notional():
-    gated = apply_trade_quality_gate(
-        pd.DataFrame([signal(market_cap=600_000_000, avg_dollar_volume_20d=2_000_000, volume=120_000, volatility_20d=0.06)]),
-        config(),
-    )
-    row = gated.iloc[0]
-    assert row["trade_quality_status"] == "approved"
+    row = apply_trade_quality_gate(pd.DataFrame([signal(market_cap=600_000_000, avg_dollar_volume_20d=6_000_000, volume=120_000, volatility_20d=0.06)]), config()).iloc[0]
+    assert row["trade_quality_status"] == "reduced"
     assert row["risk_tier"] == "speculative"
-    assert row["approved_notional"] == 250
+    assert 0 < row["approved_notional"] < 1000
 
 
 def test_missing_price_rejects():
-    gated = apply_trade_quality_gate(pd.DataFrame([signal(close=pd.NA)]), config(), price_snapshot=pd.DataFrame())
-    row = gated.iloc[0]
+    row = apply_trade_quality_gate(pd.DataFrame([signal(close=pd.NA)]), config(), price_snapshot=pd.DataFrame()).iloc[0]
     assert row["trade_quality_status"] == "rejected"
-    assert "missing_or_invalid_current_price" in row["trade_quality_reason"]
+    assert "current_price_missing" in row["trade_quality_reason"]
 
 
-def test_no_decision_creates_no_order():
-    plan = build_order_plan(pd.DataFrame([signal(trade_action="No Decision")]), config())
-    assert plan.empty
+def test_no_decision_creates_rejected_order_plan_row():
+    plan = build_order_plan(pd.DataFrame([signal(trade_action="No Decision", no_decision_reason="weak_probability")]), config())
+    assert plan.iloc[0]["trade_quality_status"] == "rejected"
+    assert "not_long_or_short" in plan.iloc[0]["trade_quality_reason"]
 
 
-def test_diagnostic_only_creates_no_order():
+def test_diagnostic_only_creates_rejected_order_plan_row():
     plan = build_order_plan(pd.DataFrame([signal(diagnostic_only=True)]), config())
-    assert plan.empty
+    assert plan.iloc[0]["trade_quality_status"] == "rejected"
+    assert "model_not_decision_grade" in plan.iloc[0]["trade_quality_reason"]
+
+
+def test_shorting_disabled_rejects_short():
+    row = apply_trade_quality_gate(pd.DataFrame([signal(trade_action="Short")]), config()).iloc[0]
+    assert row["trade_quality_status"] == "rejected"
+    assert "shorting_disabled" in row["trade_quality_reason"]

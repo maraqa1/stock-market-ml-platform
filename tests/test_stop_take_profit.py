@@ -19,3 +19,9 @@ def test_short_levels_are_reversed():
     levels = stop_take_profit_prices(100, "sell", "low")
     assert levels["stop_loss_price"] == 103
     assert levels["take_profit_price"] == 94
+
+
+def test_speculative_risk_uses_wider_levels():
+    levels = stop_take_profit_prices(100, "buy", "low", "speculative")
+    assert levels["stop_loss_price"] == 95
+    assert levels["take_profit_price"] == 110
