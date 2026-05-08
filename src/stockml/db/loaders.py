@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import os
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -22,6 +23,9 @@ from stockml.db.schema import (
     sentiment_panel,
 )
 
+CSV_CHUNK_SIZE = int(os.environ.get("STOCKML_DB_CSV_CHUNK_SIZE", "25000"))
+DB_BATCH_SIZE = int(os.environ.get("STOCKML_DB_BATCH_SIZE", "1000"))
+
 
 def init_database(database_url: Optional[str] = None) -> None:
     engine = get_engine(database_url)
@@ -34,11 +38,17 @@ def load_latest_outputs(database_url: Optional[str] = None) -> Dict[str, int]:
     loaded = {}
     with engine.begin() as conn:
         loaded["equity_universe"] = _load_universe(conn, latest_file(INTERIM_DIR, "02_us_tradable_universe_*.csv"))
+    with engine.begin() as conn:
         loaded["price_history"] = _load_price_history(conn, RAW_DIR / "03_us_price_history_store.csv")
+    with engine.begin() as conn:
         loaded["metadata_enriched"] = _load_metadata(conn, latest_file(INTERIM_DIR, "04_us_metadata_enriched_*.csv"))
+    with engine.begin() as conn:
         loaded["feature_panel"] = _load_panel(conn, "feature_panel", latest_file(PROCESSED_DIR, "05_us_feature_panel_*.csv"))
+    with engine.begin() as conn:
         loaded["sentiment_panel"] = _load_sentiment(conn, latest_file(PROCESSED_DIR, "05_news_sentiment_panel_*.csv"))
+    with engine.begin() as conn:
         loaded["gold_dataset"] = _load_panel(conn, "gold_dataset", latest_file(GOLD_DIR, "06_us_gold_ml_dataset_*.csv"))
+    with engine.begin() as conn:
         loaded.update(_load_model_outputs(conn))
     return loaded
 
@@ -47,6 +57,17 @@ def _read(path: Optional[Path]) -> pd.DataFrame:
     if path is None or not path.exists():
         return pd.DataFrame()
     return pd.read_csv(path, low_memory=False)
+
+
+def _read_chunks(path: Optional[Path], chunksize: int = CSV_CHUNK_SIZE):
+    if path is None or not path.exists():
+        return
+    yield from pd.read_csv(path, low_memory=False, chunksize=chunksize)
+
+
+def _batches(rows: list[dict], size: int = DB_BATCH_SIZE):
+    for start in range(0, len(rows), size):
+        yield rows[start : start + size]
 
 
 def _clean_payload(row: dict) -> dict:
@@ -74,6 +95,14 @@ def _clean_payload(row: dict) -> dict:
 def _upsert_rows(conn, table, rows: list[dict], conflict_cols: list[str]) -> int:
     if not rows:
         return 0
+    count = 0
+    for batch in _batches(rows):
+        _upsert_batch(conn, table, batch, conflict_cols)
+        count += len(batch)
+    return count
+
+
+def _upsert_batch(conn, table, rows: list[dict], conflict_cols: list[str]) -> None:
     dialect = conn.engine.dialect.name
     if dialect == "postgresql":
         stmt = pg_insert(table).values(rows)
@@ -88,7 +117,6 @@ def _upsert_rows(conn, table, rows: list[dict], conflict_cols: list[str]) -> int
             where = [getattr(table.c, col) == row[col] for col in conflict_cols]
             conn.execute(delete(table).where(*where))
         conn.execute(insert(table), rows)
-    return len(rows)
 
 
 def _record_run(conn, name: str, source_file: Optional[Path], row_count: int, status: str = "ok", message: str = "") -> None:
@@ -133,30 +161,36 @@ def _load_universe(conn, path: Optional[Path]) -> int:
 
 
 def _load_price_history(conn, path: Optional[Path]) -> int:
-    frame = _read(path)
-    if frame.empty:
+    if path is None or not path.exists():
         _record_run(conn, "db_load_price_history", path, 0, status="missing")
         return 0
-    frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
-    rows = []
-    for row in frame.dropna(subset=["date", "ticker"]).to_dict("records"):
-        payload = _clean_payload(row)
-        rows.append(
-            {
-                "date": row["date"],
-                "ticker": str(row["ticker"]).upper(),
-                "open": row.get("open"),
-                "high": row.get("high"),
-                "low": row.get("low"),
-                "close": row.get("close"),
-                "adj_close": row.get("adj_close"),
-                "volume": row.get("volume"),
-                "source": row.get("source"),
-                "payload": payload,
-                "source_file": str(path),
-            }
-        )
-    count = _upsert_rows(conn, price_history, rows, ["date", "ticker"])
+    count = 0
+    for frame in _read_chunks(path):
+        if frame.empty:
+            continue
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
+        rows = []
+        for row in frame.dropna(subset=["date", "ticker"]).to_dict("records"):
+            payload = _clean_payload(row)
+            rows.append(
+                {
+                    "date": row["date"],
+                    "ticker": str(row["ticker"]).upper(),
+                    "open": row.get("open"),
+                    "high": row.get("high"),
+                    "low": row.get("low"),
+                    "close": row.get("close"),
+                    "adj_close": row.get("adj_close"),
+                    "volume": row.get("volume"),
+                    "source": row.get("source"),
+                    "payload": payload,
+                    "source_file": str(path),
+                }
+            )
+        count += _upsert_rows(conn, price_history, rows, ["date", "ticker"])
+    if count == 0:
+        _record_run(conn, "db_load_price_history", path, 0, status="empty")
+        return 0
     _record_run(conn, "db_load_price_history", path, count)
     return count
 
@@ -188,23 +222,29 @@ def _load_metadata(conn, path: Optional[Path]) -> int:
 
 
 def _load_panel(conn, dataset: str, path: Optional[Path]) -> int:
-    frame = _read(path)
-    if frame.empty:
+    if path is None or not path.exists():
         _record_run(conn, f"db_load_{dataset}", path, 0, status="missing")
         return 0
-    frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
-    rows = []
-    for row in frame.dropna(subset=["date", "ticker"]).to_dict("records"):
-        rows.append(
-            {
-                "dataset": dataset,
-                "date": row["date"],
-                "ticker": str(row["ticker"]).upper(),
-                "payload": _clean_payload(row),
-                "source_file": str(path),
-            }
-        )
-    count = _upsert_rows(conn, panel_rows, rows, ["dataset", "date", "ticker"])
+    count = 0
+    for frame in _read_chunks(path):
+        if frame.empty:
+            continue
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
+        rows = []
+        for row in frame.dropna(subset=["date", "ticker"]).to_dict("records"):
+            rows.append(
+                {
+                    "dataset": dataset,
+                    "date": row["date"],
+                    "ticker": str(row["ticker"]).upper(),
+                    "payload": _clean_payload(row),
+                    "source_file": str(path),
+                }
+            )
+        count += _upsert_rows(conn, panel_rows, rows, ["dataset", "date", "ticker"])
+    if count == 0:
+        _record_run(conn, f"db_load_{dataset}", path, 0, status="empty")
+        return 0
     _record_run(conn, f"db_load_{dataset}", path, count)
     return count
 
