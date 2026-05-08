@@ -38,16 +38,17 @@ def load_latest_outputs(database_url: Optional[str] = None) -> Dict[str, int]:
     loaded = {}
     with engine.begin() as conn:
         loaded["equity_universe"] = _load_universe(conn, latest_file(INTERIM_DIR, "02_us_tradable_universe_*.csv"))
-    with engine.begin() as conn:
-        loaded["price_history"] = _load_price_history(conn, RAW_DIR / "03_us_price_history_store.csv")
+    loaded["price_history"] = _load_price_history_streaming(engine, RAW_DIR / "03_us_price_history_store.csv")
     with engine.begin() as conn:
         loaded["metadata_enriched"] = _load_metadata(conn, latest_file(INTERIM_DIR, "04_us_metadata_enriched_*.csv"))
-    with engine.begin() as conn:
-        loaded["feature_panel"] = _load_panel(conn, "feature_panel", latest_file(PROCESSED_DIR, "05_us_feature_panel_*.csv"))
+    loaded["feature_panel"] = _load_panel_streaming(
+        engine, "feature_panel", latest_file(PROCESSED_DIR, "05_us_feature_panel_*.csv")
+    )
     with engine.begin() as conn:
         loaded["sentiment_panel"] = _load_sentiment(conn, latest_file(PROCESSED_DIR, "05_news_sentiment_panel_*.csv"))
-    with engine.begin() as conn:
-        loaded["gold_dataset"] = _load_panel(conn, "gold_dataset", latest_file(GOLD_DIR, "06_us_gold_ml_dataset_*.csv"))
+    loaded["gold_dataset"] = _load_panel_streaming(
+        engine, "gold_dataset", latest_file(GOLD_DIR, "06_us_gold_ml_dataset_*.csv")
+    )
     with engine.begin() as conn:
         loaded.update(_load_model_outputs(conn))
     return loaded
@@ -245,6 +246,50 @@ def _load_price_history(conn, path: Optional[Path]) -> int:
     return count
 
 
+def _price_history_rows(frame: pd.DataFrame, path: Path) -> list[dict]:
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
+    rows = []
+    for row in frame.dropna(subset=["date", "ticker"]).to_dict("records"):
+        payload = _clean_payload(row)
+        rows.append(
+            {
+                "date": row["date"],
+                "ticker": str(row["ticker"]).upper(),
+                "open": _db_float(row.get("open")),
+                "high": _db_float(row.get("high")),
+                "low": _db_float(row.get("low")),
+                "close": _db_float(row.get("close")),
+                "adj_close": _db_float(row.get("adj_close")),
+                "volume": _db_int(row.get("volume")),
+                "source": _db_text(row.get("source")),
+                "payload": payload,
+                "source_file": str(path),
+            }
+        )
+    return rows
+
+
+def _load_price_history_streaming(engine, path: Optional[Path]) -> int:
+    if path is None or not path.exists():
+        with engine.begin() as conn:
+            _record_run(conn, "db_load_price_history", path, 0, status="missing")
+        return 0
+    count = 0
+    for chunk_number, frame in enumerate(_read_chunks(path), start=1):
+        if frame.empty:
+            continue
+        rows = _price_history_rows(frame, path)
+        with engine.begin() as conn:
+            count += _upsert_rows(conn, price_history, rows, ["date", "ticker"])
+        print(f"db_load_price_history chunk={chunk_number} total_rows={count}", flush=True)
+    with engine.begin() as conn:
+        if count == 0:
+            _record_run(conn, "db_load_price_history", path, 0, status="empty")
+            return 0
+        _record_run(conn, "db_load_price_history", path, count)
+    return count
+
+
 def _load_metadata(conn, path: Optional[Path]) -> int:
     frame = _read(path)
     if frame.empty:
@@ -296,6 +341,43 @@ def _load_panel(conn, dataset: str, path: Optional[Path]) -> int:
         _record_run(conn, f"db_load_{dataset}", path, 0, status="empty")
         return 0
     _record_run(conn, f"db_load_{dataset}", path, count)
+    return count
+
+
+def _panel_rows(dataset: str, frame: pd.DataFrame, path: Path) -> list[dict]:
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
+    rows = []
+    for row in frame.dropna(subset=["date", "ticker"]).to_dict("records"):
+        rows.append(
+            {
+                "dataset": dataset,
+                "date": row["date"],
+                "ticker": str(row["ticker"]).upper(),
+                "payload": _clean_payload(row),
+                "source_file": str(path),
+            }
+        )
+    return rows
+
+
+def _load_panel_streaming(engine, dataset: str, path: Optional[Path]) -> int:
+    if path is None or not path.exists():
+        with engine.begin() as conn:
+            _record_run(conn, f"db_load_{dataset}", path, 0, status="missing")
+        return 0
+    count = 0
+    for chunk_number, frame in enumerate(_read_chunks(path), start=1):
+        if frame.empty:
+            continue
+        rows = _panel_rows(dataset, frame, path)
+        with engine.begin() as conn:
+            count += _upsert_rows(conn, panel_rows, rows, ["dataset", "date", "ticker"])
+        print(f"db_load_{dataset} chunk={chunk_number} total_rows={count}", flush=True)
+    with engine.begin() as conn:
+        if count == 0:
+            _record_run(conn, f"db_load_{dataset}", path, 0, status="empty")
+            return 0
+        _record_run(conn, f"db_load_{dataset}", path, count)
     return count
 
 
