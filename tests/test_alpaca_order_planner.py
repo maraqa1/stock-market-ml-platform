@@ -52,6 +52,36 @@ def test_filter_tradeable_signals_allows_short_when_enabled():
     assert set(filtered["ticker"]) == {"AAA", "BBB"}
 
 
+def test_filter_tradeable_signals_balances_long_and_short_slots_when_enabled():
+    signals = pd.DataFrame(
+        [
+            {"ticker": f"L{i}", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "risk_adjusted_score": 100 - i}
+            for i in range(10)
+        ]
+        + [
+            {"ticker": f"S{i}", "trade_action": "Short", "side_probability": 0.8, "probability_edge": -0.2, "risk_adjusted_score": -1 - i}
+            for i in range(10)
+        ]
+    )
+    filtered = filter_tradeable_signals(signals, config(max_orders=10, allow_short_selling=True))
+    assert filtered["trade_action"].str.lower().value_counts().to_dict() == {"long": 5, "short": 5}
+
+
+def test_filter_tradeable_signals_backfills_when_one_side_has_fewer_candidates():
+    signals = pd.DataFrame(
+        [
+            {"ticker": f"L{i}", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "risk_adjusted_score": 100 - i}
+            for i in range(10)
+        ]
+        + [
+            {"ticker": "S0", "trade_action": "Short", "side_probability": 0.8, "probability_edge": -0.2, "risk_adjusted_score": -1}
+        ]
+    )
+    filtered = filter_tradeable_signals(signals, config(max_orders=6, allow_short_selling=True))
+    counts = filtered["trade_action"].str.lower().value_counts().to_dict()
+    assert counts == {"long": 5, "short": 1}
+
+
 def test_filter_tradeable_signals_excludes_diagnostic_only_rows():
     signals = pd.DataFrame(
         [

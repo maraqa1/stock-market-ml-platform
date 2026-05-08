@@ -51,6 +51,24 @@ def _numeric_column(frame: pd.DataFrame, column: str, default: float = 0.0) -> p
     return pd.to_numeric(frame[column], errors="coerce").fillna(default)
 
 
+def _balanced_side_selection(frame: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
+    if frame.empty or not config.allow_short_selling:
+        return frame.head(config.max_orders)
+    actions = frame["trade_action"].astype(str).str.strip().str.lower()
+    longs = frame[actions.eq("long")].copy()
+    shorts = frame[actions.eq("short")].copy()
+    if longs.empty or shorts.empty:
+        return frame.head(config.max_orders)
+
+    long_slots = (config.max_orders + 1) // 2
+    short_slots = config.max_orders // 2
+    selected = pd.concat([longs.head(long_slots), shorts.head(short_slots)], ignore_index=False)
+    if len(selected) < config.max_orders:
+        remaining = frame.drop(index=selected.index, errors="ignore")
+        selected = pd.concat([selected, remaining.head(config.max_orders - len(selected))], ignore_index=False)
+    return selected.sort_values("_sort_score", ascending=False).head(config.max_orders)
+
+
 def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
     if signals.empty or not REQUIRED_SIGNAL_COLUMNS.issubset(signals.columns):
         return pd.DataFrame()
@@ -77,6 +95,7 @@ def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig) -> pd.
     frame["risk_adjusted_score"] = _numeric_column(frame, "risk_adjusted_score")
     frame["_sort_score"] = frame["risk_adjusted_score"].abs()
     frame = frame.sort_values("_sort_score", ascending=False)
+    frame = _balanced_side_selection(frame, config)
     frame = _limit_sector_concentration(frame, config)
     return frame.head(config.max_orders).drop(columns=["_sort_score"])
 
