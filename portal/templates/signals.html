@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<section class="meta-strip">Data source: {{ data_source or "CSV" }}</section>
 <section class="panel">
   <h2>Model Status</h2>
   <span class="badge {{ decision_grade }}">{{ decision_grade|reason }}</span>
@@ -15,4 +16,3 @@
 </section>
 <section class="panel"><h2>No Decision Sample</h2>{{ table(no_decision_rows) }}</section>
 {% endblock %}
-

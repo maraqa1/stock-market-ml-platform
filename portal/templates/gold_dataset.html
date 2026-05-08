@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<section class="meta-strip">Data source: {{ data_source or "CSV" }}</section>
 <section class="kpi-grid">
   <article class="kpi"><span>Rows</span><strong>{{ row_count|fmt }}</strong></article>
   <article class="kpi"><span>Tickers</span><strong>{{ ticker_count }}</strong></article>
@@ -13,4 +14,3 @@
 </section>
 <section class="panel"><h2>Gold Preview</h2>{{ table(sample_rows) }}</section>
 {% endblock %}
-

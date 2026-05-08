@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from portal.services.database_reader import latest_gold_for_ticker, model_artifacts, price_history_for_ticker
 from portal.services.latest_file_reader import file_status, latest_file, readable_reason, safe_read_csv
 
 
@@ -11,16 +12,19 @@ def stock_detail_context(ticker: str, root: Optional[Path] = None) -> dict:
     gold_file = latest_file(root, "gold", "06_us_gold_ml_dataset_*.csv")
     signal_file = latest_file(root, "model_outputs", "advanced_model_signal_table_*.csv", fallback_keys=["portal_outputs"])
     price_file = project_price_file(root)
-    gold = safe_read_csv(gold_file)
-    signals = safe_read_csv(signal_file)
-    prices = safe_read_csv(price_file)
+    latest = latest_gold_for_ticker(clean)
+    db_signals = model_artifacts("signal_table", limit=10000)
+    using_db = bool(latest) or not db_signals.empty
 
-    latest = {}
-    if not gold.empty and "ticker" in gold.columns:
-        rows = gold[gold["ticker"].astype(str).str.upper().eq(clean)].copy()
-        if not rows.empty:
-            rows = rows.sort_values("date")
-            latest = rows.iloc[-1].to_dict()
+    if not latest:
+        gold = safe_read_csv(gold_file)
+        if not gold.empty and "ticker" in gold.columns:
+            rows = gold[gold["ticker"].astype(str).str.upper().eq(clean)].copy()
+            if not rows.empty:
+                rows = rows.sort_values("date")
+                latest = rows.iloc[-1].to_dict()
+
+    signals = db_signals if not db_signals.empty else safe_read_csv(signal_file)
     if not signals.empty and "ticker" in signals.columns:
         sig = signals[signals["ticker"].astype(str).str.upper().eq(clean)].copy()
         if not sig.empty:
@@ -29,15 +33,18 @@ def stock_detail_context(ticker: str, root: Optional[Path] = None) -> dict:
         reason = latest.get("signal_reason", latest.get("no_decision_reason", latest.get("reason", "")))
         latest["reason_readable"] = readable_reason(reason)
 
-    price_rows = []
-    if not prices.empty and "ticker" in prices.columns:
-        price_rows = prices[prices["ticker"].astype(str).str.upper().eq(clean)].tail(50).to_dict("records")
+    price_rows = price_history_for_ticker(clean, limit=50)
+    if not price_rows:
+        prices = safe_read_csv(price_file)
+        if not prices.empty and "ticker" in prices.columns:
+            price_rows = prices[prices["ticker"].astype(str).str.upper().eq(clean)].tail(50).to_dict("records")
 
     return {
         "ticker": clean,
         "latest": latest,
         "price_rows": price_rows,
         "files": [file_status(gold_file, "Gold dataset"), file_status(signal_file, "Signal table"), file_status(price_file, "Price history")],
+        "data_source": "PostgreSQL" if using_db else "CSV",
     }
 
 

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<section class="meta-strip">Data source: {{ data_source or "CSV" }}</section>
 {% if not latest %}
   <section class="empty">No detail rows found for {{ ticker }}.</section>
 {% else %}
@@ -17,4 +18,3 @@
 {% endif %}
 <section class="panel"><h2>Historical Price Preview</h2>{{ table(price_rows) }}</section>
 {% endblock %}
-

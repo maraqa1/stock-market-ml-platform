@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from portal.services.database_reader import panel_sample, panel_summary, sector_coverage
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, safe_read_csv
 
 
@@ -23,10 +24,13 @@ def gold_context(root: Optional[Path] = None) -> dict:
     gold_file = latest_file(root, "gold", "06_us_gold_ml_dataset_*.csv")
     quality_file = latest_file(root, "interim", "06_us_gold_quality_*.csv")
     dictionary_file = latest_file(root, "interim", "06_us_gold_data_dictionary_*.csv")
-    sample = safe_read_csv(gold_file, nrows=5000)
-    row_count = count_rows(gold_file)
-    ticker_count = sample["ticker"].nunique() if "ticker" in sample.columns else 0
-    if row_count > len(sample) and ticker_count:
+    summary = panel_summary("gold_dataset")
+    db_sample = panel_sample("gold_dataset", limit=5000)
+    using_db = bool(summary.get("row_count")) and not db_sample.empty
+    sample = db_sample if using_db else safe_read_csv(gold_file, nrows=5000)
+    row_count = int(summary.get("row_count") or 0) if using_db else count_rows(gold_file)
+    ticker_count = int(summary.get("ticker_count") or 0) if using_db else (sample["ticker"].nunique() if "ticker" in sample.columns else 0)
+    if not using_db and row_count > len(sample) and ticker_count:
         ticker_count = f"{ticker_count}+"
 
     coverage = []
@@ -47,12 +51,12 @@ def gold_context(root: Optional[Path] = None) -> dict:
         "dictionary_file": file_status(dictionary_file, "Gold dictionary"),
         "row_count": row_count,
         "ticker_count": ticker_count,
-        "date_min": sample["date"].min() if "date" in sample.columns and not sample.empty else "",
-        "date_max": sample["date"].max() if "date" in sample.columns and not sample.empty else "",
-        "sector_coverage": sample["sector"].fillna("Unknown").value_counts().head(20).reset_index().to_dict("records") if "sector" in sample.columns else [],
+        "date_min": summary.get("date_min", "") if using_db else (sample["date"].min() if "date" in sample.columns and not sample.empty else ""),
+        "date_max": summary.get("date_max", "") if using_db else (sample["date"].max() if "date" in sample.columns and not sample.empty else ""),
+        "sector_coverage": sector_coverage("gold_dataset") if using_db else (sample["sector"].fillna("Unknown").value_counts().head(20).reset_index().to_dict("records") if "sector" in sample.columns else []),
         "feature_group_coverage": coverage,
         "sentiment_warning": sentiment_warning,
         "sample_rows": sample.tail(50).to_dict("records"),
         "files": [file_status(gold_file, "Gold dataset"), file_status(quality_file, "Gold quality"), file_status(dictionary_file, "Gold dictionary")],
+        "data_source": "PostgreSQL" if using_db else "CSV",
     }
-

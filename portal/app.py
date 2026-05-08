@@ -7,6 +7,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template
 from markupsafe import Markup, escape
 
+from portal.services.database_reader import db_available
 from portal.services.data_quality_service import data_quality_context
 from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
@@ -81,6 +82,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "project_root": str(root_path()),
                 "latest_signal_file": str(signal_file) if signal_file else "",
                 "latest_gold_file": str(gold_file) if gold_file else "",
+                "database_available": db_available(),
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
             }
         )
