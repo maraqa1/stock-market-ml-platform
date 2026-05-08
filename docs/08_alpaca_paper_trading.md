@@ -112,3 +112,15 @@ STOCKML_ALPACA_SUBMIT_ORDERS=true /opt/jupyter-env/bin/python3 scripts/run_alpac
 ## Notes
 
 Alpaca paper trading uses the Trading API paper endpoint. Extended-hours and 24/5 behavior depends on Alpaca asset eligibility and order constraints. Keep this integration on paper mode until validation, risk limits, and position reconciliation are implemented.
+
+## Short Selling
+
+Short selling is disabled by default. To allow paper short orders, set this in the VM `.env` file:
+
+```bash
+STOCKML_ALLOW_SHORT_SELLING=true
+```
+
+Even when this is enabled, short orders still pass through the trade quality gate and Alpaca asset pre-flight checks. Alpaca must report the symbol as `shortable`; otherwise the order is rejected with `asset_not_shortable`.
+
+Live trading remains disabled unless separate live-trading safeguards are explicitly changed.
