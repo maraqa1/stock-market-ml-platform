@@ -29,3 +29,10 @@ def test_bracket_order_payload_for_long():
     assert payload["take_profit"]["limit_price"] == 147.34
     assert payload["stop_loss"]["stop_price"] == 134.83
     assert validate_order_payload(payload).valid is True
+
+
+def test_extended_hours_market_order_is_invalid():
+    order = {"symbol": "FLEX", "side": "buy", "type": "market", "time_in_force": "day", "qty": "2", "extended_hours": True}
+    result = validate_order_payload(order)
+    assert result.valid is False
+    assert result.reason == "extended_hours_requires_limit"

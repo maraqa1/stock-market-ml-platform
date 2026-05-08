@@ -9,6 +9,7 @@ from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import alpaca_config
+from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_order_plan, latest_signal_table
 from stockml.trading.submission_guards import load_submission_context, validate_order
 
@@ -115,10 +116,14 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
                 "side": order["side"],
                 "type": order["type"],
                 "time_in_force": order["time_in_force"],
-                "extended_hours": bool(order.get("extended_hours", False)),
+                "extended_hours": bool(order.get("extended_hours", False)) and str(order.get("type", "")).lower() == "limit",
                 "client_order_id": order["client_order_id"],
             }
             try:
+                payload_check = validate_order_payload(request, max_order_notional=config.max_notional_per_order)
+                if not payload_check.valid:
+                    result_rows.append(_result_row(order, "rejected", message=payload_check.reason, diagnostics={"submitted_payload": str(request)}))
+                    continue
                 allowed, guard_message = validate_order(order, client, context, seen_client_ids)
                 if not allowed:
                     result_rows.append(_result_row(order, "rejected", message=guard_message))

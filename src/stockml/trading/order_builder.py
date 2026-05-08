@@ -106,7 +106,7 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
         "side": side,
         "type": "market",
         "time_in_force": "day",
-        "extended_hours": bool(config.extended_hours),
+        "extended_hours": bool(config.extended_hours) and False,
         "client_order_id": f"stockml-{date_part}-{symbol}-{side}",
         "trade_action": row.get("trade_action"),
         "confidence_score": row.get("confidence_score", ""),
