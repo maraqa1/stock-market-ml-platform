@@ -117,6 +117,8 @@ PostgreSQL can be used as the persistent store for generated pipeline outputs wh
 Fresh VM PostgreSQL bootstrap:
 
 ```bash
+cp .env.template .env
+nano .env
 bash deployment/vm/install_database.sh
 ```
 
@@ -157,6 +159,14 @@ Reboot persistence:
 
 - PostgreSQL is enabled as a system service and stores data in the VM's PostgreSQL data directory.
 - Portal and nightly pipeline services are enabled through systemd.
-- Runtime configuration is stored in `/etc/stockml/stockml.env`, including `DATABASE_URL`, `STOCKML_PROFILE`, `STOCKML_WRITE_DATABASE`, and `PORT`.
+- Human-managed runtime configuration starts in the repo-local `.env` file, which is ignored by git.
+- Systemd runtime configuration is copied to `/etc/stockml/stockml.env`, including `DATABASE_URL`, database credentials, `STOCKML_PROFILE`, `STOCKML_WRITE_DATABASE`, and `PORT`.
 - Re-running the install scripts updates services without deleting generated CSV files or PostgreSQL data.
+
+Recover the configured database password on the VM:
+
+```bash
+grep STOCKML_DB_PASSWORD .env
+sudo grep STOCKML_DB_PASSWORD /etc/stockml/stockml.env
+```
 

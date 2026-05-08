@@ -3,6 +3,14 @@ set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/home/massa/stock-market-ml-platform}"
 PYTHON_BIN="${PYTHON_BIN:-/opt/jupyter-env/bin/python3}"
+
+if [[ -f "$REPO_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_DIR/.env"
+  set +a
+fi
+
 DB_NAME="${STOCKML_DB_NAME:-stockml}"
 DB_USER="${STOCKML_DB_USER:-stockml}"
 DB_PASSWORD="${STOCKML_DB_PASSWORD:-stockml}"
@@ -51,6 +59,11 @@ tmp_env="$(mktemp)"
 {
   printf 'PYTHONPATH="%s"\n' "$(escape_env_value "$REPO_DIR:$REPO_DIR/src")"
   printf 'STOCKML_PROJECT_ROOT="%s"\n' "$(escape_env_value "$REPO_DIR")"
+  printf 'STOCKML_DB_NAME="%s"\n' "$(escape_env_value "$DB_NAME")"
+  printf 'STOCKML_DB_USER="%s"\n' "$(escape_env_value "$DB_USER")"
+  printf 'STOCKML_DB_PASSWORD="%s"\n' "$(escape_env_value "$DB_PASSWORD")"
+  printf 'STOCKML_DB_HOST="%s"\n' "$(escape_env_value "$DB_HOST")"
+  printf 'STOCKML_DB_PORT="%s"\n' "$(escape_env_value "$DB_PORT")"
   printf 'STOCKML_PROFILE="%s"\n' "$(escape_env_value "$STOCKML_PROFILE")"
   printf 'STOCKML_WRITE_DATABASE="%s"\n' "$(escape_env_value "$STOCKML_WRITE_DATABASE")"
   printf 'PORT="%s"\n' "$(escape_env_value "$PORT")"
