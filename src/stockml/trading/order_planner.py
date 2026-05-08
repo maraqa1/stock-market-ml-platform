@@ -65,7 +65,9 @@ def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig) -> pd.
     if "decision_grade" in frame.columns:
         frame = frame[frame["decision_grade"].astype(str).str.strip().str.lower().ne("diagnostic_only")].copy()
     if "diagnostic_only" in frame.columns:
-        frame = frame[~frame["diagnostic_only"].astype(str).str.strip().str.lower().isin({"true", "1", "yes"})].copy()
+        diagnostic = frame["diagnostic_only"].astype(str).str.strip().str.lower().isin({"true", "1", "yes"})
+        diagnostic_reason = frame.get("signal_reason", pd.Series("", index=frame.index)).astype(str).str.contains("diagnostic_paper_candidate", case=False, na=False)
+        frame = frame[(~diagnostic) | diagnostic_reason].copy()
     if frame.empty:
         return pd.DataFrame()
     frame["side_probability"] = _numeric_column(frame, "side_probability")

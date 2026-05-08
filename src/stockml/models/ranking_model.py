@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Dict, List
 
 import numpy as np
@@ -178,6 +179,11 @@ def _decision_status(leaderboard: pd.DataFrame) -> tuple[str, str]:
     return "decision_grade", "validation_gates_passed"
 
 
+def _diagnostic_paper_mode_enabled() -> bool:
+    value = os.environ.get("STOCKML_ALLOW_DIAGNOSTIC_PAPER_TRADES", "").strip().lower()
+    return value in {"1", "true", "yes", "y"}
+
+
 def train_predict_from_gold(gold: pd.DataFrame, top_n: int = 50) -> ModelArtifacts:
     leaderboard, scored_validation, feature_cols = walk_forward_validate(gold)
     model_name = leaderboard.iloc[0]["model_name"] if not leaderboard.empty else "logistic_regression"
@@ -209,16 +215,19 @@ def train_predict_from_gold(gold: pd.DataFrame, top_n: int = 50) -> ModelArtifac
     latest["trade_action"] = "No Decision"
     latest["signal_reason"] = "model_not_decision_grade" if decision_grade != "decision_grade" else ""
     latest["no_decision_reason"] = reason if decision_grade != "decision_grade" else "not_in_top_ranked_long_or_short_candidates"
+    latest["model_status"] = decision_grade
+    latest["diagnostic_only"] = decision_grade != "decision_grade"
 
-    if decision_grade == "decision_grade":
+    diagnostic_paper_mode = decision_grade != "decision_grade" and _diagnostic_paper_mode_enabled()
+    if decision_grade == "decision_grade" or diagnostic_paper_mode:
         long_mask = (latest["predicted_rank_pct_by_date"] >= 0.9) & (latest["probability_edge"] > 0.05)
         short_mask = (latest["predicted_rank_pct_by_date"] <= 0.1) & (latest["probability_edge"] < -0.05)
         latest.loc[long_mask, "trade_action"] = "Long"
-        latest.loc[long_mask, "signal_reason"] = "validated_probability_and_rank_gate_passed"
-        latest.loc[long_mask, "no_decision_reason"] = ""
+        latest.loc[long_mask, "signal_reason"] = "validated_probability_and_rank_gate_passed" if decision_grade == "decision_grade" else "diagnostic_paper_candidate_model_not_decision_grade"
+        latest.loc[long_mask, "no_decision_reason"] = "" if decision_grade == "decision_grade" else reason
         latest.loc[short_mask, "trade_action"] = "Short"
-        latest.loc[short_mask, "signal_reason"] = "validated_probability_and_rank_gate_passed"
-        latest.loc[short_mask, "no_decision_reason"] = ""
+        latest.loc[short_mask, "signal_reason"] = "validated_probability_and_rank_gate_passed" if decision_grade == "decision_grade" else "diagnostic_paper_candidate_model_not_decision_grade"
+        latest.loc[short_mask, "no_decision_reason"] = "" if decision_grade == "decision_grade" else reason
 
     latest["expected_trade_return"] = latest["probability_edge"] * latest["selection_score"].fillna(0)
     latest["risk_adjusted_score"] = latest["expected_trade_return"] / (1 + latest["candidate_rank_overall"].fillna(999))
@@ -246,6 +255,7 @@ def train_predict_from_gold(gold: pd.DataFrame, top_n: int = 50) -> ModelArtifac
             "folds_completed": int(leaderboard["fold"].nunique()) if not leaderboard.empty else 0,
             "beats_baseline": bool(leaderboard.iloc[0]["beats_baseline"]) if not leaderboard.empty else False,
             "reason": reason,
+            "diagnostic_paper_mode": diagnostic_paper_mode,
             "gold_input_rows": len(gold),
             "feature_count": len(feature_cols),
         }]

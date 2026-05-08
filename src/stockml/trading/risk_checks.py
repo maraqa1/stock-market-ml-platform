@@ -60,9 +60,11 @@ def eligibility_reasons(row: pd.Series, config: AlpacaConfig) -> list[str]:
     if action not in {"long", "short"}:
         reasons.append("not_long_or_short")
     if str(row.get("model_status", row.get("decision_grade", ""))).strip().lower() == "diagnostic_only":
-        reasons.append("model_not_decision_grade")
+        if "diagnostic_paper_candidate" not in str(row.get("signal_reason", "")).strip().lower():
+            reasons.append("model_not_decision_grade")
     if str(row.get("diagnostic_only", "")).strip().lower() in {"true", "1", "yes"}:
-        reasons.append("model_not_decision_grade")
+        if "diagnostic_paper_candidate" not in str(row.get("signal_reason", "")).strip().lower():
+            reasons.append("model_not_decision_grade")
     no_decision_reason = str(row.get("no_decision_reason", "") or "").strip()
     if no_decision_reason and no_decision_reason.lower() not in {"nan", "none", "not provided"}:
         reasons.append("no_decision_reason_present")

@@ -42,3 +42,13 @@ def test_train_predict_from_gold_writes_expected_artifact_frames():
     assert "icir_5d" in artifacts.validation_leaderboard.columns
     assert "turnover_adjusted_avg_gain_5d" in artifacts.validation_leaderboard.columns
     assert "feature" in artifacts.feature_importance.columns
+
+
+def test_diagnostic_paper_mode_can_emit_research_candidates(monkeypatch):
+    monkeypatch.setenv("STOCKML_ALLOW_DIAGNOSTIC_PAPER_TRADES", "true")
+    artifacts = train_predict_from_gold(synthetic_gold(), top_n=5)
+    if artifacts.model_status.iloc[0]["decision_grade"] == "diagnostic_only":
+        assert "diagnostic_paper_mode" in artifacts.model_status.columns
+        assert artifacts.signal_table["trade_action"].isin(["Long", "Short"]).any()
+        research = artifacts.signal_table[artifacts.signal_table["trade_action"].isin(["Long", "Short"])]
+        assert research["signal_reason"].str.contains("diagnostic_paper_candidate").all()

@@ -63,6 +63,17 @@ def test_filter_tradeable_signals_excludes_diagnostic_only_rows():
     assert list(filtered["ticker"]) == ["AAA"]
 
 
+def test_filter_tradeable_signals_allows_explicit_diagnostic_paper_candidates():
+    signals = pd.DataFrame(
+        [
+            {"ticker": "AAA", "trade_action": "Long", "diagnostic_only": True, "signal_reason": "model_not_decision_grade", "side_probability": 0.7, "probability_edge": 0.2, "risk_adjusted_score": 0.5},
+            {"ticker": "BBB", "trade_action": "Long", "diagnostic_only": True, "signal_reason": "diagnostic_paper_candidate_model_not_decision_grade", "side_probability": 0.8, "probability_edge": 0.3, "risk_adjusted_score": 0.7},
+        ]
+    )
+    filtered = filter_tradeable_signals(signals, config(max_orders=10))
+    assert list(filtered["ticker"]) == ["BBB"]
+
+
 def test_build_order_plan_ignores_no_decision_rows_even_when_high_ranked():
     signals = pd.DataFrame(
         [
