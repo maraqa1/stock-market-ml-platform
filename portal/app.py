@@ -14,7 +14,7 @@ from portal.services.latest_file_reader import count_rows, file_status, latest_f
 from portal.services.model_validation_service import model_validation_context
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.stock_detail_service import stock_detail_context
-from portal.services.trading_service import trading_context
+from portal.services.trading_service import lifecycle_context, trading_context
 from portal.services.universe_service import universe_context
 
 
@@ -146,6 +146,10 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/trading")
     def trading():
         return render_template("trading.html", title="Paper Trading", **trading_context(root_path()))
+
+    @app.route("/trading/lifecycle")
+    def trading_lifecycle():
+        return render_template("trading_lifecycle.html", title="Trade Lifecycle", **lifecycle_context(root_path()))
 
     @app.route("/model-validation")
     def model_validation():

@@ -17,6 +17,10 @@ DATA_DIRS = {
     "gold": "data/gold",
     "model_outputs": "data/model_outputs",
     "portal_outputs": "data/portal_outputs",
+    "paper_trade_journal": "data/trading/paper_trade_journal",
+    "paper_pnl": "data/trading/paper_pnl",
+    "paper_positions": "data/trading/paper_positions",
+    "execution_reports": "data/trading/execution_reports",
 }
 
 

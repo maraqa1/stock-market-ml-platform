@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="meta-strip">Data source: {{ data_source }}</section>
+<section class="meta-strip"><a class="ticker-link" href="/trading/lifecycle">Open trade lifecycle journal</a></section>
 {% if dry_run %}
   <section class="warning">Alpaca paper trading is in dry-run mode. Planned orders are recorded, but no orders are submitted.</section>
 {% else %}

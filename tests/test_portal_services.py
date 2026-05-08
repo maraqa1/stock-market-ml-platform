@@ -6,7 +6,7 @@ import pandas as pd
 from portal.services.latest_file_reader import latest_file, readable_reason
 from portal.services.universe_service import universe_context
 from portal.services.signal_service import signal_context
-from portal.services.trading_service import trading_context
+from portal.services.trading_service import lifecycle_context, trading_context
 
 
 def write_csv(path: Path, rows):
@@ -101,3 +101,19 @@ def test_trading_context_sorts_plan_by_confidence(tmp_path):
     )
     ctx = trading_context(tmp_path)
     assert [row["symbol"] for row in ctx["plan_rows"]] == ["HIGH", "LOW"]
+
+
+def test_lifecycle_context_with_artifacts(tmp_path):
+    write_csv(
+        tmp_path / "data" / "trading" / "paper_trade_journal" / "paper_trade_journal_1.csv",
+        [{"symbol": "FLEX", "lifecycle_state": "order_planned", "trade_quality_status": "approved", "approved_notional": 1000}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "paper_pnl" / "paper_pnl_1.csv",
+        [{"symbol": "FLEX", "qty": 2, "market_value": 220, "cost_basis": 200, "unrealized_pl": 20}],
+    )
+    ctx = lifecycle_context(tmp_path)
+    assert ctx["journal_rows_count"] == 1
+    assert ctx["order_planned_count"] == 1
+    assert ctx["position_count"] == 1
+    assert ctx["unrealized_pl"] == 20

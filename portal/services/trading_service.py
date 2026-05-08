@@ -57,6 +57,46 @@ def _total_notional(plan) -> float:
     return float(pd.to_numeric(plan["notional"], errors="coerce").fillna(0).sum())
 
 
+def _sum_column(frame: pd.DataFrame, column: str) -> float:
+    if frame.empty or column not in frame.columns:
+        return 0.0
+    return float(pd.to_numeric(frame[column], errors="coerce").fillna(0).sum())
+
+
+def lifecycle_context(root: Path) -> dict:
+    journal_file = latest_file(root, "paper_trade_journal", "paper_trade_journal_*.csv")
+    pnl_file = latest_file(root, "paper_pnl", "paper_pnl_*.csv")
+    journal = safe_read_csv(journal_file, nrows=1000)
+    pnl = safe_read_csv(pnl_file, nrows=1000)
+    state_counts = _status_counts(journal, "lifecycle_state")
+    quality_counts = _status_counts(journal, "trade_quality_status")
+    return {
+        "data_source": "CSV artifacts",
+        "journal_rows_count": len(journal),
+        "risk_rejected_count": int(state_counts.get("risk_rejected", 0)),
+        "order_planned_count": int(state_counts.get("order_planned", 0)),
+        "order_submitted_count": int(state_counts.get("order_submitted", 0)),
+        "order_filled_count": int(state_counts.get("order_filled", 0)),
+        "position_count": len(pnl),
+        "market_value": _sum_column(pnl, "market_value"),
+        "unrealized_pl": _sum_column(pnl, "unrealized_pl"),
+        "state_counts": state_counts,
+        "quality_counts": quality_counts,
+        "journal_rows": _records(journal, limit=200),
+        "pnl_rows": _records(pnl, limit=200),
+        "journal_columns": [
+            "symbol", "lifecycle_state", "trade_quality_status", "readable_reason", "approved_notional",
+            "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "status",
+            "alpaca_status", "filled_qty", "filled_avg_price",
+        ],
+        "pnl_columns": ["symbol", "qty", "market_value", "cost_basis", "unrealized_pl", "unrealized_plpc"],
+        "files": [
+            file_status(journal_file, "Paper trade journal"),
+            file_status(pnl_file, "Paper P&L"),
+        ],
+    }
+
+
 def trading_context(root: Path) -> dict:
     config = alpaca_config()
     plan_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_plan_*.csv")

@@ -11,7 +11,7 @@ def client(tmp_path):
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/model-validation", "/no-decision"]:
+    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/trading/lifecycle", "/model-validation", "/no-decision"]:
         response = client.get(route)
         assert response.status_code == 200
 
