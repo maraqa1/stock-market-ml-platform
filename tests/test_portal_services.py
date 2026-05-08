@@ -6,6 +6,7 @@ import pandas as pd
 from portal.services.latest_file_reader import latest_file, readable_reason
 from portal.services.universe_service import universe_context
 from portal.services.signal_service import signal_context
+from portal.services.trading_service import trading_context
 
 
 def write_csv(path: Path, rows):
@@ -50,3 +51,18 @@ def test_signal_context_with_fixture(tmp_path):
     assert ctx["long_count"] == 1
     assert ctx["no_decision_count"] == 1
 
+
+def test_trading_context_with_alpaca_artifacts(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
+        [{"symbol": "AAA", "side": "buy", "notional": 500, "trade_action": "Long", "side_probability": 0.7}],
+    )
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_results_1.csv",
+        [{"symbol": "AAA", "status": "dry_run", "order_id": "", "message": "disabled"}],
+    )
+    ctx = trading_context(tmp_path)
+    assert ctx["orders_planned"] == 1
+    assert ctx["orders_submitted"] == 0
+    assert ctx["dry_run"] is True
+    assert ctx["total_notional"] == 500

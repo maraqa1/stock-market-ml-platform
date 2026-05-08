@@ -6,6 +6,8 @@ venv/
 .ipynb_checkpoints/
 .pytest_cache/
 .pytest_tmp/
+.pytest_tmp_run/
+.codex_pytest_tmp/
 pytest-cache-files-*/
 tmp*/
 data/raw/*

@@ -14,6 +14,7 @@ from portal.services.latest_file_reader import count_rows, file_status, latest_f
 from portal.services.model_validation_service import model_validation_context
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.stock_detail_service import stock_detail_context
+from portal.services.trading_service import trading_context
 from portal.services.universe_service import universe_context
 
 
@@ -87,6 +88,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "latest_signal_file": str(signal_file) if signal_file else "",
                 "latest_gold_file": str(gold_file) if gold_file else "",
                 "database_available": db_available(),
+                "latest_alpaca_plan_file": str(latest_file(root_path(), "portal_outputs", "08_alpaca_paper_order_plan_*.csv") or ""),
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
             }
         )
@@ -140,6 +142,10 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/signals")
     def signals():
         return render_template("signals.html", title="Signals", **signal_context(root_path()))
+
+    @app.route("/trading")
+    def trading():
+        return render_template("trading.html", title="Paper Trading", **trading_context(root_path()))
 
     @app.route("/model-validation")
     def model_validation():

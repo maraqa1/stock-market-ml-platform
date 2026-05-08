@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="meta-strip">Data source: {{ data_source }}</section>
+{% if dry_run %}
+  <section class="warning">Alpaca paper trading is in dry-run mode. Planned orders are recorded, but no orders are submitted.</section>
+{% else %}
+  <section class="warning critical">Alpaca order submission is enabled. Review guardrails, account status, and open positions before running the trader.</section>
+{% endif %}
+<section class="kpi-grid">
+  <article class="kpi"><span>Orders Planned</span><strong>{{ orders_planned|fmt }}</strong></article>
+  <article class="kpi"><span>Orders Submitted</span><strong>{{ orders_submitted|fmt }}</strong></article>
+  <article class="kpi"><span>Rejected / Error</span><strong>{{ orders_rejected|fmt }}</strong></article>
+  <article class="kpi"><span>Basket Notional</span><strong>{{ total_notional|fmt }}</strong></article>
+</section>
+<section class="grid-2">
+  <article class="panel">
+    <h2>Execution Guardrails</h2>
+    <div class="guardrail-grid">
+      {% for guardrail in guardrails %}
+        <div class="guardrail {{ guardrail.status }}">
+          <span>{{ guardrail.label }}</span>
+          <strong>{{ guardrail.value|fmt }}</strong>
+        </div>
+      {% endfor %}
+    </div>
+  </article>
+  <article class="panel">
+    <h2>Run Summary</h2>
+    <div class="summary-list">
+      <div><span>Side mix</span><strong>{{ side_counts }}</strong></div>
+      <div><span>Result status</span><strong>{{ status_counts }}</strong></div>
+      <div><span>Order source</span><strong>Latest model signal table</strong></div>
+    </div>
+  </article>
+</section>
+<section class="panel">
+  <h2>Latest Order Plan</h2>
+  {% if not plan_rows %}
+    <div class="empty small">No Alpaca order plan exists yet. Run <code>scripts/run_alpaca_paper_trader.py</code> to create a dry-run plan.</div>
+  {% else %}
+    {{ table(plan_rows, plan_columns) }}
+  {% endif %}
+</section>
+<section class="panel">
+  <h2>Latest Order Results</h2>
+  {{ table(result_rows, result_columns) }}
+</section>
+{% endblock %}

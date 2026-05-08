@@ -20,7 +20,7 @@ Routes:
 - `/data-quality`
 - `/gold`
 - `/signals`
+- `/trading`
 - `/model-validation`
 - `/no-decision`
 - `/stock/<ticker>`
-

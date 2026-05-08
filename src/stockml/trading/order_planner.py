@@ -53,15 +53,45 @@ def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig) -> pd.
     frame = frame[frame["trade_action"].apply(_valid_action)]
     frame["side_probability"] = pd.to_numeric(frame["side_probability"], errors="coerce")
     frame["probability_edge"] = pd.to_numeric(frame["probability_edge"], errors="coerce")
+    frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
     frame["risk_adjusted_score"] = pd.to_numeric(frame.get("risk_adjusted_score", 0), errors="coerce").fillna(0)
     frame = frame[
         frame["side_probability"].ge(config.min_side_probability)
         & frame["probability_edge"].abs().ge(config.min_abs_probability_edge)
+        & frame["close"].ge(config.min_trade_price)
     ]
     if frame.empty:
         return frame
     frame["_sort_score"] = frame["risk_adjusted_score"].abs()
-    return frame.sort_values("_sort_score", ascending=False).head(config.max_orders).drop(columns=["_sort_score"])
+    frame = frame.sort_values("_sort_score", ascending=False)
+    frame = _limit_sector_concentration(frame, config)
+    max_orders_by_notional = config.max_orders
+    if config.max_notional_per_order > 0:
+        max_orders_by_notional = max(1, int(config.max_total_notional // config.max_notional_per_order))
+    max_orders = min(config.max_orders, max_orders_by_notional)
+    return frame.head(max_orders).drop(columns=["_sort_score"])
+
+
+def _limit_sector_concentration(frame: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
+    if "sector" not in frame.columns or frame.empty:
+        return frame
+    max_fraction = min(max(config.max_sector_fraction, 0.0), 1.0)
+    if max_fraction <= 0:
+        return frame.iloc[0:0]
+    max_per_sector = max(1, int(config.max_orders * max_fraction))
+    selected = []
+    sector_counts: dict[str, int] = {}
+    for _, row in frame.iterrows():
+        sector = str(row.get("sector") or "Unknown")
+        if sector_counts.get(sector, 0) >= max_per_sector:
+            continue
+        selected.append(row)
+        sector_counts[sector] = sector_counts.get(sector, 0) + 1
+        if len(selected) >= config.max_orders:
+            break
+    if not selected:
+        return frame.iloc[0:0]
+    return pd.DataFrame(selected)
 
 
 def build_order_plan(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
@@ -79,7 +109,8 @@ def build_order_plan(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFram
                 "probability_edge": row.get("probability_edge"),
                 "risk_adjusted_score": row.get("risk_adjusted_score"),
                 "signal_reason": row.get("signal_reason", ""),
+                "sector": row.get("sector", ""),
+                "close": row.get("close", ""),
             }
         )
     return pd.DataFrame(rows)
-

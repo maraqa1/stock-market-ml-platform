@@ -13,6 +13,9 @@ def config(**overrides):
         "extended_hours": False,
         "max_orders": 2,
         "max_notional_per_order": 500.0,
+        "max_total_notional": 1000.0,
+        "min_trade_price": 5.0,
+        "max_sector_fraction": 1.0,
         "min_side_probability": 0.55,
         "min_abs_probability_edge": 0.05,
     }
@@ -48,3 +51,27 @@ def test_build_order_plan_uses_notional_paper_orders():
 def test_build_order_plan_returns_empty_when_required_columns_missing():
     plan = build_order_plan(pd.DataFrame([{"ticker": "AAA"}]), config())
     assert plan.empty
+
+
+def test_order_plan_applies_price_and_total_notional_guards():
+    signals = pd.DataFrame(
+        [
+            {"ticker": "AAA", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 2, "risk_adjusted_score": 0.9},
+            {"ticker": "BBB", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 20, "risk_adjusted_score": 0.8},
+            {"ticker": "CCC", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 30, "risk_adjusted_score": 0.7},
+        ]
+    )
+    plan = build_order_plan(signals, config(max_orders=3, max_notional_per_order=500.0, max_total_notional=500.0))
+    assert list(plan["symbol"]) == ["BBB"]
+
+
+def test_order_plan_limits_sector_concentration_when_sector_is_available():
+    signals = pd.DataFrame(
+        [
+            {"ticker": "AAA", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 20, "risk_adjusted_score": 0.9, "sector": "Technology"},
+            {"ticker": "BBB", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 20, "risk_adjusted_score": 0.8, "sector": "Technology"},
+            {"ticker": "CCC", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 20, "risk_adjusted_score": 0.7, "sector": "Healthcare"},
+        ]
+    )
+    plan = build_order_plan(signals, config(max_orders=3, max_sector_fraction=0.34))
+    assert list(plan["symbol"]) == ["AAA", "CCC"]

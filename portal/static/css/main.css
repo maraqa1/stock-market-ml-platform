@@ -151,6 +151,12 @@ h2 { font-size: 17px; margin-bottom: 14px; }
   border-color: #f0d58a;
 }
 
+.warning.critical {
+  color: #842029;
+  background: #fff0f0;
+  border-color: #f2b7bd;
+}
+
 .empty {
   padding: 24px;
   margin-bottom: 18px;
@@ -175,6 +181,51 @@ h2 { font-size: 17px; margin-bottom: 14px; }
   background: #fff;
   color: var(--muted);
   font-size: 13px;
+}
+
+.guardrail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.guardrail {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.guardrail span, .summary-list span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.guardrail strong, .summary-list strong {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.guardrail.warning {
+  margin: 0;
+  color: #6d4800;
+  background: #fff7df;
+}
+
+.summary-list {
+  display: grid;
+  gap: 12px;
+}
+
+.summary-list div {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
 }
 
 .ticker-link {

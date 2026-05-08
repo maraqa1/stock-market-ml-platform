@@ -15,6 +15,9 @@ class AlpacaConfig:
     extended_hours: bool
     max_orders: int
     max_notional_per_order: float
+    max_total_notional: float
+    min_trade_price: float
+    max_sector_fraction: float
     min_side_probability: float
     min_abs_probability_edge: float
 
@@ -36,7 +39,9 @@ def alpaca_config() -> AlpacaConfig:
         extended_hours=_bool_env("STOCKML_ALPACA_EXTENDED_HOURS", default=False),
         max_orders=int(os.environ.get("STOCKML_ALPACA_MAX_ORDERS", "10")),
         max_notional_per_order=float(os.environ.get("STOCKML_ALPACA_MAX_NOTIONAL_PER_ORDER", "1000")),
+        max_total_notional=float(os.environ.get("STOCKML_ALPACA_MAX_TOTAL_NOTIONAL", "10000")),
+        min_trade_price=float(os.environ.get("STOCKML_ALPACA_MIN_TRADE_PRICE", "5")),
+        max_sector_fraction=float(os.environ.get("STOCKML_ALPACA_MAX_SECTOR_FRACTION", "0.4")),
         min_side_probability=float(os.environ.get("STOCKML_ALPACA_MIN_SIDE_PROBABILITY", "0.55")),
         min_abs_probability_edge=float(os.environ.get("STOCKML_ALPACA_MIN_ABS_PROBABILITY_EDGE", "0.05")),
     )
-
