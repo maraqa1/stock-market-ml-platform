@@ -53,17 +53,31 @@ nav {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 14px;
 }
 
 nav a {
-  padding: 9px 11px;
+  padding: 7px 9px;
   border-radius: 6px;
   color: #d9e2f1;
   font-size: 14px;
 }
 
 nav a:hover { background: #202b3f; color: #fff; }
+
+.nav-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-group span {
+  padding-right: 3px;
+  color: #8ea0bb;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
 
 .shell {
   max-width: 1360px;
@@ -97,6 +111,25 @@ h2 { font-size: 17px; margin-bottom: 14px; }
   border-radius: 6px;
   background: #fff;
   color: var(--ink);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.button.primary {
+  border-color: #4338ca;
+  background: #4338ca;
+  color: #fff;
 }
 
 .panel, .kpi, .empty, .warning {
@@ -142,6 +175,16 @@ h2 { font-size: 17px; margin-bottom: 14px; }
   background: #fff;
   color: var(--muted);
   font-size: 13px;
+}
+
+.ticker-link {
+  color: #4338ca;
+  font-weight: 800;
+}
+
+.muted {
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .files {

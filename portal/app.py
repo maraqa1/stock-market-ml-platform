@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, url_for
 from markupsafe import Markup, escape
 
 from portal.services.database_reader import db_available
@@ -62,8 +62,12 @@ def create_app(root: Path | None = None) -> Flask:
                 html.append("<tr>")
                 for col in columns:
                     value = row.get(col, "")
-                    if col in {"trade_action", "decision_grade", "sentiment_status"}:
-                        html.append(f'<td><span class="badge">{escape(str(value or "Not available"))}</span></td>')
+                    if col == "ticker" and value:
+                        ticker = escape(str(value).upper())
+                        html.append(f'<td><a class="ticker-link" href="{url_for("stock_detail", ticker=ticker)}">{ticker}</a></td>')
+                    elif col in {"trade_action", "decision_grade", "sentiment_status"}:
+                        badge_value = escape(str(value or "Not available"))
+                        html.append(f'<td><span class="badge {badge_value}">{badge_value}</span></td>')
                     else:
                         html.append(f"<td>{escape(str(value if value not in [None, ''] else 'Not available'))}</td>")
                 html.append("</tr>")

@@ -1,10 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
+<section class="decision-hero">
+  <div>
+    <span class="badge {{ model_status.decision_grade }}">{{ model_status.decision_grade|reason }}</span>
+    <h2>Today's Prediction Gate</h2>
+    <p>{{ model_status.gate_reason }}</p>
+  </div>
+  <div class="hero-actions">
+    <a class="button primary" href="/signals">Review Signals</a>
+    <a class="button" href="/model-validation">Model Validation</a>
+  </div>
+</section>
 <section class="kpi-grid">
   {% for kpi in kpis %}
     <article class="kpi"><span>{{ kpi.label }}</span><strong>{{ kpi.value|fmt }}</strong></article>
   {% endfor %}
 </section>
+<section class="grid-2">
 <section class="panel">
   <h2>Model Status</h2>
   <div class="status-row">
@@ -15,5 +27,14 @@
     <div class="warning">Model is diagnostic only. Signals are suppressed.</div>
   {% endif %}
 </section>
+<section class="panel">
+  <h2>Signal Availability</h2>
+  <p class="muted">Long and Short counts reflect rows that passed the current display and decision gates. No Decision remains the default when evidence is weak.</p>
+  <div class="status-row">
+    <span class="badge Long">Long {{ model_status.all_long_count|fmt }}</span>
+    <span class="badge Short">Short {{ model_status.all_short_count|fmt }}</span>
+    <span class="badge">No Decision {{ model_status.all_no_decision_count|fmt }}</span>
+  </div>
+</section>
+</section>
 {% endblock %}
-

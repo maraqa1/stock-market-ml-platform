@@ -9,21 +9,17 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="mark">α</span><span>StockML</span></div>
-    <nav>
-      <a href="/">Dashboard</a>
-      <a href="/universe">Universe</a>
-      <a href="/data-quality">Quality</a>
-      <a href="/gold">Gold</a>
-      <a href="/signals">Signals</a>
-      <a href="/model-validation">Validation</a>
-      <a href="/no-decision">No Decision</a>
+    <div class="brand"><span class="mark">A</span><span>StockML</span></div>
+    <nav class="nav-groups">
+      <div class="nav-group"><span>Predict</span><a href="/">Dashboard</a><a href="/signals">Signals</a><a href="/no-decision">No Decision</a></div>
+      <div class="nav-group"><span>Analyse</span><a href="/model-validation">Validation</a></div>
+      <div class="nav-group"><span>Data</span><a href="/universe">Universe</a><a href="/data-quality">Quality</a><a href="/gold">Gold</a></div>
     </nav>
   </header>
   <main class="shell">
     <section class="page-head">
       <div>
-        <p class="eyebrow">Research portal</p>
+        <p class="eyebrow">Stock intelligence portal</p>
         <h1>{{ title }}</h1>
       </div>
       <a class="health" href="/health">Health</a>
@@ -47,4 +43,3 @@
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
-

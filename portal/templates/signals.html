@@ -13,6 +13,10 @@
   <p>{{ gate_reason }}</p>
   {% if diagnostic_only %}<div class="warning">Model is diagnostic only. Signals are suppressed.</div>{% endif %}
 </section>
+<section class="panel intro">
+  <h2>Decision Logic</h2>
+  <p>Signals are shown only when the model and ranking gates allow them. When evidence is weak, the platform keeps the stock in No Decision instead of forcing a trade call.</p>
+</section>
 {% if not long_rows and not short_rows %}
   <section class="empty">{{ empty_signal_message }}</section>
 {% endif %}
