@@ -9,6 +9,7 @@ WorkingDirectory=/home/massa/stock-market-ml-platform
 Environment=PYTHONPATH=/home/massa/stock-market-ml-platform:/home/massa/stock-market-ml-platform/src
 Environment=STOCKML_PROJECT_ROOT=/home/massa/stock-market-ml-platform
 Environment=PORT=8091
+EnvironmentFile=-/etc/stockml/stockml.env
 ExecStart=/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_portal.py
 Restart=on-failure
 RestartSec=5

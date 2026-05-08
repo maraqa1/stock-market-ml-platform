@@ -117,10 +117,7 @@ PostgreSQL can be used as the persistent store for generated pipeline outputs wh
 Fresh VM PostgreSQL bootstrap:
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y postgresql postgresql-contrib
-sudo -u postgres psql -c "CREATE USER stockml WITH PASSWORD 'stockml';"
-sudo -u postgres psql -c "CREATE DATABASE stockml OWNER stockml;"
+bash deployment/vm/install_database.sh
 ```
 
 Set a connection string:
@@ -155,4 +152,11 @@ STOCKML_PROFILE=nasdaq_500 STOCKML_WRITE_DATABASE=1 bash deployment/vm/install_f
 ```
 
 The database loader stores normalized tables for universe, price history, metadata, sentiment, model artifacts, and wide JSON-backed panel rows for feature and Gold datasets. The portal still reads CSV outputs in this iteration; the database is the persistence layer for scale and later API/portal query work.
+
+Reboot persistence:
+
+- PostgreSQL is enabled as a system service and stores data in the VM's PostgreSQL data directory.
+- Portal and nightly pipeline services are enabled through systemd.
+- Runtime configuration is stored in `/etc/stockml/stockml.env`, including `DATABASE_URL`, `STOCKML_PROFILE`, `STOCKML_WRITE_DATABASE`, and `PORT`.
+- Re-running the install scripts updates services without deleting generated CSV files or PostgreSQL data.
 

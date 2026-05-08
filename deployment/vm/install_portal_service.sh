@@ -5,6 +5,19 @@ REPO_DIR="${REPO_DIR:-/home/massa/stock-market-ml-platform}"
 PYTHON_BIN="${PYTHON_BIN:-/opt/jupyter-env/bin/python3}"
 SERVICE="stockml-portal.service"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8091/health}"
+ENV_DIR="/etc/stockml"
+ENV_FILE="$ENV_DIR/stockml.env"
+
+escape_env_value() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+existing_env_value() {
+  local key="$1"
+  if sudo test -f "$ENV_FILE"; then
+    sudo awk -F= -v key="$key" '$1 == key {value=substr($0, index($0, "=") + 1); gsub(/^"/, "", value); gsub(/"$/, "", value); print value}' "$ENV_FILE" | tail -n 1
+  fi
+}
 
 if [[ ! -d "$REPO_DIR" ]]; then
   echo "Repo directory not found: $REPO_DIR" >&2
@@ -26,6 +39,26 @@ echo "Compiling portal entrypoints"
 PYTHONPATH="$REPO_DIR:$REPO_DIR/src" "$PYTHON_BIN" -m py_compile \
   "$REPO_DIR/portal/app.py" \
   "$REPO_DIR/scripts/run_portal.py"
+
+EXISTING_DATABASE_URL="$(existing_env_value DATABASE_URL || true)"
+STOCKML_PROFILE="${STOCKML_PROFILE:-$(existing_env_value STOCKML_PROFILE || true)}"
+STOCKML_WRITE_DATABASE="${STOCKML_WRITE_DATABASE:-$(existing_env_value STOCKML_WRITE_DATABASE || true)}"
+PORT="${PORT:-8091}"
+
+tmp_env="$(mktemp)"
+{
+  printf 'PYTHONPATH="%s"\n' "$(escape_env_value "$REPO_DIR:$REPO_DIR/src")"
+  printf 'STOCKML_PROJECT_ROOT="%s"\n' "$(escape_env_value "$REPO_DIR")"
+  printf 'STOCKML_PROFILE="%s"\n' "$(escape_env_value "${STOCKML_PROFILE:-nasdaq_500}")"
+  printf 'STOCKML_WRITE_DATABASE="%s"\n' "$(escape_env_value "${STOCKML_WRITE_DATABASE:-0}")"
+  printf 'PORT="%s"\n' "$(escape_env_value "$PORT")"
+  if [[ -n "${DATABASE_URL:-$EXISTING_DATABASE_URL}" ]]; then
+    printf 'DATABASE_URL="%s"\n' "$(escape_env_value "${DATABASE_URL:-$EXISTING_DATABASE_URL}")"
+  fi
+} > "$tmp_env"
+sudo install -d -m 0750 "$ENV_DIR"
+sudo install -m 0640 -o root -g root "$tmp_env" "$ENV_FILE"
+rm -f "$tmp_env"
 
 echo "Installing systemd service"
 sudo cp "$REPO_DIR/deployment/systemd/$SERVICE" /etc/systemd/system/

@@ -33,6 +33,12 @@ jobs:
         run: |
           python -m compileall builders scripts src portal tests
 
+      - name: Check deployment shell scripts
+        run: |
+          bash -n deployment/vm/install_database.sh
+          bash -n deployment/vm/install_full_scheduler.sh
+          bash -n deployment/vm/install_portal_service.sh
+
       - name: Run tests
         env:
           PYTHONPATH: src

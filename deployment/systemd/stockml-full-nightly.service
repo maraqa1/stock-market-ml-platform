@@ -1,7 +1,7 @@
 [Unit]
 Description=StockML full nightly research pipeline
-Wants=network-online.target
-After=network-online.target
+Wants=network-online.target postgresql.service
+After=network-online.target postgresql.service
 
 [Service]
 Type=oneshot
@@ -9,5 +9,5 @@ WorkingDirectory=/home/massa/stock-market-ml-platform
 Environment=PYTHONPATH=/home/massa/stock-market-ml-platform/src
 Environment=STOCKML_PROFILE=nasdaq_500
 Environment=STOCKML_WRITE_DATABASE=0
-PassEnvironment=DATABASE_URL
+EnvironmentFile=-/etc/stockml/stockml.env
 ExecStart=/bin/bash -lc '/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_profile_pipeline.py --profile "${STOCKML_PROFILE}" $([[ "${STOCKML_WRITE_DATABASE}" == "1" ]] && echo "--write-database")'
