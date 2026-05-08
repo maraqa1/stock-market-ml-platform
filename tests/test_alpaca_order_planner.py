@@ -27,7 +27,7 @@ def config(**overrides):
     return AlpacaConfig(**values)
 
 
-def test_filter_tradeable_signals_keeps_only_gated_long_short():
+def test_filter_tradeable_signals_keeps_only_long_entries_by_default():
     signals = pd.DataFrame(
         [
             {"ticker": "AAA", "trade_action": "Long", "side_probability": 0.7, "probability_edge": 0.2, "close": 10, "risk_adjusted_score": 0.5},
@@ -37,7 +37,41 @@ def test_filter_tradeable_signals_keeps_only_gated_long_short():
         ]
     )
     filtered = filter_tradeable_signals(signals, config(max_orders=10))
-    assert set(filtered["ticker"]) == {"AAA", "BBB", "CCC", "DDD"}
+    assert set(filtered["ticker"]) == {"AAA", "DDD"}
+
+
+def test_filter_tradeable_signals_allows_short_when_enabled():
+    signals = pd.DataFrame(
+        [
+            {"ticker": "AAA", "trade_action": "Long", "side_probability": 0.7, "probability_edge": 0.2, "risk_adjusted_score": 0.5},
+            {"ticker": "BBB", "trade_action": "Short", "side_probability": 0.8, "probability_edge": -0.3, "risk_adjusted_score": -0.7},
+            {"ticker": "CCC", "trade_action": "No Decision", "side_probability": 0.9, "probability_edge": 0.4, "risk_adjusted_score": 0.9},
+        ]
+    )
+    filtered = filter_tradeable_signals(signals, config(max_orders=10, allow_short_selling=True))
+    assert set(filtered["ticker"]) == {"AAA", "BBB"}
+
+
+def test_filter_tradeable_signals_excludes_diagnostic_only_rows():
+    signals = pd.DataFrame(
+        [
+            {"ticker": "AAA", "trade_action": "Long", "model_status": "decision_grade", "side_probability": 0.7, "probability_edge": 0.2, "risk_adjusted_score": 0.5},
+            {"ticker": "BBB", "trade_action": "Long", "model_status": "diagnostic_only", "side_probability": 0.8, "probability_edge": 0.3, "risk_adjusted_score": 0.7},
+        ]
+    )
+    filtered = filter_tradeable_signals(signals, config(max_orders=10))
+    assert list(filtered["ticker"]) == ["AAA"]
+
+
+def test_build_order_plan_ignores_no_decision_rows_even_when_high_ranked():
+    signals = pd.DataFrame(
+        [
+            {"ticker": "NOPE", "trade_action": "No Decision", "side_probability": 0.99, "probability_edge": 0.49, "expected_trade_return": 0.1, "close": 50, "open": 50, "high": 51, "low": 49, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 9.0},
+            {"ticker": "YES", "date": "2026-05-08", "trade_action": "Long", "side_probability": 0.7, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 10, "open": 9.8, "high": 10.2, "low": 9.7, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.5},
+        ]
+    )
+    plan = build_order_plan(signals, config(max_orders=10))
+    assert list(plan["symbol"]) == ["YES"]
 
 
 def test_build_order_plan_uses_notional_paper_orders():

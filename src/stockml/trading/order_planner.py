@@ -55,6 +55,19 @@ def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig) -> pd.
     if signals.empty or not REQUIRED_SIGNAL_COLUMNS.issubset(signals.columns):
         return pd.DataFrame()
     frame = signals.copy()
+    actions = frame["trade_action"].astype(str).str.strip().str.lower()
+    allowed_actions = {"long"}
+    if config.allow_short_selling:
+        allowed_actions.add("short")
+    frame = frame[actions.isin(allowed_actions)].copy()
+    if "model_status" in frame.columns:
+        frame = frame[frame["model_status"].astype(str).str.strip().str.lower().ne("diagnostic_only")].copy()
+    if "decision_grade" in frame.columns:
+        frame = frame[frame["decision_grade"].astype(str).str.strip().str.lower().ne("diagnostic_only")].copy()
+    if "diagnostic_only" in frame.columns:
+        frame = frame[~frame["diagnostic_only"].astype(str).str.strip().str.lower().isin({"true", "1", "yes"})].copy()
+    if frame.empty:
+        return pd.DataFrame()
     frame["side_probability"] = _numeric_column(frame, "side_probability")
     frame["probability_edge"] = _numeric_column(frame, "probability_edge")
     if "close" in frame.columns:

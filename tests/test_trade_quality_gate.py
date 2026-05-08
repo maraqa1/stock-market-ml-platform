@@ -93,16 +93,14 @@ def test_missing_price_rejects():
     assert "current_price_missing" in row["trade_quality_reason"]
 
 
-def test_no_decision_creates_rejected_order_plan_row():
+def test_no_decision_creates_no_entry_order_plan_rows():
     plan = build_order_plan(pd.DataFrame([signal(trade_action="No Decision", no_decision_reason="weak_probability")]), config())
-    assert plan.iloc[0]["trade_quality_status"] == "rejected"
-    assert "not_long_or_short" in plan.iloc[0]["trade_quality_reason"]
+    assert plan.empty
 
 
-def test_diagnostic_only_creates_rejected_order_plan_row():
+def test_diagnostic_only_creates_no_entry_order_plan_rows():
     plan = build_order_plan(pd.DataFrame([signal(diagnostic_only=True)]), config())
-    assert plan.iloc[0]["trade_quality_status"] == "rejected"
-    assert "model_not_decision_grade" in plan.iloc[0]["trade_quality_reason"]
+    assert plan.empty
 
 
 def test_shorting_disabled_rejects_short():
