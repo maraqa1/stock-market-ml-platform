@@ -4,6 +4,7 @@ from stockml.sentiment.build_sentiment_panel import aggregate_articles
 from stockml.sentiment.build_sentiment_panel import _combine_provider_panels
 from stockml.sentiment.cnbc_news_provider import _matches_ticker
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
+from stockml.sentiment.yahoo_news_provider import _normalize_article
 
 
 def test_sentiment_schema_from_synthetic_articles():
@@ -15,6 +16,24 @@ def test_sentiment_schema_from_synthetic_articles():
     assert list(panel.columns) == SENTIMENT_COLUMNS
     assert panel.loc[0, "article_count"] == 1
     assert panel.loc[0, "sentiment_positive_count"] == 1
+
+
+def test_yahoo_nested_article_shape_is_normalized_and_scored():
+    article = _normalize_article(
+        {
+            "content": {
+                "title": "FLEX shares rally after strong profit outlook",
+                "summary": "Analysts upgrade the company.",
+                "pubDate": "2026-05-08T12:30:00Z",
+                "provider": {"displayName": "Yahoo Finance"},
+                "canonicalUrl": {"url": "https://finance.yahoo.com/news/example"},
+            }
+        }
+    )
+    panel = aggregate_articles("FLEX", [article], "yahoo")
+    assert panel.loc[0, "article_count"] == 1
+    assert panel.loc[0, "sentiment_status"] == "ok"
+    assert panel.loc[0, "sentiment_score_mean"] > 0
 
 
 def test_cnbc_ticker_matching_is_exact_token():

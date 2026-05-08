@@ -29,13 +29,20 @@ def _article_date(article: Dict[str, object]) -> Optional[pd.Timestamp]:
     if raw is None:
         return None
     try:
-        return pd.to_datetime(datetime.fromtimestamp(int(raw), tz=timezone.utc).date())
+        if isinstance(raw, (int, float)) or str(raw).strip().isdigit():
+            return pd.to_datetime(datetime.fromtimestamp(int(raw), tz=timezone.utc).date())
+        parsed = pd.to_datetime(raw, errors="coerce", utc=True)
+        if pd.isna(parsed):
+            return None
+        return pd.to_datetime(parsed.date())
     except Exception:
         return None
 
 
 def _article_text(article: Dict[str, object]) -> str:
-    return " ".join(str(article.get(key, "") or "") for key in ["title", "summary", "publisher"])
+    content = article.get("content") if isinstance(article.get("content"), dict) else {}
+    nested = " ".join(str(content.get(key, "") or "") for key in ["title", "summary", "description"])
+    return " ".join(str(article.get(key, "") or "") for key in ["title", "summary", "publisher"]) + " " + nested
 
 
 def aggregate_articles(ticker: str, articles: List[Dict[str, object]], source: str) -> pd.DataFrame:
@@ -93,11 +100,14 @@ def build_sentiment_panel_for_tickers(tickers: Iterable[str], limit: Optional[in
     for ticker in clean_tickers:
         ticker_panels = []
         errors = []
+        provider_counts = {}
         for provider in providers:
             try:
                 articles = provider.fetch_articles(ticker)
+                provider_counts[provider.source_name] = len(articles)
                 ticker_panels.append(aggregate_articles(ticker, articles, provider.source_name))
             except Exception as exc:
+                provider_counts[provider.source_name] = 0
                 errors.append(f"{provider.source_name}: {str(exc)[:250]}")
 
         panel = _combine_provider_panels(ticker, ticker_panels, errors)
@@ -105,7 +115,14 @@ def build_sentiment_panel_for_tickers(tickers: Iterable[str], limit: Optional[in
         if errors and status == "no_articles":
             status = "provider_error"
         panels.append(panel)
-        quality_rows.append({"ticker": ticker, "sentiment_status": status, "sentiment_error": " | ".join(errors)})
+        quality_rows.append(
+            {
+                "ticker": ticker,
+                "sentiment_status": status,
+                "sentiment_error": " | ".join(errors),
+                "provider_article_counts": "|".join(f"{key}:{value}" for key, value in provider_counts.items()),
+            }
+        )
 
     return {
         "panel": pd.concat(panels, ignore_index=True) if panels else pd.DataFrame(columns=SENTIMENT_COLUMNS),
