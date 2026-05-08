@@ -98,7 +98,8 @@ def trading_context(root: Path) -> dict:
         "plan_columns": [
             "symbol", "trade_quality_status", "trade_quality_reason", "side", "notional", "approved_notional",
             "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "risk_tier",
-            "volatility_tier", "liquidity_tier", "side_probability", "probability_edge", "risk_adjusted_score",
+            "volatility_tier", "liquidity_tier", "confidence_score", "side_probability", "probability_edge",
+            "risk_adjusted_score", "no_decision_reason",
         ],
         "result_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "message"],
         "tracking_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "updated_at", "message"],

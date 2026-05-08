@@ -13,6 +13,14 @@ from stockml.trading.stop_take_profit import stop_take_profit_prices
 
 
 PRICE_COLUMNS = ["date", "ticker", "open", "high", "low", "close", "adj_close", "volume"]
+SOURCE_MARKET_COLUMNS = ["close", "open", "high", "low", "volume"]
+QUALITY_MARKET_COLUMNS = ["current_price", "open_price", "intraday_high", "intraday_low", "intraday_volume"]
+
+
+def _has_inline_market_context(signals: pd.DataFrame) -> bool:
+    source_columns_present = all(column in signals.columns for column in SOURCE_MARKET_COLUMNS)
+    quality_columns_present = all(column in signals.columns for column in QUALITY_MARKET_COLUMNS)
+    return source_columns_present or quality_columns_present
 
 
 def latest_price_snapshot(tickers: list[str], price_file: Optional[Path] = None) -> pd.DataFrame:
@@ -95,7 +103,7 @@ def apply_trade_quality_gate(
     if signals.empty or "ticker" not in signals.columns:
         return pd.DataFrame()
     tickers = signals["ticker"].astype(str).str.upper().dropna().unique().tolist()
-    if price_snapshot is None:
+    if price_snapshot is None and not _has_inline_market_context(signals):
         price_snapshot = latest_price_snapshot(tickers)
     if metadata is None:
         metadata = latest_metadata_snapshot()
