@@ -311,6 +311,56 @@ h2 { font-size: 17px; margin-bottom: 14px; color: #4d5667; }
   font-weight: 800;
 }
 
+.toolbar-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.toolbar-strip .meta-strip {
+  margin: 0;
+}
+
+.toolbar-strip form {
+  margin: 0;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--blue);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button-link.primary {
+  border-color: #3f5f98;
+  background: #3f5f98;
+  color: #fff;
+}
+
+.kpi.pnl-positive strong {
+  color: #2d7a48;
+}
+
+.kpi.pnl-negative strong {
+  color: #a53b31;
+}
+
+.kpi.pnl-flat strong {
+  color: var(--text);
+}
+
 .guardrail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

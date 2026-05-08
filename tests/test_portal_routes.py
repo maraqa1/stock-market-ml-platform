@@ -24,6 +24,20 @@ def test_health_returns_json(client):
     assert "latest_gold_file" in payload
 
 
+def test_trading_refresh_redirects(client, monkeypatch):
+    called = {}
+
+    def fake_refresh(root):
+        called["root"] = root
+        return {"orders_tracked": 0}
+
+    monkeypatch.setattr("portal.app.refresh_trading_artifacts", fake_refresh)
+    response = client.post("/trading/refresh")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/trading")
+    assert "root" in called
+
+
 def test_stock_detail_missing_ticker_returns_200(client):
     response = client.get("/stock/AAPL")
     assert response.status_code == 200

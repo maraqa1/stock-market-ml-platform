@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="meta-strip">Data source: {{ data_source }}</section>
-<section class="meta-strip"><a class="ticker-link" href="/trading/lifecycle">Open trade lifecycle journal</a></section>
+<section class="toolbar-strip">
+  <span class="meta-strip">Data source: {{ data_source }}</span>
+  <a class="button-link" href="/trading/lifecycle">Open lifecycle journal</a>
+  <form method="post" action="/trading/refresh">
+    <button class="button-link primary" type="submit">Refresh Alpaca Status</button>
+  </form>
+</section>
 {% if dry_run %}
   <section class="warning">Alpaca paper trading is in dry-run mode. Planned orders are recorded, but no orders are submitted.</section>
 {% else %}
@@ -15,6 +20,10 @@
   <article class="kpi"><span>Tracked Orders</span><strong>{{ orders_tracked|fmt }}</strong></article>
   <article class="kpi"><span>Open Orders</span><strong>{{ open_orders|fmt }}</strong></article>
   <article class="kpi"><span>Filled Orders</span><strong>{{ filled_orders|fmt }}</strong></article>
+  <article class="kpi"><span>Position Value</span><strong>{{ position_market_value|fmt }}</strong></article>
+  <article class="kpi"><span>Cost Basis</span><strong>{{ position_cost_basis|fmt }}</strong></article>
+  <article class="kpi pnl-{{ position_pnl_class }}"><span>Total Gain / Loss</span><strong>{{ position_unrealized_pl|fmt }}</strong></article>
+  <article class="kpi pnl-{{ position_pnl_class }}"><span>Total Return</span><strong>{{ position_unrealized_plpc|fmt }}</strong></article>
 </section>
 <section class="grid-2">
   <article class="panel">

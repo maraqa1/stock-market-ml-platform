@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, url_for
+from flask import Flask, jsonify, redirect, render_template, url_for
 from markupsafe import Markup, escape
 
 from portal.services.database_reader import db_available
@@ -14,7 +14,7 @@ from portal.services.latest_file_reader import count_rows, file_status, latest_f
 from portal.services.model_validation_service import model_validation_context
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.stock_detail_service import stock_detail_context
-from portal.services.trading_service import lifecycle_context, trading_context
+from portal.services.trading_service import lifecycle_context, refresh_trading_artifacts, trading_context
 from portal.services.universe_service import universe_context
 
 
@@ -146,6 +146,11 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/trading")
     def trading():
         return render_template("trading.html", title="Paper Trading", **trading_context(root_path()))
+
+    @app.route("/trading/refresh", methods=["POST"])
+    def trading_refresh():
+        refresh_trading_artifacts(root_path())
+        return redirect(url_for("trading"))
 
     @app.route("/trading/lifecycle")
     def trading_lifecycle():

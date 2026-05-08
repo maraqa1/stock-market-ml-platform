@@ -7,6 +7,9 @@ import pandas as pd
 from portal.services.latest_file_reader import file_status, latest_file, safe_read_csv
 from stockml.decisions.reason_formatter import format_reasons
 from stockml.trading.config import alpaca_config
+from stockml.trading.paper_trader import refresh_order_tracking
+from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
+from stockml.trading.trade_journal import build_trade_journal, write_trade_journal
 
 
 def _records(frame, limit: int = 50) -> list[dict]:
@@ -63,6 +66,41 @@ def _sum_column(frame: pd.DataFrame, column: str) -> float:
     return float(pd.to_numeric(frame[column], errors="coerce").fillna(0).sum())
 
 
+def _position_summary(positions: pd.DataFrame) -> dict[str, float | int]:
+    market_value = _sum_column(positions, "market_value")
+    cost_basis = _sum_column(positions, "cost_basis")
+    unrealized_pl = _sum_column(positions, "unrealized_pl")
+    unrealized_plpc = unrealized_pl / cost_basis if cost_basis else 0.0
+    return {
+        "position_count": int(len(positions)),
+        "position_market_value": market_value,
+        "position_cost_basis": cost_basis,
+        "position_unrealized_pl": unrealized_pl,
+        "position_unrealized_plpc": unrealized_plpc,
+        "position_pnl_class": "positive" if unrealized_pl > 0 else "negative" if unrealized_pl < 0 else "flat",
+    }
+
+
+def refresh_trading_artifacts(root: Path) -> dict[str, str | int]:
+    refreshed = refresh_order_tracking()
+    plan_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
+    result_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_results_*.csv")
+    plan = safe_read_csv(plan_file, nrows=1000)
+    results = safe_read_csv(result_file, nrows=1000)
+    positions = safe_read_csv(Path(refreshed["positions_path"]), nrows=1000)
+    journal = build_trade_journal(plan, results)
+    pnl = position_pnl_summary(positions)
+    journal_path = write_trade_journal(journal)
+    pnl_path = write_pnl_summary(pnl)
+    return {
+        "orders_tracked": int(refreshed["orders_tracked"]),
+        "tracking_path": str(refreshed["tracking_path"]),
+        "positions_path": str(refreshed["positions_path"]),
+        "journal_path": str(journal_path),
+        "pnl_path": str(pnl_path),
+    }
+
+
 def lifecycle_context(root: Path) -> dict:
     journal_file = latest_file(root, "paper_trade_journal", "paper_trade_journal_*.csv")
     pnl_file = latest_file(root, "paper_pnl", "paper_pnl_*.csv")
@@ -110,6 +148,7 @@ def trading_context(root: Path) -> dict:
     status_counts = _status_counts(results)
     tracking_status_counts = _status_counts(tracking, "alpaca_status")
     dry_run = not config.submit_orders or bool(status_counts.get("dry_run", 0))
+    position_summary = _position_summary(positions)
 
     guardrails = [
         {"label": "Submit orders", "value": "Disabled" if not config.submit_orders else "Enabled", "status": "safe" if not config.submit_orders else "warning"},
@@ -132,6 +171,7 @@ def trading_context(root: Path) -> dict:
         "open_orders": int(tracking_status_counts.get("new", 0) + tracking_status_counts.get("accepted", 0) + tracking_status_counts.get("pending_new", 0)),
         "filled_orders": int(tracking_status_counts.get("filled", 0)),
         "total_notional": _total_notional(plan),
+        **position_summary,
         "side_counts": _side_counts(plan),
         "status_counts": status_counts,
         "tracking_status_counts": tracking_status_counts,
