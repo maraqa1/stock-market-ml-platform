@@ -1,0 +1,17 @@
+[Unit]
+Description=StockML Flask portal
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/massa/stock-market-ml-platform
+Environment=PYTHONPATH=/home/massa/stock-market-ml-platform/src
+Environment=PORT=8091
+ExecStart=/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_portal.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

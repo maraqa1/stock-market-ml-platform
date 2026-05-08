@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="kpi-grid">
+  <article class="kpi"><span>Raw universe</span><strong>{{ raw_count|fmt }}</strong></article>
+  <article class="kpi"><span>Tradable universe</span><strong>{{ tradable_count|fmt }}</strong></article>
+</section>
+{% include "_list_panel.html" with context %}
+<section class="grid-2">
+  <article class="panel"><h2>Raw By Exchange</h2>{{ table(raw_by_exchange) }}</article>
+  <article class="panel"><h2>Tradable By Exchange</h2>{{ table(tradable_by_exchange) }}</article>
+</section>
+<section class="panel"><h2>Excluded Instruments</h2>{{ table(excluded_summary) }}</section>
+<section class="panel"><h2>Sample Tickers</h2>{{ table(sample_tickers) }}</section>
+{% endblock %}
+

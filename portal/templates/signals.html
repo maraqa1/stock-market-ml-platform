@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Model Status</h2>
+  <span class="badge {{ decision_grade }}">{{ decision_grade|reason }}</span>
+  <p>{{ gate_reason }}</p>
+  {% if diagnostic_only %}<div class="warning">Model is diagnostic only. Signals are suppressed.</div>{% endif %}
+</section>
+{% if not long_rows and not short_rows %}
+  <section class="empty">{{ empty_signal_message }}</section>
+{% endif %}
+<section class="grid-2">
+  <article class="panel"><h2>Top Long Signals</h2>{{ table(long_rows) }}</article>
+  <article class="panel"><h2>Top Short Signals</h2>{{ table(short_rows) }}</article>
+</section>
+<section class="panel"><h2>No Decision Sample</h2>{{ table(no_decision_rows) }}</section>
+{% endblock %}
+

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel"><h2>Status</h2>{{ table([status]) }}</section>
+<section class="grid-2">
+  <article class="panel"><h2>Validation Leaderboard</h2>{{ table(leaderboard) }}</article>
+  <article class="panel"><h2>Confidence Buckets</h2>{{ table(buckets) }}</article>
+</section>
+<section class="panel"><h2>Feature Importance</h2>{{ table(importance) }}</section>
+{% endblock %}
+

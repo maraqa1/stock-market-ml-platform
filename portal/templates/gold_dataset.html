@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="kpi-grid">
+  <article class="kpi"><span>Rows</span><strong>{{ row_count|fmt }}</strong></article>
+  <article class="kpi"><span>Tickers</span><strong>{{ ticker_count }}</strong></article>
+  <article class="kpi"><span>Start</span><strong>{{ date_min or "Empty" }}</strong></article>
+  <article class="kpi"><span>End</span><strong>{{ date_max or "Empty" }}</strong></article>
+</section>
+{% if sentiment_warning %}<div class="warning">{{ sentiment_warning }}</div>{% endif %}
+<section class="grid-2">
+  <article class="panel"><h2>Feature Group Coverage</h2>{{ table(feature_group_coverage) }}</article>
+  <article class="panel"><h2>Sector Coverage</h2>{{ table(sector_coverage) }}</article>
+</section>
+<section class="panel"><h2>Gold Preview</h2>{{ table(sample_rows) }}</section>
+{% endblock %}
+

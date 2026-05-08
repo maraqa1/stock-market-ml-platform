@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
-import yfinance as yf
 
 from stockml.common.logging_utils import log
 from stockml.common.paths import INTERIM_DIR, RAW_DIR, ensure_data_dirs, latest_file, timestamp
@@ -181,6 +180,8 @@ def download_group(tickers: List[str], start: str, batch_size: int, sleep_second
         log(f"Downloading batch {batch_no}/{len(batches)} start={start} tickers={len(batch)}")
 
         try:
+            import yfinance as yf
+
             data = yf.download(
                 tickers=batch,
                 start=start,

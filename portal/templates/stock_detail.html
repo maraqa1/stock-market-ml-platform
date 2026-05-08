@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+{% if not latest %}
+  <section class="empty">No detail rows found for {{ ticker }}.</section>
+{% else %}
+  <section class="kpi-grid">
+    <article class="kpi"><span>Company</span><strong>{{ latest.company or ticker }}</strong></article>
+    <article class="kpi"><span>Sector</span><strong>{{ latest.sector or "Unknown" }}</strong></article>
+    <article class="kpi"><span>Latest close</span><strong>{{ latest.close|fmt }}</strong></article>
+    <article class="kpi"><span>Trade action</span><strong>{{ latest.trade_action or latest.target_trade_label_5d or "No Decision" }}</strong></article>
+  </section>
+  <section class="grid-2">
+    <article class="panel"><h2>Technical Snapshot</h2>{{ table([latest], ["return_5d","return_20d","sma_20","sma_50","rsi_14","macd","volatility_20d"]) }}</article>
+    <article class="panel"><h2>Signal Evidence</h2>{{ table([latest], ["selection_score","candidate_rank_overall","sentiment_score_mean","article_count","reason_readable"]) }}</article>
+  </section>
+  <section class="panel"><h2>Model Probabilities</h2>{{ table([latest], ["calibrated_probability_up_5d","probability_down_5d","probability_neutral_5d","probability_edge","side_probability"]) }}</section>
+{% endif %}
+<section class="panel"><h2>Historical Price Preview</h2>{{ table(price_rows) }}</section>
+{% endblock %}
+

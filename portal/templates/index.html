@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="kpi-grid">
+  {% for kpi in kpis %}
+    <article class="kpi"><span>{{ kpi.label }}</span><strong>{{ kpi.value|fmt }}</strong></article>
+  {% endfor %}
+</section>
+<section class="panel">
+  <h2>Model Status</h2>
+  <div class="status-row">
+    <span class="badge {{ model_status.decision_grade }}">{{ model_status.decision_grade|reason }}</span>
+    <p>{{ model_status.gate_reason }}</p>
+  </div>
+  {% if model_status.diagnostic_only %}
+    <div class="warning">Model is diagnostic only. Signals are suppressed.</div>
+  {% endif %}
+</section>
+{% endblock %}
+

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | StockML</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">α</span><span>StockML</span></div>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/universe">Universe</a>
+      <a href="/data-quality">Quality</a>
+      <a href="/gold">Gold</a>
+      <a href="/signals">Signals</a>
+      <a href="/model-validation">Validation</a>
+      <a href="/no-decision">No Decision</a>
+    </nav>
+  </header>
+  <main class="shell">
+    <section class="page-head">
+      <div>
+        <p class="eyebrow">Research portal</p>
+        <h1>{{ title }}</h1>
+      </div>
+      <a class="health" href="/health">Health</a>
+    </section>
+    {% block content %}{% endblock %}
+    {% if files %}
+      <footer class="files">
+        <h2>Loaded Files</h2>
+        <div class="file-grid">
+          {% for file in files %}
+            <div class="file-pill {{ 'missing' if not file.exists else '' }}">
+              <strong>{{ file.label }}</strong>
+              <span>{{ file.name }}</span>
+              <small>{{ file.timestamp }}</small>
+            </div>
+          {% endfor %}
+        </div>
+      </footer>
+    {% endif %}
+  </main>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
+

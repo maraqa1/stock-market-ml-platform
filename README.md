@@ -12,3 +12,48 @@ It does not modify:
 All new data is written under:
 - /home/massa/stock-market-ml-platform/data
 
+## Current pipeline
+
+The platform is organized as a ranking-first research stack:
+
+1. US equity universe construction
+2. Yahoo Finance OHLCV price ingestion and validation
+3. Yahoo metadata enrichment
+4. Technical, liquidity, volatility, sector-relative, and market-context feature panel
+5. Pluggable news sentiment panel
+6. Gold ML dataset with ranking targets and candidate-selection scores
+7. Portal-ready CSV outputs for dashboard metrics, signal lists, and sector breakdowns
+
+## Limited validation commands
+
+Use limited runs while developing so the repo does not force a full-market crawl:
+
+```bash
+PYTHONPATH=src python -m pytest -q
+python scripts/run_metadata_pipeline.py --limit 25
+python scripts/run_feature_pipeline.py --limit-tickers 25
+python scripts/run_sentiment_pipeline.py --limit 25
+python scripts/run_gold_pipeline.py --limit-tickers 25
+```
+
+Generated CSV outputs are intentionally ignored by Git and Docker build contexts.
+
+## Portal
+
+The first Flask portal lives under `portal/` and serves the research pipeline outputs on port `8091`, separate from any legacy portal on `8090`.
+
+```bash
+PYTHONPATH=src python scripts/run_portal.py
+```
+
+Production-style service assets:
+
+- `deployment/systemd/stockml-portal.service`
+- `deployment/vm/install_portal_service.sh`
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8091/health
+```
+

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="kpi-grid">
+  <article class="kpi"><span>Validated tickers</span><strong>{{ validated_count|fmt }}</strong></article>
+  <article class="kpi"><span>Rejected tickers</span><strong>{{ rejected_count|fmt }}</strong></article>
+  <article class="kpi"><span>Missing closes</span><strong>{{ missing_close_total|fmt }}</strong></article>
+  <article class="kpi"><span>Missing volumes</span><strong>{{ missing_volume_total|fmt }}</strong></article>
+</section>
+<section class="grid-2">
+  <article class="panel"><h2>Price Status</h2>{{ table(price_status_counts) }}</article>
+  <article class="panel"><h2>Liquidity Filter</h2>{{ table(liquidity_counts) }}</article>
+  <article class="panel"><h2>Metadata Quality</h2>{{ table(metadata_counts) }}</article>
+  <article class="panel"><h2>Sentiment Coverage</h2>{{ table(sentiment_counts) }}</article>
+</section>
+<section class="panel"><h2>Price Date Range</h2><p>{{ min_price_date }} to {{ max_price_date }}</p></section>
+<section class="panel"><h2>Recent Download Failures</h2>{{ table(failure_sample) }}</section>
+{% endblock %}
+

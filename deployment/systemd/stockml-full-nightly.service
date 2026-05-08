@@ -1,0 +1,11 @@
+[Unit]
+Description=StockML full nightly research pipeline
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/massa/stock-market-ml-platform
+Environment=PYTHONPATH=/home/massa/stock-market-ml-platform/src
+ExecStart=/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_full_pipeline.py --skip-price-download
+

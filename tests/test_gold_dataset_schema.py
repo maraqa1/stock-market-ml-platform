@@ -1,0 +1,35 @@
+import pandas as pd
+
+from stockml.gold.build_gold_dataset import GOLD_COLUMNS, build_gold_dataset_from_frames
+
+
+def test_gold_dataset_required_columns():
+    dates = pd.date_range("2024-01-01", periods=30, freq="B")
+    features = pd.DataFrame(
+        [
+            {
+                "date": date,
+                "ticker": ticker,
+                "company": ticker,
+                "exchange": "NASDAQ",
+                "sector": "Tech",
+                "industry": "Software",
+                "open": 10 + i,
+                "high": 11 + i,
+                "low": 9 + i,
+                "close": 10 + i,
+                "adj_close": 10 + i,
+                "volume": 1000,
+                "feature_missing_ratio": 0,
+                "liquidity_score": 0.8,
+                "sector_relative_momentum_score": 0.7,
+                "volume_confirmation_score": 0.6,
+            }
+            for ticker in ["AAA", "BBB", "CCC", "DDD", "EEE"]
+            for i, date in enumerate(dates)
+        ]
+    )
+    gold = build_gold_dataset_from_frames(features)
+    assert set(GOLD_COLUMNS).issubset(gold.columns)
+    assert {"Long", "Short", "Neutral"}.intersection(set(gold["target_trade_label_5d"]))
+
