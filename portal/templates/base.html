@@ -8,38 +8,70 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="mark">A</span><span>StockML</span></div>
-    <nav class="nav-groups">
-      <div class="nav-group"><span>Predict</span><a href="/">Dashboard</a><a href="/signals">Signals</a><a href="/trading">Trading</a><a href="/no-decision">No Decision</a></div>
-      <div class="nav-group"><span>Analyse</span><a href="/model-validation">Validation</a></div>
-      <div class="nav-group"><span>Data</span><a href="/universe">Universe</a><a href="/data-quality">Quality</a><a href="/gold">Gold</a></div>
-    </nav>
-  </header>
-  <main class="shell">
-    <section class="page-head">
-      <div>
-        <p class="eyebrow">Stock intelligence portal</p>
-        <h1>{{ title }}</h1>
-      </div>
-      <a class="health" href="/health">Health</a>
-    </section>
-    {% block content %}{% endblock %}
-    {% if files %}
-      <footer class="files">
-        <h2>Loaded Files</h2>
-        <div class="file-grid">
-          {% for file in files %}
-            <div class="file-pill {{ 'missing' if not file.exists else '' }}">
-              <strong>{{ file.label }}</strong>
-              <span>{{ file.name }}</span>
-              <small>{{ file.timestamp }}</small>
-            </div>
-          {% endfor %}
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand-card">
+        <div class="brand-logo">
+          <span class="mark">A</span>
+          <strong>StockML</strong>
         </div>
-      </footer>
-    {% endif %}
-  </main>
+        <span class="program-pill">AlphaLens</span>
+        <h2>Market Intelligence</h2>
+        <p>Ranking-first research, signal governance, and paper-trading controls in one workspace.</p>
+      </div>
+      <nav class="side-nav">
+        <span>Global Navigation</span>
+        <a class="{{ 'active' if request.path == '/' else '' }}" href="/">Home</a>
+        <a class="{{ 'active' if request.path == '/signals' else '' }}" href="/signals">Signals</a>
+        <a class="{{ 'active' if request.path == '/trading' else '' }}" href="/trading">Paper Trading</a>
+        <a class="{{ 'active' if request.path == '/model-validation' else '' }}" href="/model-validation">Validation</a>
+        <a class="{{ 'active' if request.path == '/no-decision' else '' }}" href="/no-decision">No Decision</a>
+        <span>Data Estate</span>
+        <a class="{{ 'active' if request.path == '/universe' else '' }}" href="/universe">Universe</a>
+        <a class="{{ 'active' if request.path == '/data-quality' else '' }}" href="/data-quality">Quality</a>
+        <a class="{{ 'active' if request.path == '/gold' else '' }}" href="/gold">Gold Dataset</a>
+      </nav>
+      <div class="pipeline-card">
+        <span>Pipeline</span>
+        <strong><span class="status-dot"></span> Operational</strong>
+        <small>Repository-bound outputs</small>
+      </div>
+    </aside>
+    <main class="workspace">
+      <section class="page-head">
+        <div>
+          <p class="eyebrow">Stock intelligence portal</p>
+          <h1>{{ title }}</h1>
+          <p class="page-subtitle">Universe coverage, model decisions, paper-trading readiness, and dataset health for commercial research operations.</p>
+        </div>
+        <a class="health" href="/health">Health</a>
+      </section>
+      <section class="page-tabs">
+        <a class="{{ 'active' if request.path == '/' else '' }}" href="/">Overview</a>
+        <a class="{{ 'active' if request.path == '/signals' else '' }}" href="/signals">Executive</a>
+        <a class="{{ 'active' if request.path == '/trading' else '' }}" href="/trading">Trading</a>
+        <a class="{{ 'active' if request.path == '/model-validation' else '' }}" href="/model-validation">Validation</a>
+        <a class="{{ 'active' if request.path in ['/gold', '/data-quality', '/universe'] else '' }}" href="/gold">Dataset</a>
+      </section>
+      <div class="content-card">
+        {% block content %}{% endblock %}
+        {% if files %}
+          <footer class="files">
+            <h2>Loaded Files</h2>
+            <div class="file-grid">
+              {% for file in files %}
+                <div class="file-pill {{ 'missing' if not file.exists else '' }}">
+                  <strong>{{ file.label }}</strong>
+                  <span>{{ file.name }}</span>
+                  <small>{{ file.timestamp }}</small>
+                </div>
+              {% endfor %}
+            </div>
+          </footer>
+        {% endif %}
+      </div>
+    </main>
+  </div>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

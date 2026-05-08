@@ -11,7 +11,27 @@ from stockml.trading.config import alpaca_config
 def _records(frame, limit: int = 50) -> list[dict]:
     if frame.empty:
         return []
-    return frame.head(limit).fillna("").to_dict("records")
+    return _sort_by_confidence(frame).head(limit).fillna("").to_dict("records")
+
+
+def _sort_by_confidence(frame):
+    if frame.empty:
+        return frame
+    out = frame.copy()
+    sort_columns = []
+    ascending = []
+    for column in ["side_probability", "probability_edge", "risk_adjusted_score"]:
+        if column in out.columns:
+            values = pd.to_numeric(out[column], errors="coerce")
+            if column == "probability_edge":
+                values = values.abs()
+            sort_key = f"__sort_{column}"
+            out[sort_key] = values.fillna(float("-inf"))
+            sort_columns.append(sort_key)
+            ascending.append(False)
+    if not sort_columns:
+        return out
+    return out.sort_values(sort_columns, ascending=ascending).drop(columns=sort_columns)
 
 
 def _side_counts(plan) -> dict[str, int]:

@@ -52,6 +52,23 @@ def test_signal_context_with_fixture(tmp_path):
     assert ctx["no_decision_count"] == 1
 
 
+def test_signal_context_sorts_highest_confidence_first(tmp_path):
+    write_csv(
+        tmp_path / "data" / "model_outputs" / "advanced_model_signal_table_1.csv",
+        [
+            {"ticker": "LOW", "trade_action": "Long", "side_probability": 0.61, "probability_edge": 0.11, "risk_adjusted_score": 0.9},
+            {"ticker": "HIGH", "trade_action": "Long", "side_probability": 0.82, "probability_edge": 0.12, "risk_adjusted_score": 0.1},
+            {"ticker": "MID", "trade_action": "Long", "side_probability": 0.74, "probability_edge": 0.25, "risk_adjusted_score": 0.2},
+        ],
+    )
+    write_csv(
+        tmp_path / "data" / "model_outputs" / "advanced_model_model_status_1.csv",
+        [{"decision_grade": "decision_grade", "selected_model": "LightGBM", "reason": "ok"}],
+    )
+    ctx = signal_context(tmp_path)
+    assert [row["ticker"] for row in ctx["long_rows"]] == ["HIGH", "MID", "LOW"]
+
+
 def test_trading_context_with_alpaca_artifacts(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
@@ -66,3 +83,15 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert ctx["orders_submitted"] == 0
     assert ctx["dry_run"] is True
     assert ctx["total_notional"] == 500
+
+
+def test_trading_context_sorts_plan_by_confidence(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
+        [
+            {"symbol": "LOW", "side": "buy", "notional": 500, "trade_action": "Long", "side_probability": 0.6},
+            {"symbol": "HIGH", "side": "buy", "notional": 500, "trade_action": "Long", "side_probability": 0.8},
+        ],
+    )
+    ctx = trading_context(tmp_path)
+    assert [row["symbol"] for row in ctx["plan_rows"]] == ["HIGH", "LOW"]

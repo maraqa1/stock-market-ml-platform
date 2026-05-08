@@ -39,6 +39,30 @@ def _normalize_signals(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _sort_by_confidence(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    out = frame.copy()
+    sort_columns = []
+    ascending = []
+    for column in ["side_probability", "probability_edge", "risk_adjusted_score", "selection_score"]:
+        if column in out.columns:
+            numeric = pd.to_numeric(out[column], errors="coerce")
+            if column == "probability_edge":
+                numeric = numeric.abs()
+            sort_key = f"__sort_{column}"
+            out[sort_key] = numeric.fillna(float("-inf"))
+            sort_columns.append(sort_key)
+            ascending.append(False)
+    if "candidate_rank_overall" in out.columns:
+        out["__sort_candidate_rank_overall"] = pd.to_numeric(out["candidate_rank_overall"], errors="coerce").fillna(float("inf"))
+        sort_columns.append("__sort_candidate_rank_overall")
+        ascending.append(True)
+    if not sort_columns:
+        return out
+    return out.sort_values(sort_columns, ascending=ascending).drop(columns=sort_columns)
+
+
 def signal_context(root: Optional[Path] = None) -> dict:
     signal_file = _latest_signal_table(root)
     status_file = latest_file(root, "model_outputs", "advanced_model_model_status_*.csv", fallback_keys=["portal_outputs"])
@@ -54,9 +78,9 @@ def signal_context(root: Optional[Path] = None) -> dict:
     else:
         display = signals
 
-    long_rows = display[display["trade_action"].astype(str).str.lower().eq("long")].head(50).to_dict("records") if "trade_action" in display.columns else []
-    short_rows = display[display["trade_action"].astype(str).str.lower().eq("short")].head(50).to_dict("records") if "trade_action" in display.columns else []
-    no_decision = signals[signals["trade_action"].astype(str).str.lower().isin(["no decision", "neutral"])].head(50).to_dict("records") if "trade_action" in signals.columns else []
+    long_rows = _sort_by_confidence(display[display["trade_action"].astype(str).str.lower().eq("long")]).head(50).to_dict("records") if "trade_action" in display.columns else []
+    short_rows = _sort_by_confidence(display[display["trade_action"].astype(str).str.lower().eq("short")]).head(50).to_dict("records") if "trade_action" in display.columns else []
+    no_decision = _sort_by_confidence(signals[signals["trade_action"].astype(str).str.lower().isin(["no decision", "neutral"])]).head(50).to_dict("records") if "trade_action" in signals.columns else []
     all_long_count = int(signals["trade_action"].astype(str).str.lower().eq("long").sum()) if "trade_action" in signals.columns else 0
     all_short_count = int(signals["trade_action"].astype(str).str.lower().eq("short").sum()) if "trade_action" in signals.columns else 0
     all_no_decision_count = int(signals["trade_action"].astype(str).str.lower().isin(["no decision", "neutral"]).sum()) if "trade_action" in signals.columns else 0
@@ -107,7 +131,7 @@ def no_decision_context(root: Optional[Path] = None) -> dict:
         nd = signals[signals["trade_action"].astype(str).str.lower().isin(["no decision", "neutral"])].copy()
         reason_col = "no_decision_reason_readable" if "no_decision_reason_readable" in nd.columns else "signal_reason_readable"
         counts = nd[reason_col].fillna("Not provided").value_counts().reset_index().to_dict("records")
-        rows = nd.head(200).to_dict("records")
+        rows = _sort_by_confidence(nd).head(200).to_dict("records")
     return {
         "rows": rows,
         "reason_counts": counts,
