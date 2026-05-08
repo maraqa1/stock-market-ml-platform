@@ -30,6 +30,13 @@ def _result_row(order: dict, status: str, order_id: str = "", message: str = "",
     }
 
 
+def _clean_text(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"nan", "none", "null"} else text
+
+
 def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple[Path, Path]:
     tracking_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_tracking_{stamp}.csv"
     positions_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_positions_{stamp}.csv"
@@ -39,8 +46,9 @@ def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple
     if config.api_key and config.secret_key and not results.empty:
         client = AlpacaPaperClient(config)
         for row in results.to_dict("records"):
-            order_id = str(row.get("order_id") or "").strip()
-            if not order_id:
+            order_id = _clean_text(row.get("order_id"))
+            status = _clean_text(row.get("status")).lower()
+            if not order_id or status in {"dry_run", "error"}:
                 tracking_rows.append(row)
                 continue
             try:
