@@ -109,3 +109,24 @@ def test_shorting_disabled_rejects_short():
     row = apply_trade_quality_gate(pd.DataFrame([signal(trade_action="Short")]), config()).iloc[0]
     assert row["trade_quality_status"] == "rejected"
     assert "shorting_disabled" in row["trade_quality_reason"]
+
+
+def test_missing_risk_fields_are_enriched_from_feature_snapshot():
+    stripped = signal()
+    stripped.pop("avg_dollar_volume_20d")
+    stripped.pop("volatility_20d")
+    risk_features = pd.DataFrame(
+        [
+            {
+                "ticker": "FLEX",
+                "date": "2026-05-08",
+                "avg_dollar_volume_20d": 100_000_000,
+                "volatility_20d": 0.02,
+                "market_cap": 20_000_000_000,
+            }
+        ]
+    )
+    row = apply_trade_quality_gate(pd.DataFrame([stripped]), config(), risk_features=risk_features).iloc[0]
+    assert row["trade_quality_status"] == "approved"
+    assert row["avg_dollar_volume_20d"] == 100_000_000
+    assert row["volatility_20d"] == 0.02

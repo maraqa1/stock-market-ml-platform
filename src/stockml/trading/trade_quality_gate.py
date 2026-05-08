@@ -5,7 +5,7 @@ from typing import Optional
 
 import pandas as pd
 
-from stockml.common.paths import INTERIM_DIR, RAW_DIR, latest_file
+from stockml.common.paths import GOLD_DIR, INTERIM_DIR, PROCESSED_DIR, RAW_DIR, latest_file
 from stockml.trading.config import AlpacaConfig
 from stockml.trading.position_sizing import approved_notional, base_notional, suggested_quantity
 from stockml.trading.risk_checks import liquidity_tier, numeric, reject_reasons, risk_tier, volatility_tier
@@ -13,6 +13,7 @@ from stockml.trading.stop_take_profit import stop_take_profit_prices
 
 
 PRICE_COLUMNS = ["date", "ticker", "open", "high", "low", "close", "adj_close", "volume"]
+RISK_FEATURE_COLUMNS = ["date", "ticker", "avg_dollar_volume_20d", "volatility_20d", "market_cap", "sector"]
 SOURCE_MARKET_COLUMNS = ["close", "open", "high", "low", "volume"]
 QUALITY_MARKET_COLUMNS = ["current_price", "open_price", "intraday_high", "intraday_low", "intraday_volume"]
 
@@ -63,10 +64,32 @@ def latest_metadata_snapshot(metadata_file: Optional[Path] = None) -> pd.DataFra
     return frame.drop_duplicates("ticker", keep="last")
 
 
+def latest_risk_feature_snapshot(tickers: list[str], feature_file: Optional[Path] = None) -> pd.DataFrame:
+    path = feature_file or latest_file(GOLD_DIR, "06_us_gold_ml_dataset_*.csv") or latest_file(PROCESSED_DIR, "05_us_feature_panel_*.csv")
+    if path is None or not path.exists() or not tickers:
+        return pd.DataFrame()
+    wanted = {str(ticker).upper() for ticker in tickers}
+    rows = []
+    try:
+        for chunk in pd.read_csv(path, usecols=lambda col: col in RISK_FEATURE_COLUMNS, chunksize=200_000, low_memory=False):
+            chunk["ticker"] = chunk["ticker"].astype(str).str.upper().str.strip()
+            subset = chunk[chunk["ticker"].isin(wanted)]
+            if not subset.empty:
+                rows.append(subset)
+    except Exception:
+        return pd.DataFrame()
+    if not rows:
+        return pd.DataFrame()
+    features = pd.concat(rows, ignore_index=True)
+    features["date"] = pd.to_datetime(features["date"], errors="coerce")
+    return features.sort_values(["ticker", "date"]).groupby("ticker", as_index=False).tail(1)
+
+
 def _prepare_market_context(
     signals: pd.DataFrame,
     price_snapshot: Optional[pd.DataFrame],
     metadata: Optional[pd.DataFrame],
+    risk_features: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     out = signals.copy()
     out["ticker"] = out["ticker"].astype(str).str.upper().str.strip()
@@ -99,6 +122,29 @@ def _prepare_market_context(
         out["market_cap"] = pd.NA
     if "avg_dollar_volume_20d" not in out.columns:
         out["avg_dollar_volume_20d"] = out["current_price"].apply(lambda _: pd.NA)
+    if "volatility_20d" not in out.columns:
+        out["volatility_20d"] = out["current_price"].apply(lambda _: pd.NA)
+    if risk_features is not None and not risk_features.empty:
+        features = risk_features.copy()
+        features["ticker"] = features["ticker"].astype(str).str.upper().str.strip()
+        rename = {
+            "avg_dollar_volume_20d": "feature_avg_dollar_volume_20d",
+            "volatility_20d": "feature_volatility_20d",
+            "market_cap": "feature_market_cap",
+            "sector": "feature_sector",
+        }
+        features = features.rename(columns=rename)
+        keep = ["ticker", *[col for col in rename.values() if col in features.columns]]
+        out = out.merge(features[keep], on="ticker", how="left")
+        for source, target in [
+            ("feature_avg_dollar_volume_20d", "avg_dollar_volume_20d"),
+            ("feature_volatility_20d", "volatility_20d"),
+            ("feature_market_cap", "market_cap"),
+            ("feature_sector", "sector"),
+        ]:
+            if source in out.columns and target in out.columns:
+                out[target] = out[target].fillna(out[source])
+                out = out.drop(columns=[source])
     return out
 
 
@@ -107,6 +153,7 @@ def apply_trade_quality_gate(
     config: AlpacaConfig,
     price_snapshot: Optional[pd.DataFrame] = None,
     metadata: Optional[pd.DataFrame] = None,
+    risk_features: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     if signals.empty or "ticker" not in signals.columns:
         return pd.DataFrame()
@@ -115,7 +162,9 @@ def apply_trade_quality_gate(
         price_snapshot = latest_price_snapshot(tickers)
     if metadata is None:
         metadata = latest_metadata_snapshot()
-    out = _prepare_market_context(signals, price_snapshot, metadata)
+    if risk_features is None:
+        risk_features = latest_risk_feature_snapshot(tickers)
+    out = _prepare_market_context(signals, price_snapshot, metadata, risk_features)
     out["current_price"] = pd.to_numeric(out["current_price"], errors="coerce")
     out["open_price"] = pd.to_numeric(out["open_price"], errors="coerce")
     out["intraday_high"] = pd.to_numeric(out["intraday_high"], errors="coerce")
