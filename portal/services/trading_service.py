@@ -147,8 +147,14 @@ def trading_context(root: Path) -> dict:
             "confidence_score", "side_probability", "probability_edge", "risk_adjusted_score",
             "order_eligible", "no_decision_reason",
         ],
-        "result_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "message"],
-        "tracking_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "updated_at", "message"],
+        "result_columns": [
+            "symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional",
+            "suggested_quantity", "filled_qty", "filled_avg_price", "message", "http_status", "request_id", "api_error",
+        ],
+        "tracking_columns": [
+            "symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional",
+            "suggested_quantity", "filled_qty", "filled_avg_price", "updated_at", "message", "http_status", "request_id",
+        ],
         "position_columns": ["symbol", "qty", "market_value", "cost_basis", "unrealized_pl", "unrealized_plpc", "current_price"],
         "files": [
             file_status(plan_file, "Alpaca order plan"),

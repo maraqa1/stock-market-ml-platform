@@ -11,7 +11,7 @@ class FakeClient:
 
 def test_validate_order_rejects_unhealthy_account():
     allowed, reason = validate_order(
-        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "side": "buy"},
+        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "suggested_quantity": 1, "side": "buy"},
         FakeClient(),
         SubmissionContext(healthy=False, message="account_not_ready"),
         set(),
@@ -22,7 +22,7 @@ def test_validate_order_rejects_unhealthy_account():
 
 def test_validate_order_rejects_duplicate_open_symbol():
     allowed, reason = validate_order(
-        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "side": "buy"},
+        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "suggested_quantity": 1, "side": "buy"},
         FakeClient(),
         SubmissionContext(healthy=True, buying_power=1000, open_orders=[{"symbol": "AAA"}]),
         set(),
@@ -33,7 +33,7 @@ def test_validate_order_rejects_duplicate_open_symbol():
 
 def test_validate_order_rejects_untradable_asset():
     allowed, reason = validate_order(
-        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "side": "buy"},
+        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "suggested_quantity": 1, "side": "buy"},
         FakeClient(asset={"tradable": False, "status": "active"}),
         SubmissionContext(healthy=True, buying_power=1000),
         set(),
@@ -45,7 +45,7 @@ def test_validate_order_rejects_untradable_asset():
 def test_validate_order_passes_and_tracks_client_id():
     seen = set()
     allowed, reason = validate_order(
-        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "side": "buy"},
+        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "suggested_quantity": 1, "side": "buy"},
         FakeClient(),
         SubmissionContext(healthy=True, buying_power=1000),
         seen,
@@ -53,3 +53,14 @@ def test_validate_order_passes_and_tracks_client_id():
     assert allowed is True
     assert reason == "submission_preflight_passed"
     assert seen == {"id-1"}
+
+
+def test_validate_order_rejects_zero_quantity():
+    allowed, reason = validate_order(
+        {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "suggested_quantity": 0, "side": "buy"},
+        FakeClient(),
+        SubmissionContext(healthy=True, buying_power=1000),
+        set(),
+    )
+    assert allowed is False
+    assert reason == "invalid_quantity"

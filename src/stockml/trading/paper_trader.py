@@ -7,14 +7,15 @@ import pandas as pd
 
 from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
-from stockml.trading.alpaca_client import AlpacaPaperClient
+from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_planner import build_order_plan, latest_signal_table
 from stockml.trading.submission_guards import load_submission_context, validate_order
 
 
-def _result_row(order: dict, status: str, order_id: str = "", message: str = "", response: Optional[dict] = None) -> dict:
+def _result_row(order: dict, status: str, order_id: str = "", message: str = "", response: Optional[dict] = None, diagnostics: Optional[dict] = None) -> dict:
     response = response or {}
+    diagnostics = diagnostics or {}
     return {
         "symbol": order.get("symbol", ""),
         "status": status,
@@ -23,12 +24,17 @@ def _result_row(order: dict, status: str, order_id: str = "", message: str = "",
         "client_order_id": order.get("client_order_id", ""),
         "side": order.get("side", ""),
         "notional": order.get("notional", ""),
+        "suggested_quantity": order.get("suggested_quantity", ""),
         "trade_action": order.get("trade_action", ""),
         "filled_qty": response.get("filled_qty", ""),
         "filled_avg_price": response.get("filled_avg_price", ""),
         "submitted_at": response.get("submitted_at", ""),
         "updated_at": response.get("updated_at", ""),
         "message": message,
+        "http_status": diagnostics.get("http_status", ""),
+        "request_id": diagnostics.get("request_id", ""),
+        "api_error": diagnostics.get("api_error", ""),
+        "submitted_payload": diagnostics.get("submitted_payload", ""),
     }
 
 
@@ -103,7 +109,15 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
             if str(order.get("trade_quality_status", "")).lower() not in {"approved", "reduced"} or not eligible:
                 result_rows.append(_result_row(order, "rejected", message=format_reasons(order.get("trade_quality_reason", "trade_quality_rejected"))))
                 continue
-            request = {key: order[key] for key in ["symbol", "notional", "side", "type", "time_in_force", "extended_hours", "client_order_id"]}
+            request = {
+                "symbol": order["symbol"],
+                "qty": str(int(order.get("suggested_quantity", 0))),
+                "side": order["side"],
+                "type": order["type"],
+                "time_in_force": order["time_in_force"],
+                "extended_hours": bool(order.get("extended_hours", False)),
+                "client_order_id": order["client_order_id"],
+            }
             try:
                 allowed, guard_message = validate_order(order, client, context, seen_client_ids)
                 if not allowed:
@@ -111,8 +125,17 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
                     continue
                 response = client.submit_order(request)
                 result_rows.append(_result_row(order, "submitted", response.get("id", ""), response=response))
+            except AlpacaAPIError as exc:
+                result_rows.append(
+                    _result_row(
+                        order,
+                        "error",
+                        message="alpaca_order_submit_failed",
+                        diagnostics={**exc.as_dict(), "submitted_payload": str(request)},
+                    )
+                )
             except Exception as exc:
-                result_rows.append(_result_row(order, "error", message=str(exc)))
+                result_rows.append(_result_row(order, "error", message=f"order_submit_exception: {exc}", diagnostics={"submitted_payload": str(request)}))
     else:
         for order in plan.to_dict("records"):
             eligible = bool(order.get("order_eligible")) and int(order.get("suggested_quantity", 0) or 0) >= 1

@@ -8,6 +8,29 @@ import requests
 from stockml.trading.config import AlpacaConfig
 
 
+class AlpacaAPIError(RuntimeError):
+    def __init__(self, method: str, url: str, response: requests.Response):
+        self.method = method
+        self.url = url
+        self.status_code = response.status_code
+        self.request_id = response.headers.get("X-Request-ID", "")
+        self.response_text = response.text[:1000]
+        super().__init__(f"alpaca_api_error status={self.status_code} request_id={self.request_id} body={self.response_text}")
+
+    def as_dict(self) -> dict[str, str | int]:
+        return {
+            "http_status": self.status_code,
+            "request_id": self.request_id,
+            "api_error": self.response_text,
+        }
+
+
+def _raise_for_status(method: str, url: str, response: requests.Response) -> None:
+    if response.status_code >= 400:
+        raise AlpacaAPIError(method, url, response)
+    response.raise_for_status()
+
+
 @dataclass
 class AlpacaPaperClient:
     config: AlpacaConfig
@@ -23,59 +46,65 @@ class AlpacaPaperClient:
         }
 
     def get_account(self) -> dict[str, Any]:
+        url = f"{self.config.base_url}/v2/account"
         response = requests.get(
-            f"{self.config.base_url}/v2/account",
+            url,
             headers=self._headers(),
             timeout=self.timeout_seconds,
         )
-        response.raise_for_status()
+        _raise_for_status("GET", url, response)
         return response.json()
 
     def submit_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self.config.base_url}/v2/orders"
         response = requests.post(
-            f"{self.config.base_url}/v2/orders",
+            url,
             headers=self._headers(),
             json=order,
             timeout=self.timeout_seconds,
         )
-        response.raise_for_status()
+        _raise_for_status("POST", url, response)
         return response.json()
 
     def list_orders(self, status: str = "open", limit: int = 100) -> list[dict[str, Any]]:
+        url = f"{self.config.base_url}/v2/orders"
         response = requests.get(
-            f"{self.config.base_url}/v2/orders",
+            url,
             headers=self._headers(),
             params={"status": status, "limit": limit},
             timeout=self.timeout_seconds,
         )
-        response.raise_for_status()
+        _raise_for_status("GET", url, response)
         return response.json()
 
     def get_order(self, order_id: str) -> dict[str, Any]:
+        url = f"{self.config.base_url}/v2/orders/{order_id}"
         response = requests.get(
-            f"{self.config.base_url}/v2/orders/{order_id}",
+            url,
             headers=self._headers(),
             timeout=self.timeout_seconds,
         )
-        response.raise_for_status()
+        _raise_for_status("GET", url, response)
         return response.json()
 
     def list_positions(self) -> list[dict[str, Any]]:
+        url = f"{self.config.base_url}/v2/positions"
         response = requests.get(
-            f"{self.config.base_url}/v2/positions",
+            url,
             headers=self._headers(),
             timeout=self.timeout_seconds,
         )
-        response.raise_for_status()
+        _raise_for_status("GET", url, response)
         return response.json()
 
     def get_asset(self, symbol: str) -> Optional[dict[str, Any]]:
+        url = f"{self.config.base_url}/v2/assets/{symbol.upper()}"
         response = requests.get(
-            f"{self.config.base_url}/v2/assets/{symbol.upper()}",
+            url,
             headers=self._headers(),
             timeout=self.timeout_seconds,
         )
         if response.status_code == 404:
             return None
-        response.raise_for_status()
+        _raise_for_status("GET", url, response)
         return response.json()

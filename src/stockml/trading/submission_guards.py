@@ -36,6 +36,7 @@ def validate_order(order: dict, client: AlpacaPaperClient, context: SubmissionCo
     symbol = str(order.get("symbol") or "").upper()
     client_order_id = str(order.get("client_order_id") or "").strip()
     notional = float(order.get("notional") or 0)
+    qty = int(float(order.get("suggested_quantity") or order.get("qty") or 0))
     if not symbol:
         return False, "missing_symbol"
     if not client_order_id:
@@ -50,6 +51,8 @@ def validate_order(order: dict, client: AlpacaPaperClient, context: SubmissionCo
         return False, "symbol_already_has_open_order"
     if notional <= 0:
         return False, "invalid_notional"
+    if qty < 1:
+        return False, "invalid_quantity"
     if notional > context.buying_power:
         return False, "insufficient_buying_power"
 
