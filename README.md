@@ -51,9 +51,24 @@ Production-style service assets:
 - `deployment/systemd/stockml-portal.service`
 - `deployment/vm/install_portal_service.sh`
 
+Fresh VM install:
+
+```bash
+cd /home/massa/stock-market-ml-platform
+git pull origin main
+bash deployment/vm/install_portal_service.sh
+```
+
 Health check:
 
 ```bash
 curl http://127.0.0.1:8091/health
+```
+
+Troubleshooting:
+
+```bash
+sudo systemctl status stockml-portal --no-pager
+sudo journalctl -u stockml-portal -n 80 --no-pager
 ```
 
