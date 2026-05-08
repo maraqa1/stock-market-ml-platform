@@ -28,3 +28,15 @@ Lifecycle artifacts are written under `data/trading/`:
 - `agent_decisions/`, `execution_reports/`: reserved for monitor and execution-agent outputs
 
 Use `scripts/run_paper_trading_cycle.py` after generating or tracking paper orders to materialize the journal and P&L snapshots.
+
+## Position Decision Cycle
+
+Use `scripts/run_position_decision_engine.py` after refreshing Alpaca order tracking to create an active position decision snapshot under `data/trading/agent_decisions/`.
+
+The decision engine does not create orders. It compares open paper positions with the latest order plan, stop-loss/take-profit levels, signal age, and position P&L. It emits:
+
+- `hold`: position is still inside rules.
+- `watch`: position needs rescore or manual review, usually because the signal is stale.
+- `close`: stop loss, take profit, max holding period, or signal reversal was detected.
+
+The default intraday signal TTL is 10 minutes. This TTL controls the decision snapshot only; it does not rerun the model or create a new trade.

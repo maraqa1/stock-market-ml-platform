@@ -104,10 +104,13 @@ def refresh_trading_artifacts(root: Path) -> dict[str, str | int]:
 def lifecycle_context(root: Path) -> dict:
     journal_file = latest_file(root, "paper_trade_journal", "paper_trade_journal_*.csv")
     pnl_file = latest_file(root, "paper_pnl", "paper_pnl_*.csv")
+    decisions_file = latest_file(root, "agent_decisions", "position_decisions_*.csv")
     journal = safe_read_csv(journal_file, nrows=1000)
     pnl = safe_read_csv(pnl_file, nrows=1000)
+    decisions = safe_read_csv(decisions_file, nrows=1000)
     state_counts = _status_counts(journal, "lifecycle_state")
     quality_counts = _status_counts(journal, "trade_quality_status")
+    decision_counts = _status_counts(decisions, "decision")
     return {
         "data_source": "CSV artifacts",
         "journal_rows_count": len(journal),
@@ -120,17 +123,24 @@ def lifecycle_context(root: Path) -> dict:
         "unrealized_pl": _sum_column(pnl, "unrealized_pl"),
         "state_counts": state_counts,
         "quality_counts": quality_counts,
+        "decision_counts": decision_counts,
         "journal_rows": _records(journal, limit=200),
         "pnl_rows": _records(pnl, limit=200),
+        "decision_rows": _records(decisions, limit=200),
         "journal_columns": [
             "symbol", "lifecycle_state", "trade_quality_status", "readable_reason", "approved_notional",
             "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "status",
             "alpaca_status", "filled_qty", "filled_avg_price",
         ],
         "pnl_columns": ["symbol", "qty", "market_value", "cost_basis", "unrealized_pl", "unrealized_plpc"],
+        "decision_columns": [
+            "symbol", "decision", "recommended_action", "decision_reason", "latest_signal", "signal_age_minutes",
+            "current_price", "stop_loss_price", "take_profit_price", "unrealized_pl", "unrealized_plpc",
+        ],
         "files": [
             file_status(journal_file, "Paper trade journal"),
             file_status(pnl_file, "Paper P&L"),
+            file_status(decisions_file, "Position decisions"),
         ],
     }
 

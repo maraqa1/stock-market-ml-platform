@@ -120,8 +120,13 @@ def test_lifecycle_context_with_artifacts(tmp_path):
         tmp_path / "data" / "trading" / "paper_pnl" / "paper_pnl_1.csv",
         [{"symbol": "FLEX", "qty": 2, "market_value": 220, "cost_basis": 200, "unrealized_pl": 20}],
     )
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [{"symbol": "FLEX", "decision": "hold", "recommended_action": "keep_position", "decision_reason": "position_within_rules"}],
+    )
     ctx = lifecycle_context(tmp_path)
     assert ctx["journal_rows_count"] == 1
     assert ctx["order_planned_count"] == 1
     assert ctx["position_count"] == 1
     assert ctx["unrealized_pl"] == 20
+    assert ctx["decision_counts"]["hold"] == 1

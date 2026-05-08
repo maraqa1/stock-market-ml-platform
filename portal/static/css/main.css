@@ -469,6 +469,11 @@ h2 { font-size: 17px; margin-bottom: 14px; color: #4d5667; }
   gap: 12px;
 }
 
+.summary-list.compact {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-bottom: 14px;
+}
+
 .summary-list div {
   display: grid;
   gap: 5px;

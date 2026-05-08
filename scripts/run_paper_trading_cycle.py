@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
+from stockml.agents.position_decision_engine import build_position_decisions, write_position_decisions
 from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
 from stockml.trading.trade_journal import build_trade_journal, write_trade_journal
 
@@ -28,12 +29,16 @@ def main() -> int:
     positions = _read_latest("08_alpaca_paper_positions_*.csv")
     journal = build_trade_journal(plan, results)
     pnl = position_pnl_summary(positions)
+    decisions = build_position_decisions(positions, plan, results)
     journal_path = write_trade_journal(journal, stamp)
     pnl_path = write_pnl_summary(pnl, stamp)
+    decision_path = write_position_decisions(decisions, stamp)
     print(f"journal_rows: {len(journal)}")
     print(f"pnl_rows: {len(pnl)}")
+    print(f"position_decisions: {len(decisions)}")
     print(f"journal_path: {journal_path}")
     print(f"pnl_path: {pnl_path}")
+    print(f"decision_path: {decision_path}")
     return 0
 
 

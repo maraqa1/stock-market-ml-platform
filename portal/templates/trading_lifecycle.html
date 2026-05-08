@@ -34,6 +34,20 @@
 </section>
 
 <section class="panel">
+  <h2>Position Decisions</h2>
+  {% if not decision_rows %}
+    <div class="empty small">No position decision snapshot exists yet. Run <code>scripts/run_position_decision_engine.py</code>.</div>
+  {% else %}
+    <div class="summary-list compact">
+      {% for key, value in decision_counts.items() %}
+        <div><span>{{ key|replace('_', ' ')|title }}</span><strong>{{ value|fmt }}</strong></div>
+      {% endfor %}
+    </div>
+    {{ table(decision_rows, decision_columns) }}
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>Trade Journal</h2>
   {% if not journal_rows %}
     <div class="empty small">No lifecycle journal exists yet. Run <code>scripts/run_paper_trading_cycle.py</code>.</div>

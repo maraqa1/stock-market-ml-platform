@@ -1,0 +1,59 @@
+from datetime import datetime, timezone
+
+import pandas as pd
+
+from stockml.agents.position_decision_engine import build_position_decisions
+
+
+NOW = datetime(2026, 5, 8, 16, 0, tzinfo=timezone.utc)
+
+
+def test_hold_when_position_is_inside_rules_and_signal_is_fresh():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 142, "avg_entry_price": 141, "side": "long"}])
+    plan = pd.DataFrame(
+        [
+            {
+                "symbol": "FLEX",
+                "trade_action": "Long",
+                "signal_generated_at": "2026-05-08T15:55:00Z",
+                "stop_loss_price": 135,
+                "take_profit_price": 150,
+                "max_holding_days": 5,
+            }
+        ]
+    )
+    decisions = build_position_decisions(positions, plan, now=NOW)
+    assert decisions.iloc[0]["decision"] == "hold"
+    assert decisions.iloc[0]["recommended_action"] == "keep_position"
+
+
+def test_watch_when_signal_is_stale():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 142, "side": "long"}])
+    plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "Long", "signal_generated_at": "2026-05-08T15:00:00Z"}])
+    decisions = build_position_decisions(positions, plan, now=NOW, signal_ttl_minutes=10)
+    assert decisions.iloc[0]["decision"] == "watch"
+    assert "signal_stale" in decisions.iloc[0]["decision_reason"]
+
+
+def test_close_when_stop_loss_is_triggered():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 134, "side": "long"}])
+    plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "Long", "signal_generated_at": "2026-05-08T15:55:00Z", "stop_loss_price": 135}])
+    decisions = build_position_decisions(positions, plan, now=NOW)
+    assert decisions.iloc[0]["decision"] == "close"
+    assert "stop_loss_triggered" in decisions.iloc[0]["decision_reason"]
+
+
+def test_close_when_take_profit_is_triggered():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 151, "side": "long"}])
+    plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "Long", "signal_generated_at": "2026-05-08T15:55:00Z", "take_profit_price": 150}])
+    decisions = build_position_decisions(positions, plan, now=NOW)
+    assert decisions.iloc[0]["decision"] == "close"
+    assert "take_profit_triggered" in decisions.iloc[0]["decision_reason"]
+
+
+def test_close_when_signal_no_longer_active():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 142, "side": "long"}])
+    plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "No Decision", "signal_generated_at": "2026-05-08T15:55:00Z"}])
+    decisions = build_position_decisions(positions, plan, now=NOW)
+    assert decisions.iloc[0]["decision"] == "close"
+    assert "signal_no_longer_active" in decisions.iloc[0]["decision_reason"]
