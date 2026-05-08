@@ -92,6 +92,54 @@ def _clean_payload(row: dict) -> dict:
     return cleaned
 
 
+def _db_value(value):
+    if value is None:
+        return None
+    if is_scalar(value) and pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        item = value.item()
+        if item is None or (is_scalar(item) and pd.isna(item)):
+            return None
+        return item
+    return value
+
+
+def _db_float(value) -> Optional[float]:
+    cleaned = _db_value(value)
+    if cleaned is None:
+        return None
+    return float(cleaned)
+
+
+def _db_int(value) -> Optional[int]:
+    cleaned = _db_value(value)
+    if cleaned is None:
+        return None
+    return int(cleaned)
+
+
+def _db_text(value) -> Optional[str]:
+    cleaned = _db_value(value)
+    if cleaned is None:
+        return None
+    return str(cleaned)
+
+
+def _db_bool(value) -> Optional[bool]:
+    cleaned = _db_value(value)
+    if cleaned is None:
+        return None
+    if isinstance(cleaned, str):
+        lowered = cleaned.strip().lower()
+        if lowered in {"true", "1", "yes", "y"}:
+            return True
+        if lowered in {"false", "0", "no", "n"}:
+            return False
+        return None
+    return bool(cleaned)
+
+
 def _upsert_rows(conn, table, rows: list[dict], conflict_cols: list[str]) -> int:
     if not rows:
         return 0
@@ -147,10 +195,12 @@ def _load_universe(conn, path: Optional[Path]) -> int:
             {
                 "symbol": str(row.get("symbol", row.get("yahoo_ticker", ""))).upper(),
                 "yahoo_ticker": str(row.get("yahoo_ticker", "")).upper(),
-                "company": row.get("company"),
-                "listing_exchange": row.get("listing_exchange"),
-                "is_tradable_common_stock_candidate": bool(row.get("is_tradable_common_stock_candidate", True)),
-                "exclude_reason": row.get("exclude_reason"),
+                "company": _db_text(row.get("company")),
+                "listing_exchange": _db_text(row.get("listing_exchange")),
+                "is_tradable_common_stock_candidate": _db_bool(
+                    row.get("is_tradable_common_stock_candidate", True)
+                ),
+                "exclude_reason": _db_text(row.get("exclude_reason")),
                 "payload": payload,
                 "source_file": str(path),
             }
@@ -176,13 +226,13 @@ def _load_price_history(conn, path: Optional[Path]) -> int:
                 {
                     "date": row["date"],
                     "ticker": str(row["ticker"]).upper(),
-                    "open": row.get("open"),
-                    "high": row.get("high"),
-                    "low": row.get("low"),
-                    "close": row.get("close"),
-                    "adj_close": row.get("adj_close"),
-                    "volume": row.get("volume"),
-                    "source": row.get("source"),
+                    "open": _db_float(row.get("open")),
+                    "high": _db_float(row.get("high")),
+                    "low": _db_float(row.get("low")),
+                    "close": _db_float(row.get("close")),
+                    "adj_close": _db_float(row.get("adj_close")),
+                    "volume": _db_int(row.get("volume")),
+                    "source": _db_text(row.get("source")),
                     "payload": payload,
                     "source_file": str(path),
                 }
@@ -204,17 +254,17 @@ def _load_metadata(conn, path: Optional[Path]) -> int:
     for row in frame.dropna(subset=["ticker"]).to_dict("records"):
         payload = _clean_payload(row)
         rows.append(
-            {
-                "ticker": str(row["ticker"]).upper(),
-                "company": row.get("company"),
-                "exchange": row.get("exchange"),
-                "sector": row.get("sector"),
-                "industry": row.get("industry"),
-                "market_cap": row.get("market_cap"),
-                "metadata_status": row.get("metadata_status"),
-                "payload": payload,
-                "source_file": str(path),
-            }
+                {
+                    "ticker": str(row["ticker"]).upper(),
+                    "company": _db_text(row.get("company")),
+                    "exchange": _db_text(row.get("exchange")),
+                    "sector": _db_text(row.get("sector")),
+                    "industry": _db_text(row.get("industry")),
+                    "market_cap": _db_float(row.get("market_cap")),
+                    "metadata_status": _db_text(row.get("metadata_status")),
+                    "payload": payload,
+                    "source_file": str(path),
+                }
         )
     count = _upsert_rows(conn, metadata_enriched, rows, ["ticker"])
     _record_run(conn, "db_load_metadata", path, count)
@@ -258,16 +308,16 @@ def _load_sentiment(conn, path: Optional[Path]) -> int:
     rows = []
     for row in frame.dropna(subset=["date", "ticker"]).to_dict("records"):
         rows.append(
-            {
-                "date": row["date"],
-                "ticker": str(row["ticker"]).upper(),
-                "article_count": row.get("article_count"),
-                "sentiment_score_mean": row.get("sentiment_score_mean"),
-                "sentiment_source": row.get("sentiment_source"),
-                "sentiment_status": row.get("sentiment_status"),
-                "payload": _clean_payload(row),
-                "source_file": str(path),
-            }
+                {
+                    "date": row["date"],
+                    "ticker": str(row["ticker"]).upper(),
+                    "article_count": _db_int(row.get("article_count")),
+                    "sentiment_score_mean": _db_float(row.get("sentiment_score_mean")),
+                    "sentiment_source": _db_text(row.get("sentiment_source")),
+                    "sentiment_status": _db_text(row.get("sentiment_status")),
+                    "payload": _clean_payload(row),
+                    "source_file": str(path),
+                }
         )
     count = _upsert_rows(conn, sentiment_panel, rows, ["date", "ticker"])
     _record_run(conn, "db_load_sentiment", path, count)
@@ -302,7 +352,7 @@ def _load_model_outputs(conn) -> Dict[str, int]:
                     "artifact_type": artifact_type,
                     "artifact_key": f"{Path(path).name}:{idx}" if path else f"{artifact_type}:{idx}",
                     "date": date_value.date() if pd.notna(date_value) else None,
-                    "ticker": str(row.get("ticker", "")).upper() if row.get("ticker") else None,
+                    "ticker": str(row.get("ticker", "")).upper() if _db_value(row.get("ticker")) else None,
                     "payload": _clean_payload(row),
                     "source_file": str(path),
                 }
