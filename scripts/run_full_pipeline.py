@@ -22,6 +22,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--limit-tickers", type=int, default=None)
+    parser.add_argument("--exchange", default=None)
     parser.add_argument("--skip-price-download", action="store_true")
     args = parser.parse_args()
     limit = args.limit_tickers or args.limit
@@ -33,7 +34,12 @@ def main() -> int:
         log("Skipping price download by request")
     else:
         original_argv = sys.argv
-        sys.argv = [original_argv[0]] + (["--limit", str(limit)] if limit else [])
+        price_args = []
+        if limit:
+            price_args.extend(["--limit", str(limit)])
+        if args.exchange:
+            price_args.extend(["--exchange", args.exchange])
+        sys.argv = [original_argv[0]] + price_args
         try:
             run_price_main()
         finally:

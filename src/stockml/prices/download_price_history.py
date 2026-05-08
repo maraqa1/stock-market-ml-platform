@@ -24,16 +24,23 @@ def latest_tradable_universe_file() -> Path:
     return max(files, key=lambda p: p.stat().st_mtime)
 
 
-def read_tradable_universe(limit: Optional[int] = None) -> pd.DataFrame:
+def read_tradable_universe(limit: Optional[int] = None, exchange: Optional[str] = None) -> pd.DataFrame:
     path = latest_tradable_universe_file()
     df = pd.read_csv(path, dtype=str)
     if "yahoo_ticker" not in df.columns:
         raise ValueError(f"{path} missing yahoo_ticker column")
     df["yahoo_ticker"] = df["yahoo_ticker"].astype(str).str.upper().str.strip()
     df = df[df["yahoo_ticker"].ne("")].drop_duplicates("yahoo_ticker")
+    if exchange:
+        if "listing_exchange" not in df.columns:
+            raise ValueError(f"{path} missing listing_exchange column required by --exchange")
+        clean_exchange = exchange.upper().strip()
+        df["listing_exchange"] = df["listing_exchange"].astype(str).str.upper().str.strip()
+        df = df[df["listing_exchange"].eq(clean_exchange)].copy()
     if limit:
         df = df.head(limit)
-    log(f"Loaded tradable universe: {path} ({len(df):,} tickers)")
+    scope = f" exchange={exchange.upper().strip()}" if exchange else ""
+    log(f"Loaded tradable universe: {path} ({len(df):,} tickers{scope})")
     return df
 
 
@@ -220,11 +227,12 @@ def download_price_history(
     sleep_seconds: float = 1.0,
     limit: Optional[int] = None,
     force_full: bool = False,
+    exchange: Optional[str] = None,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
 
-    universe = read_tradable_universe(limit=limit)
+    universe = read_tradable_universe(limit=limit, exchange=exchange)
     tickers = universe["yahoo_ticker"].dropna().astype(str).str.upper().unique().tolist()
 
     store = load_price_store()
@@ -287,6 +295,7 @@ def main() -> int:
     p.add_argument("--batch-size", type=int, default=75)
     p.add_argument("--sleep-seconds", type=float, default=1.0)
     p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NASDAQ")
     p.add_argument("--force-full", action="store_true")
     args = p.parse_args()
 
@@ -296,6 +305,7 @@ def main() -> int:
         sleep_seconds=args.sleep_seconds,
         limit=args.limit,
         force_full=args.force_full,
+        exchange=args.exchange,
     )
 
     for name, path in paths.items():

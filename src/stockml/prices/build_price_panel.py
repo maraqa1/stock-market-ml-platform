@@ -13,6 +13,7 @@ def main() -> int:
     p.add_argument("--batch-size", type=int, default=75)
     p.add_argument("--sleep-seconds", type=float, default=1.0)
     p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NASDAQ")
     p.add_argument("--force-full", action="store_true")
     args = p.parse_args()
 
@@ -23,6 +24,7 @@ def main() -> int:
         sleep_seconds=args.sleep_seconds,
         limit=args.limit,
         force_full=args.force_full,
+        exchange=args.exchange,
     )
     build_price_quality_report()
     log("Price-history pipeline complete")

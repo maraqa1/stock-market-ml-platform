@@ -72,3 +72,17 @@ sudo systemctl status stockml-portal --no-pager
 sudo journalctl -u stockml-portal -n 80 --no-pager
 ```
 
+## NASDAQ 500 Limited Build
+
+For a practical limited data pull, build Gold from the first 500 NASDAQ-listed tradable candidates:
+
+```bash
+cd /home/massa/stock-market-ml-platform
+/opt/jupyter-env/bin/python3 scripts/run_universe_pipeline.py
+/opt/jupyter-env/bin/python3 scripts/run_price_pipeline.py --exchange NASDAQ --limit 500
+/opt/jupyter-env/bin/python3 scripts/run_metadata_pipeline.py --limit 500
+/opt/jupyter-env/bin/python3 scripts/run_feature_pipeline.py --limit-tickers 500
+/opt/jupyter-env/bin/python3 scripts/run_sentiment_pipeline.py --limit 500
+/opt/jupyter-env/bin/python3 scripts/run_gold_pipeline.py --limit-tickers 500
+```
+

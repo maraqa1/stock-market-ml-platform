@@ -10,6 +10,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from stockml.prices.download_price_history import determine_download_plan
+from stockml.prices.download_price_history import read_tradable_universe
 
 
 def test_first_run_downloads_all_tickers():
@@ -46,3 +47,20 @@ def test_force_full_ignores_existing_store():
 
     assert full is True
     assert plan["AAPL"] == "2018-01-01"
+
+
+def test_read_tradable_universe_filters_exchange(tmp_path, monkeypatch):
+    interim = tmp_path / "data" / "interim"
+    interim.mkdir(parents=True)
+    path = interim / "02_us_tradable_universe_20240101_000000.csv"
+    pd.DataFrame(
+        {
+            "yahoo_ticker": ["AAA", "BBB", "CCC"],
+            "listing_exchange": ["NASDAQ", "NYSE", "NASDAQ"],
+        }
+    ).to_csv(path, index=False)
+
+    monkeypatch.setattr("stockml.prices.download_price_history.INTERIM_DIR", interim)
+    out = read_tradable_universe(limit=1, exchange="NASDAQ")
+    assert out["yahoo_ticker"].tolist() == ["AAA"]
+    assert set(out["listing_exchange"]) == {"NASDAQ"}
