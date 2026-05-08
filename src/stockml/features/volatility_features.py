@@ -7,7 +7,7 @@ import pandas as pd
 def add_volatility_features(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.sort_values(["ticker", "date"]).copy()
     group = out.groupby("ticker", group_keys=False)
-    returns = group["adj_close"].pct_change()
+    returns = group["adj_close"].pct_change(fill_method=None)
     out["_daily_return"] = returns
     out["volatility_20d"] = returns.groupby(out["ticker"]).transform(lambda s: s.rolling(20, min_periods=5).std())
     out["volatility_60d"] = returns.groupby(out["ticker"]).transform(lambda s: s.rolling(60, min_periods=10).std())
@@ -20,4 +20,3 @@ def add_volatility_features(frame: pd.DataFrame) -> pd.DataFrame:
     risk_rank = out.groupby("date")["max_drawdown_60d"].rank(pct=True)
     out["risk_score"] = ((out["volatility_score"].fillna(0.5) + risk_rank.fillna(0.5)) / 2).clip(0, 1)
     return out.drop(columns=["_daily_return"])
-

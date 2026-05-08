@@ -9,7 +9,7 @@ def add_technical_features(prices: pd.DataFrame) -> pd.DataFrame:
     group = out.groupby("ticker", group_keys=False)
 
     for days in [1, 5, 10, 20, 60]:
-        out[f"return_{days}d"] = group["adj_close"].pct_change(days)
+        out[f"return_{days}d"] = group["adj_close"].pct_change(days, fill_method=None)
 
     out["high_20d"] = group["high"].transform(lambda s: s.rolling(20, min_periods=5).max())
     out["low_20d"] = group["low"].transform(lambda s: s.rolling(20, min_periods=5).min())
@@ -38,4 +38,3 @@ def _rsi_14(series: pd.Series) -> pd.Series:
     rs = gain / loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(50)
-

@@ -78,13 +78,7 @@ For a practical limited data pull, build Gold from the first 500 NASDAQ-listed t
 
 ```bash
 cd /home/massa/stock-market-ml-platform
-/opt/jupyter-env/bin/python3 scripts/run_universe_pipeline.py
-/opt/jupyter-env/bin/python3 scripts/run_price_pipeline.py --exchange NASDAQ --limit 500
-/opt/jupyter-env/bin/python3 scripts/run_metadata_pipeline.py --limit 500
-/opt/jupyter-env/bin/python3 scripts/run_feature_pipeline.py --limit-tickers 500
-/opt/jupyter-env/bin/python3 scripts/run_sentiment_pipeline.py --limit 500
-/opt/jupyter-env/bin/python3 scripts/run_gold_pipeline.py --limit-tickers 500
-/opt/jupyter-env/bin/python3 scripts/run_model_pipeline.py --limit-tickers 500
+/opt/jupyter-env/bin/python3 scripts/run_profile_pipeline.py --profile nasdaq_500
 ```
 
 Model training and prediction read only from the latest Gold dataset under `data/gold/`. Upstream raw, interim, and processed files are never used directly by model code.
@@ -93,5 +87,24 @@ The model pipeline writes validation, feature importance, predictions, and signa
 
 ```bash
 /opt/jupyter-env/bin/python3 scripts/run_model_pipeline.py --limit-tickers 500
+```
+
+Growth profiles live in `config/pipeline_profiles.yaml`:
+
+- `nasdaq_500`
+- `nasdaq_1500`
+- `nasdaq_full`
+
+Nightly incremental profile scheduler:
+
+```bash
+cd /home/massa/stock-market-ml-platform
+STOCKML_PROFILE=nasdaq_500 bash deployment/vm/install_full_scheduler.sh
+```
+
+To grow later, change only the profile:
+
+```bash
+STOCKML_PROFILE=nasdaq_1500 bash deployment/vm/install_full_scheduler.sh
 ```
 

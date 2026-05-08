@@ -1,0 +1,45 @@
+profiles:
+  nasdaq_500:
+    description: "First production slice: 500 NASDAQ tradable common-stock candidates."
+    exchange: NASDAQ
+    limit_tickers: 500
+    start_date: "2018-01-01"
+    batch_size: 75
+    sleep_seconds: 1.0
+    run_universe: true
+    run_price: true
+    run_metadata: true
+    run_features: true
+    run_sentiment: true
+    run_gold: true
+    run_model: true
+
+  nasdaq_1500:
+    description: "Growth slice: first 1,500 NASDAQ tradable common-stock candidates."
+    exchange: NASDAQ
+    limit_tickers: 1500
+    start_date: "2018-01-01"
+    batch_size: 75
+    sleep_seconds: 1.0
+    run_universe: true
+    run_price: true
+    run_metadata: true
+    run_features: true
+    run_sentiment: true
+    run_gold: true
+    run_model: true
+
+  nasdaq_full:
+    description: Full NASDAQ tradable common-stock universe.
+    exchange: NASDAQ
+    limit_tickers:
+    start_date: "2018-01-01"
+    batch_size: 75
+    sleep_seconds: 1.0
+    run_universe: true
+    run_price: true
+    run_metadata: true
+    run_features: true
+    run_sentiment: true
+    run_gold: true
+    run_model: true
