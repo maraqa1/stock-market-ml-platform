@@ -40,3 +40,20 @@ The decision engine does not create orders. It compares open paper positions wit
 - `close`: stop loss, take profit, max holding period, or signal reversal was detected.
 
 The default intraday signal TTL is 10 minutes. This TTL controls the decision snapshot only; it does not rerun the model or create a new trade.
+
+For continuous paper-position review, install the systemd timer:
+
+```bash
+cd /home/massa/stock-market-ml-platform
+sudo bash deployment/vm/install_alpaca_auto_trader.sh
+```
+
+This installs `stockml-position-monitor.timer`, which runs every 10 minutes during the market window. Each run refreshes Alpaca paper order/position tracking and writes:
+
+- latest tracking snapshot
+- latest paper positions snapshot
+- paper trade journal
+- paper P&L snapshot
+- position decisions under `data/trading/agent_decisions/`
+
+The monitor does not submit new entry orders and does not close positions by itself. It creates the review layer needed before adding an automatic close/rebalance executor.
