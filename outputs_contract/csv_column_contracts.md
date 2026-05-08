@@ -24,6 +24,11 @@ Required columns: date, ticker, article_count, sentiment_score_mean, sentiment_s
 
 Provider failures must be represented with status fields, not fabricated production sentiment.
 
+Current no-key providers:
+
+- Yahoo Finance ticker news
+- CNBC RSS headline feed, matched to tickers only when the ticker appears as an exact token in headline or summary
+
 ## 06 Gold ML dataset
 
 `data/gold/06_us_gold_ml_dataset_YYYYMMDD_HHMMSS.csv`

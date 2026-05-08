@@ -9,6 +9,7 @@ import pandas as pd
 
 from stockml.common.logging_utils import log
 from stockml.common.paths import INTERIM_DIR, PROCESSED_DIR, ensure_data_dirs, latest_file, timestamp
+from stockml.sentiment.cnbc_news_provider import CnbcRssNewsProvider
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
 from stockml.sentiment.simple_sentiment_model import classify_score, score_text
 from stockml.sentiment.yahoo_news_provider import YahooNewsProvider
@@ -82,7 +83,7 @@ def aggregate_articles(ticker: str, articles: List[Dict[str, object]], source: s
 
 
 def build_sentiment_panel_for_tickers(tickers: Iterable[str], limit: Optional[int] = None) -> Dict[str, pd.DataFrame]:
-    provider = YahooNewsProvider()
+    providers = [YahooNewsProvider(), CnbcRssNewsProvider()]
     clean_tickers = [str(t).upper().strip() for t in tickers if str(t).strip()]
     if limit:
         clean_tickers = clean_tickers[:limit]
@@ -90,37 +91,65 @@ def build_sentiment_panel_for_tickers(tickers: Iterable[str], limit: Optional[in
     panels = []
     quality_rows = []
     for ticker in clean_tickers:
-        try:
-            articles = provider.fetch_articles(ticker)
-            panel = aggregate_articles(ticker, articles, provider.source_name)
-            status = "ok" if not panel.empty and panel["article_count"].sum() > 0 else "no_articles"
-            error = ""
-        except Exception as exc:
-            panel = pd.DataFrame(
-                [{
-                    "date": pd.to_datetime(datetime.now().date()),
-                    "ticker": ticker,
-                    "article_count": 0,
-                    "sentiment_score_mean": pd.NA,
-                    "sentiment_score_min": pd.NA,
-                    "sentiment_score_max": pd.NA,
-                    "sentiment_positive_count": 0,
-                    "sentiment_negative_count": 0,
-                    "sentiment_neutral_count": 0,
-                    "sentiment_source": provider.source_name,
-                    "sentiment_status": "provider_error",
-                }],
-                columns=SENTIMENT_COLUMNS,
-            )
+        ticker_panels = []
+        errors = []
+        for provider in providers:
+            try:
+                articles = provider.fetch_articles(ticker)
+                ticker_panels.append(aggregate_articles(ticker, articles, provider.source_name))
+            except Exception as exc:
+                errors.append(f"{provider.source_name}: {str(exc)[:250]}")
+
+        panel = _combine_provider_panels(ticker, ticker_panels, errors)
+        status = "ok" if not panel.empty and panel["article_count"].sum() > 0 else "no_articles"
+        if errors and status == "no_articles":
             status = "provider_error"
-            error = str(exc)[:500]
         panels.append(panel)
-        quality_rows.append({"ticker": ticker, "sentiment_status": status, "sentiment_error": error})
+        quality_rows.append({"ticker": ticker, "sentiment_status": status, "sentiment_error": " | ".join(errors)})
 
     return {
         "panel": pd.concat(panels, ignore_index=True) if panels else pd.DataFrame(columns=SENTIMENT_COLUMNS),
         "quality": pd.DataFrame(quality_rows),
     }
+
+
+def _combine_provider_panels(ticker: str, provider_panels: List[pd.DataFrame], errors: List[str]) -> pd.DataFrame:
+    usable = [panel for panel in provider_panels if panel is not None and not panel.empty and panel["article_count"].sum() > 0]
+    if not usable:
+        source = "none" if not provider_panels else "+".join(panel["sentiment_source"].iloc[0] for panel in provider_panels if not panel.empty)
+        return pd.DataFrame(
+            [{
+                "date": pd.to_datetime(datetime.now().date()),
+                "ticker": ticker,
+                "article_count": 0,
+                "sentiment_score_mean": pd.NA,
+                "sentiment_score_min": pd.NA,
+                "sentiment_score_max": pd.NA,
+                "sentiment_positive_count": 0,
+                "sentiment_negative_count": 0,
+                "sentiment_neutral_count": 0,
+                "sentiment_source": source,
+                "sentiment_status": "provider_error" if errors else "no_articles",
+            }],
+            columns=SENTIMENT_COLUMNS,
+        )
+
+    combined = pd.concat(usable, ignore_index=True)
+    weighted_score = combined["sentiment_score_mean"] * combined["article_count"]
+    out = combined.groupby(["date", "ticker"], as_index=False).agg(
+        article_count=("article_count", "sum"),
+        sentiment_score_min=("sentiment_score_min", "min"),
+        sentiment_score_max=("sentiment_score_max", "max"),
+        sentiment_positive_count=("sentiment_positive_count", "sum"),
+        sentiment_negative_count=("sentiment_negative_count", "sum"),
+        sentiment_neutral_count=("sentiment_neutral_count", "sum"),
+    )
+    score_by_date = weighted_score.groupby([combined["date"], combined["ticker"]]).sum().reset_index(name="weighted_score")
+    out = out.merge(score_by_date, on=["date", "ticker"], how="left")
+    out["sentiment_score_mean"] = out["weighted_score"] / out["article_count"].replace(0, pd.NA)
+    out["sentiment_source"] = "+".join(sorted(combined["sentiment_source"].dropna().astype(str).unique()))
+    out["sentiment_status"] = "ok"
+    return out[SENTIMENT_COLUMNS]
 
 
 def build_sentiment_panel(limit: Optional[int] = None) -> Dict[str, Path]:
@@ -152,4 +181,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

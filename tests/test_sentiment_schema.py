@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 
 from stockml.sentiment.build_sentiment_panel import aggregate_articles
+from stockml.sentiment.build_sentiment_panel import _combine_provider_panels
+from stockml.sentiment.cnbc_news_provider import _matches_ticker
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
 
 
@@ -14,3 +16,21 @@ def test_sentiment_schema_from_synthetic_articles():
     assert panel.loc[0, "article_count"] == 1
     assert panel.loc[0, "sentiment_positive_count"] == 1
 
+
+def test_cnbc_ticker_matching_is_exact_token():
+    article = {"title": "AAPL shares rally after earnings beat", "summary": ""}
+    assert _matches_ticker(article, "AAPL")
+    assert not _matches_ticker(article, "APP")
+
+
+def test_combines_provider_sentiment_without_fabricating_rows():
+    article = {
+        "providerPublishTime": int(datetime(2024, 1, 2, tzinfo=timezone.utc).timestamp()),
+        "title": "MSFT upgrade looks strong",
+    }
+    yahoo = aggregate_articles("MSFT", [article], "yahoo")
+    cnbc = aggregate_articles("MSFT", [article], "cnbc_rss")
+    combined = _combine_provider_panels("MSFT", [yahoo, cnbc], [])
+    assert list(combined.columns) == SENTIMENT_COLUMNS
+    assert combined.loc[0, "article_count"] == 2
+    assert combined.loc[0, "sentiment_source"] == "cnbc_rss+yahoo"

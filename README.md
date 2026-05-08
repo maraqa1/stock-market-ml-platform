@@ -83,6 +83,8 @@ cd /home/massa/stock-market-ml-platform
 
 Model training and prediction read only from the latest Gold dataset under `data/gold/`. Upstream raw, interim, and processed files are never used directly by model code.
 
+Sentiment currently uses Yahoo Finance ticker news plus CNBC RSS headlines. CNBC articles are attached to a ticker only when the ticker appears as an exact token in the headline or summary; unmatched articles are ignored.
+
 The model pipeline writes validation, feature importance, predictions, and signal tables:
 
 ```bash
