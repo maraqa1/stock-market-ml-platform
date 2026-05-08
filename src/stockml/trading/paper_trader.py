@@ -9,6 +9,7 @@ from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_planner import build_order_plan, latest_signal_table
+from stockml.trading.submission_guards import load_submission_context, validate_order
 
 
 def _result_row(order: dict, status: str, order_id: str = "", message: str = "", response: Optional[dict] = None) -> dict:
@@ -48,7 +49,7 @@ def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple
         for row in results.to_dict("records"):
             order_id = _clean_text(row.get("order_id"))
             status = _clean_text(row.get("status")).lower()
-            if not order_id or status in {"dry_run", "error"}:
+            if not order_id or status in {"dry_run", "error", "rejected"}:
                 tracking_rows.append(row)
                 continue
             try:
@@ -91,9 +92,15 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     result_rows = []
     if config.submit_orders and not plan.empty:
         client = AlpacaPaperClient(config)
+        context = load_submission_context(client)
+        seen_client_ids: set[str] = set()
         for order in plan.to_dict("records"):
             request = {key: order[key] for key in ["symbol", "notional", "side", "type", "time_in_force", "extended_hours", "client_order_id"]}
             try:
+                allowed, guard_message = validate_order(order, client, context, seen_client_ids)
+                if not allowed:
+                    result_rows.append(_result_row(order, "rejected", message=guard_message))
+                    continue
                 response = client.submit_order(request)
                 result_rows.append(_result_row(order, "submitted", response.get("id", ""), response=response))
             except Exception as exc:

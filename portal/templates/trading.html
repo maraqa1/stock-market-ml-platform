@@ -4,7 +4,7 @@
 {% if dry_run %}
   <section class="warning">Alpaca paper trading is in dry-run mode. Planned orders are recorded, but no orders are submitted.</section>
 {% else %}
-  <section class="warning critical">Alpaca order submission is enabled. Review guardrails, account status, and open positions before running the trader.</section>
+  <section class="warning critical">Alpaca paper order submission is enabled. Each order must still pass account, buying-power, duplicate-order, and asset-tradability pre-flight checks before submission.</section>
 {% endif %}
 <section class="kpi-grid">
   <article class="kpi"><span>Orders Planned</span><strong>{{ orders_planned|fmt }}</strong></article>

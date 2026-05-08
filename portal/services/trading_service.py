@@ -82,7 +82,7 @@ def trading_context(root: Path) -> dict:
         "dry_run": dry_run,
         "orders_planned": len(plan),
         "orders_submitted": int(status_counts.get("submitted", 0)),
-        "orders_rejected": int(status_counts.get("error", 0)),
+        "orders_rejected": int(status_counts.get("error", 0) + status_counts.get("rejected", 0)),
         "orders_tracked": len(tracking),
         "open_orders": int(tracking_status_counts.get("new", 0) + tracking_status_counts.get("accepted", 0) + tracking_status_counts.get("pending_new", 0)),
         "filled_orders": int(tracking_status_counts.get("filled", 0)),
@@ -96,7 +96,7 @@ def trading_context(root: Path) -> dict:
         "tracking_rows": _records(tracking),
         "position_rows": _records(positions),
         "plan_columns": ["symbol", "side", "notional", "trade_action", "side_probability", "probability_edge", "risk_adjusted_score", "signal_reason"],
-        "result_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "filled_qty", "filled_avg_price", "message"],
+        "result_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "message"],
         "tracking_columns": ["symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional", "filled_qty", "filled_avg_price", "updated_at", "message"],
         "position_columns": ["symbol", "qty", "market_value", "cost_basis", "unrealized_pl", "unrealized_plpc", "current_price"],
         "files": [
