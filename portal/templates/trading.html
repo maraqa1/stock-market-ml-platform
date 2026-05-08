@@ -2,6 +2,7 @@
 {% block content %}
 <section class="toolbar-strip">
   <span class="meta-strip">Data source: {{ data_source }}</span>
+  <span class="auto-refresh-status" data-auto-refresh-url="/trading/refresh-data" data-auto-refresh-ms="5000">Auto-refreshing open positions every 5s</span>
   <a class="button-link" href="/trading/lifecycle">Open lifecycle journal</a>
   <form method="post" action="/trading/refresh">
     <button class="button-link primary" type="submit">Refresh Alpaca Status</button>

@@ -38,6 +38,18 @@ def test_trading_refresh_redirects(client, monkeypatch):
     assert "root" in called
 
 
+def test_trading_refresh_data_returns_json(client, monkeypatch):
+    def fake_refresh(root):
+        return {"orders_tracked": 3, "tracking_path": "tracking.csv"}
+
+    monkeypatch.setattr("portal.app.refresh_trading_artifacts", fake_refresh)
+    response = client.post("/trading/refresh-data")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "ok"
+    assert payload["orders_tracked"] == 3
+
+
 def test_stock_detail_missing_ticker_returns_200(client):
     response = client.get("/stock/AAPL")
     assert response.status_code == 200

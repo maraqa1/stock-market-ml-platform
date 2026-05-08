@@ -349,6 +349,28 @@ h2 { font-size: 17px; margin-bottom: 14px; color: #4d5667; }
   color: #fff;
 }
 
+.auto-refresh-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid #d4dfc7;
+  border-radius: 999px;
+  background: #edf5e5;
+  color: #40651d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.auto-refresh-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: #6caf3a;
+}
+
 .kpi.pnl-positive strong {
   color: #2d7a48;
 }

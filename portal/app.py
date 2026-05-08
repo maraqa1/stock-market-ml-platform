@@ -152,6 +152,11 @@ def create_app(root: Path | None = None) -> Flask:
         refresh_trading_artifacts(root_path())
         return redirect(url_for("trading"))
 
+    @app.route("/trading/refresh-data", methods=["POST"])
+    def trading_refresh_data():
+        refreshed = refresh_trading_artifacts(root_path())
+        return jsonify({"status": "ok", **refreshed})
+
     @app.route("/trading/lifecycle")
     def trading_lifecycle():
         return render_template("trading_lifecycle.html", title="Trade Lifecycle", **lifecycle_context(root_path()))
