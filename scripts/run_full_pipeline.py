@@ -13,6 +13,7 @@ from stockml.common.logging_utils import log
 from stockml.features.build_feature_panel import build_feature_panel
 from stockml.gold.build_gold_dataset import build_gold_dataset
 from stockml.metadata.build_metadata_enriched import build_metadata_enriched
+from stockml.models.build_model_outputs import build_model_outputs
 from stockml.prices.build_price_panel import main as run_price_main
 from stockml.sentiment.build_sentiment_panel import build_sentiment_panel
 from stockml.universe.build_tradable_universe import build_us_equity_universe
@@ -54,6 +55,7 @@ def main() -> int:
         log(f"Sentiment pipeline failed but full pipeline will continue: {exc}")
 
     build_gold_dataset(limit_tickers=limit)
+    build_model_outputs(limit_tickers=limit)
     log("Full stockml pipeline complete")
     return 0
 

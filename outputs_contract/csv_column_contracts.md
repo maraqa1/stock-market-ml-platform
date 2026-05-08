@@ -41,3 +41,19 @@ Portal CSVs live under `data/portal_outputs`:
 - `07_portal_signals_YYYYMMDD_HHMMSS.csv`
 - `07_portal_dashboard_metrics_YYYYMMDD_HHMMSS.csv`
 - `07_portal_sector_breakdown_YYYYMMDD_HHMMSS.csv`
+
+## Advanced model outputs
+
+Model outputs live under `data/model_outputs` and are generated from Gold only:
+
+- `advanced_model_latest_predictions_YYYYMMDD_HHMMSS.csv`
+- `advanced_model_signal_table_YYYYMMDD_HHMMSS.csv`
+- `advanced_model_top_long_signals_YYYYMMDD_HHMMSS.csv`
+- `advanced_model_top_short_signals_YYYYMMDD_HHMMSS.csv`
+- `advanced_model_validation_leaderboard_YYYYMMDD_HHMMSS.csv`
+- `advanced_model_confidence_bucket_performance_YYYYMMDD_HHMMSS.csv`
+- `advanced_model_feature_importance_YYYYMMDD_HHMMSS.csv`
+- `advanced_model_model_status_YYYYMMDD_HHMMSS.csv`
+- `advanced_model_data_dictionary_YYYYMMDD_HHMMSS.csv`
+
+If validation gates do not pass, `advanced_model_model_status_*` must set `decision_grade=diagnostic_only` and signal rows must remain `No Decision`.

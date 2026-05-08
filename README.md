@@ -84,5 +84,14 @@ cd /home/massa/stock-market-ml-platform
 /opt/jupyter-env/bin/python3 scripts/run_feature_pipeline.py --limit-tickers 500
 /opt/jupyter-env/bin/python3 scripts/run_sentiment_pipeline.py --limit 500
 /opt/jupyter-env/bin/python3 scripts/run_gold_pipeline.py --limit-tickers 500
+/opt/jupyter-env/bin/python3 scripts/run_model_pipeline.py --limit-tickers 500
+```
+
+Model training and prediction read only from the latest Gold dataset under `data/gold/`. Upstream raw, interim, and processed files are never used directly by model code.
+
+The model pipeline writes validation, feature importance, predictions, and signal tables:
+
+```bash
+/opt/jupyter-env/bin/python3 scripts/run_model_pipeline.py --limit-tickers 500
 ```
 

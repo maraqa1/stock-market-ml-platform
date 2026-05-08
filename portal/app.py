@@ -74,8 +74,6 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/health")
     def health():
         signal_file = latest_file(root_path(), "model_outputs", "advanced_model_signal_table_*.csv", fallback_keys=["portal_outputs"])
-        if signal_file is None:
-            signal_file = latest_file(root_path(), "portal_outputs", "07_portal_signals_*.csv")
         gold_file = latest_file(root_path(), "gold", "06_us_gold_ml_dataset_*.csv")
         return jsonify(
             {

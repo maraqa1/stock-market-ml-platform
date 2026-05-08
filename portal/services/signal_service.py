@@ -9,10 +9,7 @@ from portal.services.latest_file_reader import file_status, latest_file, readabl
 
 
 def _latest_signal_table(root: Optional[Path]):
-    path = latest_file(root, "model_outputs", "advanced_model_signal_table_*.csv", fallback_keys=["portal_outputs"])
-    if path is None:
-        path = latest_file(root, "portal_outputs", "07_portal_signals_*.csv")
-    return path
+    return latest_file(root, "model_outputs", "advanced_model_signal_table_*.csv")
 
 
 def _model_status(root: Optional[Path]) -> pd.DataFrame:
@@ -68,7 +65,7 @@ def signal_context(root: Optional[Path] = None) -> dict:
         "short_rows": short_rows,
         "no_decision_rows": no_decision,
         "empty_signal_message": "No signals passed the validation and decision gates.",
-        "files": [file_status(signal_file, "Signal table"), file_status(status_file, "Model status")],
+        "files": [file_status(signal_file, "Model signal table"), file_status(status_file, "Model status")],
     }
 
 
