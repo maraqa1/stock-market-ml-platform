@@ -12,6 +12,14 @@ PROCESSED_DIR = DATA_DIR / "processed"
 GOLD_DIR = DATA_DIR / "gold"
 MODEL_OUTPUTS_DIR = DATA_DIR / "model_outputs"
 PORTAL_OUTPUTS_DIR = DATA_DIR / "portal_outputs"
+TRADING_DIR = DATA_DIR / "trading"
+PAPER_ORDERS_DIR = TRADING_DIR / "paper_orders"
+PAPER_FILLS_DIR = TRADING_DIR / "paper_fills"
+PAPER_POSITIONS_DIR = TRADING_DIR / "paper_positions"
+PAPER_TRADE_JOURNAL_DIR = TRADING_DIR / "paper_trade_journal"
+PAPER_PNL_DIR = TRADING_DIR / "paper_pnl"
+AGENT_DECISIONS_DIR = TRADING_DIR / "agent_decisions"
+EXECUTION_REPORTS_DIR = TRADING_DIR / "execution_reports"
 
 
 def timestamp() -> str:
@@ -19,7 +27,21 @@ def timestamp() -> str:
 
 
 def ensure_data_dirs() -> None:
-    for path in [RAW_DIR, INTERIM_DIR, PROCESSED_DIR, GOLD_DIR, MODEL_OUTPUTS_DIR, PORTAL_OUTPUTS_DIR]:
+    for path in [
+        RAW_DIR,
+        INTERIM_DIR,
+        PROCESSED_DIR,
+        GOLD_DIR,
+        MODEL_OUTPUTS_DIR,
+        PORTAL_OUTPUTS_DIR,
+        PAPER_ORDERS_DIR,
+        PAPER_FILLS_DIR,
+        PAPER_POSITIONS_DIR,
+        PAPER_TRADE_JOURNAL_DIR,
+        PAPER_PNL_DIR,
+        AGENT_DECISIONS_DIR,
+        EXECUTION_REPORTS_DIR,
+    ]:
         path.mkdir(parents=True, exist_ok=True)
 
 

@@ -19,3 +19,12 @@ Every eligible order must include:
 - take profit price
 - max holding days
 - trade quality status and reason
+
+Lifecycle artifacts are written under `data/trading/`:
+
+- `paper_trade_journal/`: merged order plan and order result lifecycle state
+- `paper_pnl/`: position-level P&L snapshots
+- `paper_positions/`, `paper_orders/`, `paper_fills/`: reserved for deeper paper execution history
+- `agent_decisions/`, `execution_reports/`: reserved for monitor and execution-agent outputs
+
+Use `scripts/run_paper_trading_cycle.py` after generating or tracking paper orders to materialize the journal and P&L snapshots.
