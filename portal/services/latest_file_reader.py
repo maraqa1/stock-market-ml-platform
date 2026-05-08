@@ -79,6 +79,13 @@ def readable_reason(value: object) -> str:
         "expected_trade_return_below_threshold": "Expected trade return below threshold",
         "not_in_top_ranked_long_or_short_candidates": "Not ranked strongly enough today",
         "historical_bucket_avg_gain_below_threshold": "Historical bucket average gain below threshold",
+        "icir_below_threshold": "ICIR below deployment threshold",
+        "fold_hit_rate_below_floor": "Fold hit rate below stability floor",
+        "turnover_adjusted_return_below_threshold": "Turnover-adjusted return below threshold",
+        "thin_liquidity": "Liquidity below trading threshold",
+        "sector_concentration_breach": "Sector concentration limit reached",
+        "stale_features": "Features are stale",
+        "regime_unfavourable": "Market regime unfavourable",
         "diagnostic_only": "Diagnostic only",
     }
     text = str(value or "").strip()
@@ -86,4 +93,3 @@ def readable_reason(value: object) -> str:
         return "Not provided"
     parts = [mapping.get(part.strip(), part.strip().replace("_", " ").capitalize()) for part in text.split("|")]
     return "; ".join(parts)
-

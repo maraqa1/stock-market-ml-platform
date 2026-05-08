@@ -39,5 +39,6 @@ def test_train_predict_from_gold_writes_expected_artifact_frames():
     assert not artifacts.predictions.empty
     assert not artifacts.signal_table.empty
     assert set(["decision_grade", "selected_model", "gold_input_rows"]).issubset(artifacts.model_status.columns)
+    assert "icir_5d" in artifacts.validation_leaderboard.columns
+    assert "turnover_adjusted_avg_gain_5d" in artifacts.validation_leaderboard.columns
     assert "feature" in artifacts.feature_importance.columns
-

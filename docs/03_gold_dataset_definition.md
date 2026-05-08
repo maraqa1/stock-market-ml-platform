@@ -15,6 +15,17 @@ It combines:
 
 The primary modelling objective is not raw return regression. The dataset supports ranking stocks by likelihood of top-quintile or bottom-quintile forward 5-day performance relative to the tradable universe and sector.
 
+Primary model target:
+
+- `target_rank_pct_by_date_5d`
+
+Supporting targets:
+
+- conservative Long/Short/Neutral labels
+- tiered Strong/Weak Long/Short labels
+- volatility-adjusted forward return
+- decay-weighted forward return
+
 All target columns are excluded from model features.
 
 Downstream model training and prediction must read the latest Gold dataset directly from `data/gold/06_us_gold_ml_dataset_*.csv`. The model layer must not train from raw, interim, feature-panel, sentiment, or portal output files.

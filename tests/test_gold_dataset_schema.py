@@ -31,5 +31,7 @@ def test_gold_dataset_required_columns():
     )
     gold = build_gold_dataset_from_frames(features)
     assert set(GOLD_COLUMNS).issubset(gold.columns)
+    assert "target_vol_adjusted_return_5d" in gold.columns
+    assert "target_decay_weighted_return_5d" in gold.columns
+    assert "target_trade_label_tier_5d" in gold.columns
     assert {"Long", "Short", "Neutral"}.intersection(set(gold["target_trade_label_5d"]))
-

@@ -64,20 +64,48 @@ def _score_fold(model, x_train, y_train, x_valid, valid: pd.DataFrame) -> dict:
     scored["predicted_probability_top_quintile_5d"] = probability
     scored["predicted_rank_pct"] = scored.groupby("date")["predicted_probability_top_quintile_5d"].rank(pct=True)
     top = scored[scored["predicted_rank_pct"] >= 0.8].copy()
+    bottom = scored[scored["predicted_rank_pct"] <= 0.2].copy()
     baseline = valid["target_top_quintile_5d"].astype(int).mean()
     hit_rate = top["target_top_quintile_5d"].astype(int).mean() if not top.empty else 0.0
+    short_hit_rate = bottom["target_bottom_quintile_5d"].astype(int).mean() if "target_bottom_quintile_5d" in bottom.columns and not bottom.empty else 0.0
     avg_gain = top["target_return_5d"].mean() if not top.empty else 0.0
+    avg_short_gain = -bottom["target_return_5d"].mean() if not bottom.empty else 0.0
     ic = scored[["predicted_probability_top_quintile_5d", "target_return_5d"]].corr(method="spearman").iloc[0, 1]
+    daily_ic = scored.groupby("date").apply(
+        lambda d: d[["predicted_probability_top_quintile_5d", "target_return_5d"]].corr(method="spearman").iloc[0, 1]
+    ).replace([np.inf, -np.inf], np.nan).dropna()
+    icir = daily_ic.mean() / daily_ic.std() if len(daily_ic) > 1 and daily_ic.std() else 0.0
+    turnover = _signal_turnover(scored)
+    net_avg_gain = avg_gain - turnover * 0.001
     return {
         "validation_rows": len(valid),
         "signal_count": len(top),
         "hit_rate": float(hit_rate or 0),
+        "short_hit_rate": float(short_hit_rate or 0),
         "baseline_top_quintile_rate": float(baseline or 0),
         "avg_realized_gain_5d": float(avg_gain or 0),
+        "avg_realized_short_gain_5d": float(avg_short_gain or 0),
+        "turnover_rate_5d": float(turnover or 0),
+        "turnover_adjusted_avg_gain_5d": float(net_avg_gain or 0),
         "spearman_ic_5d": float(ic if pd.notna(ic) else 0),
-        "beats_baseline": bool(hit_rate > baseline and avg_gain > 0),
+        "icir_5d": float(icir if pd.notna(icir) else 0),
+        "beats_baseline": bool(hit_rate > baseline and avg_gain > 0 and net_avg_gain > 0),
         "scored": scored,
     }
+
+
+def _signal_turnover(scored: pd.DataFrame) -> float:
+    frame = scored[scored["predicted_rank_pct"] >= 0.8].copy()
+    if frame.empty:
+        return 0.0
+    date_sets = frame.groupby("date")["ticker"].apply(lambda values: set(values.astype(str)))
+    turnovers = []
+    previous = None
+    for current in date_sets:
+        if previous is not None and previous:
+            turnovers.append(1 - len(previous & current) / len(previous))
+        previous = current
+    return float(np.mean(turnovers)) if turnovers else 0.0
 
 
 def walk_forward_validate(gold: pd.DataFrame, folds: int = 4) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
@@ -139,8 +167,14 @@ def _decision_status(leaderboard: pd.DataFrame) -> tuple[str, str]:
     best = leaderboard.iloc[0]
     if not bool(best.get("beats_baseline", False)):
         return "diagnostic_only", "model_not_decision_grade|validated_hit_rate_below_threshold"
+    if float(best.get("icir_5d", 0)) < 1.0:
+        return "diagnostic_only", "model_not_decision_grade|icir_below_threshold"
+    if float(leaderboard.groupby("fold")["hit_rate"].max().min() if "fold" in leaderboard.columns else 0) < 0.48:
+        return "diagnostic_only", "model_not_decision_grade|fold_hit_rate_below_floor"
     if float(best.get("avg_realized_gain_5d", 0)) <= 0:
         return "diagnostic_only", "expected_trade_return_below_threshold"
+    if float(best.get("turnover_adjusted_avg_gain_5d", 0)) <= 0:
+        return "diagnostic_only", "turnover_adjusted_return_below_threshold"
     return "decision_grade", "validation_gates_passed"
 
 

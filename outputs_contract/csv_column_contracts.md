@@ -35,7 +35,7 @@ Current no-key providers:
 
 The Gold dataset is one row per ticker-date and combines metadata, OHLCV, technical indicators, liquidity, volatility, sector-relative features, market context, sentiment, candidate-selection scores, and ranking-first targets.
 
-Target columns: target_return_5d, target_return_10d, target_sector_relative_return_5d, target_sector_relative_return_10d, target_rank_pct_by_date_5d, target_top_quintile_5d, target_bottom_quintile_5d, target_trade_label_5d.
+Target columns: target_return_5d, target_return_10d, target_sector_relative_return_5d, target_sector_relative_return_10d, target_realized_volatility_5d, target_vol_adjusted_return_5d, target_decay_weighted_return_5d, target_rank_pct_by_date_5d, target_rank_pct_by_date_decay_5d, target_top_quintile_5d, target_bottom_quintile_5d, target_trade_label_5d, target_trade_label_tier_5d.
 
 Target and model-output columns must be excluded from model feature matrices.
 
