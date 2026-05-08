@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from stockml.db.connection import get_engine
 from stockml.db.connection import _database_url_from_parts
-from stockml.db.loaders import _db_bool, _db_float, _db_int, _db_text, _load_panel, _upsert_rows
+from stockml.db.loaders import _clean_payload, _db_bool, _db_float, _db_int, _db_text, _load_panel, _upsert_rows
 from stockml.db.schema import create_all, panel_rows
 
 
@@ -32,6 +32,7 @@ def test_database_url_can_be_built_from_env_parts(monkeypatch):
 
 def test_typed_db_values_convert_missing_values():
     assert _db_float(float("nan")) is None
+    assert _db_float(float("inf")) is None
     assert _db_int(pd.NA) is None
     assert _db_text(float("nan")) is None
     assert _db_bool(float("nan")) is None
@@ -39,6 +40,11 @@ def test_typed_db_values_convert_missing_values():
     assert _db_float("12.5") == 12.5
     assert _db_bool("true") is True
     assert _db_bool("false") is False
+
+
+def test_payload_cleanup_removes_non_finite_json_values():
+    payload = _clean_payload({"trailing_pe": float("inf"), "forward_pe": float("-inf"), "beta": 1.2})
+    assert payload == {"trailing_pe": None, "forward_pe": None, "beta": 1.2}
 
 
 def test_panel_loader_upserts_rows():

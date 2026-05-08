@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import math
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 
 import pandas as pd
 from pandas.api.types import is_scalar
@@ -32,25 +33,33 @@ def init_database(database_url: Optional[str] = None) -> None:
     create_all(engine)
 
 
-def load_latest_outputs(database_url: Optional[str] = None) -> Dict[str, int]:
+def load_latest_outputs(database_url: Optional[str] = None, skip: Optional[Set[str]] = None) -> Dict[str, int]:
     engine = get_engine(database_url)
     create_all(engine)
+    skip = skip or set()
     loaded = {}
-    with engine.begin() as conn:
-        loaded["equity_universe"] = _load_universe(conn, latest_file(INTERIM_DIR, "02_us_tradable_universe_*.csv"))
-    loaded["price_history"] = _load_price_history_streaming(engine, RAW_DIR / "03_us_price_history_store.csv")
-    with engine.begin() as conn:
-        loaded["metadata_enriched"] = _load_metadata(conn, latest_file(INTERIM_DIR, "04_us_metadata_enriched_*.csv"))
-    loaded["feature_panel"] = _load_panel_streaming(
-        engine, "feature_panel", latest_file(PROCESSED_DIR, "05_us_feature_panel_*.csv")
-    )
-    with engine.begin() as conn:
-        loaded["sentiment_panel"] = _load_sentiment(conn, latest_file(PROCESSED_DIR, "05_news_sentiment_panel_*.csv"))
-    loaded["gold_dataset"] = _load_panel_streaming(
-        engine, "gold_dataset", latest_file(GOLD_DIR, "06_us_gold_ml_dataset_*.csv")
-    )
-    with engine.begin() as conn:
-        loaded.update(_load_model_outputs(conn))
+    if "equity_universe" not in skip:
+        with engine.begin() as conn:
+            loaded["equity_universe"] = _load_universe(conn, latest_file(INTERIM_DIR, "02_us_tradable_universe_*.csv"))
+    if "price_history" not in skip:
+        loaded["price_history"] = _load_price_history_streaming(engine, RAW_DIR / "03_us_price_history_store.csv")
+    if "metadata_enriched" not in skip:
+        with engine.begin() as conn:
+            loaded["metadata_enriched"] = _load_metadata(conn, latest_file(INTERIM_DIR, "04_us_metadata_enriched_*.csv"))
+    if "feature_panel" not in skip:
+        loaded["feature_panel"] = _load_panel_streaming(
+            engine, "feature_panel", latest_file(PROCESSED_DIR, "05_us_feature_panel_*.csv")
+        )
+    if "sentiment_panel" not in skip:
+        with engine.begin() as conn:
+            loaded["sentiment_panel"] = _load_sentiment(conn, latest_file(PROCESSED_DIR, "05_news_sentiment_panel_*.csv"))
+    if "gold_dataset" not in skip:
+        loaded["gold_dataset"] = _load_panel_streaming(
+            engine, "gold_dataset", latest_file(GOLD_DIR, "06_us_gold_ml_dataset_*.csv")
+        )
+    if "model_outputs" not in skip:
+        with engine.begin() as conn:
+            loaded.update(_load_model_outputs(conn))
     return loaded
 
 
@@ -74,22 +83,19 @@ def _batches(rows: list[dict], size: int = DB_BATCH_SIZE):
 def _clean_payload(row: dict) -> dict:
     cleaned = {}
     for key, value in row.items():
-        if value is None:
-            cleaned[key] = None
-        elif is_scalar(value) and pd.isna(value):
+        scalar = _db_value(value)
+        if scalar is None:
             cleaned[key] = None
         elif isinstance(value, (pd.Timestamp, datetime, date)):
             cleaned[key] = value.isoformat()
         elif hasattr(value, "item"):
-            item = value.item()
-            if item is None or (is_scalar(item) and pd.isna(item)):
-                cleaned[key] = None
-            elif isinstance(item, (datetime, date)):
+            item = scalar
+            if isinstance(item, (datetime, date)):
                 cleaned[key] = item.isoformat()
             else:
                 cleaned[key] = item
         else:
-            cleaned[key] = value
+            cleaned[key] = scalar
     return cleaned
 
 
@@ -102,7 +108,11 @@ def _db_value(value):
         item = value.item()
         if item is None or (is_scalar(item) and pd.isna(item)):
             return None
+        if isinstance(item, float) and not math.isfinite(item):
+            return None
         return item
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     return value
 
 
