@@ -20,6 +20,10 @@ class AlpacaConfig:
     max_sector_fraction: float
     min_side_probability: float
     min_abs_probability_edge: float
+    min_intraday_volume: int
+    min_market_cap: float
+    min_risk_adjusted_score: float
+    transaction_cost_bps: float
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -44,4 +48,8 @@ def alpaca_config() -> AlpacaConfig:
         max_sector_fraction=float(os.environ.get("STOCKML_ALPACA_MAX_SECTOR_FRACTION", "0.4")),
         min_side_probability=float(os.environ.get("STOCKML_ALPACA_MIN_SIDE_PROBABILITY", "0.55")),
         min_abs_probability_edge=float(os.environ.get("STOCKML_ALPACA_MIN_ABS_PROBABILITY_EDGE", "0.05")),
+        min_intraday_volume=int(os.environ.get("STOCKML_ALPACA_MIN_INTRADAY_VOLUME", "100000")),
+        min_market_cap=float(os.environ.get("STOCKML_ALPACA_MIN_MARKET_CAP", "300000000")),
+        min_risk_adjusted_score=float(os.environ.get("STOCKML_ALPACA_MIN_RISK_ADJUSTED_SCORE", "0.001")),
+        transaction_cost_bps=float(os.environ.get("STOCKML_ALPACA_TRANSACTION_COST_BPS", "10")),
     )

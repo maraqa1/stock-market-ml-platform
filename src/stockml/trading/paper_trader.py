@@ -95,6 +95,9 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
         context = load_submission_context(client)
         seen_client_ids: set[str] = set()
         for order in plan.to_dict("records"):
+            if str(order.get("trade_quality_status", "")).lower() != "approved":
+                result_rows.append(_result_row(order, "rejected", message=str(order.get("trade_quality_reason", "trade_quality_rejected"))))
+                continue
             request = {key: order[key] for key in ["symbol", "notional", "side", "type", "time_in_force", "extended_hours", "client_order_id"]}
             try:
                 allowed, guard_message = validate_order(order, client, context, seen_client_ids)
@@ -107,13 +110,18 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
                 result_rows.append(_result_row(order, "error", message=str(exc)))
     else:
         for order in plan.to_dict("records"):
-            result_rows.append(_result_row(order, "dry_run", message="STOCKML_ALPACA_SUBMIT_ORDERS is false"))
+            if str(order.get("trade_quality_status", "")).lower() != "approved":
+                result_rows.append(_result_row(order, "rejected", message=str(order.get("trade_quality_reason", "trade_quality_rejected"))))
+            else:
+                result_rows.append(_result_row(order, "dry_run", message="STOCKML_ALPACA_SUBMIT_ORDERS is false"))
 
     results = pd.DataFrame(result_rows)
     results.to_csv(result_path, index=False)
     tracking_path, positions_path = _write_tracking_snapshot(results, config, stamp)
     return {
         "orders_planned": len(plan),
+        "orders_approved": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower() == "approved").sum()) if not plan.empty else 0,
+        "orders_rejected": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower() == "rejected").sum()) if not plan.empty else 0,
         "orders_submitted": sum(1 for row in result_rows if row["status"] == "submitted"),
         "dry_run": not config.submit_orders,
         "plan_path": plan_path,

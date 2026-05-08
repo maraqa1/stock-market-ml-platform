@@ -18,6 +18,10 @@ def config(**overrides):
         "max_sector_fraction": 1.0,
         "min_side_probability": 0.55,
         "min_abs_probability_edge": 0.05,
+        "min_intraday_volume": 100000,
+        "min_market_cap": 300000000.0,
+        "min_risk_adjusted_score": 0.001,
+        "transaction_cost_bps": 10.0,
     }
     values.update(overrides)
     return AlpacaConfig(**values)
@@ -38,12 +42,18 @@ def test_filter_tradeable_signals_keeps_only_gated_long_short():
 
 def test_build_order_plan_uses_notional_paper_orders():
     signals = pd.DataFrame(
-        [{"ticker": "AAA", "date": "2026-05-08", "trade_action": "Long", "side_probability": 0.7, "probability_edge": 0.2, "close": 10, "risk_adjusted_score": 0.5}]
+        [{
+            "ticker": "AAA", "date": "2026-05-08", "trade_action": "Long", "side_probability": 0.7,
+            "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 10, "open": 9.8,
+            "high": 10.2, "low": 9.7, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000,
+            "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.5,
+        }]
     )
     plan = build_order_plan(signals, config(max_notional_per_order=250.0, extended_hours=True))
     assert plan.iloc[0]["symbol"] == "AAA"
     assert plan.iloc[0]["side"] == "buy"
     assert plan.iloc[0]["notional"] == 250.0
+    assert plan.iloc[0]["trade_quality_status"] == "approved"
     assert bool(plan.iloc[0]["extended_hours"]) is True
     assert plan.iloc[0]["client_order_id"] == "stockml-20260508-AAA-buy"
 
@@ -57,20 +67,21 @@ def test_order_plan_applies_price_and_total_notional_guards():
     signals = pd.DataFrame(
         [
             {"ticker": "AAA", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 2, "risk_adjusted_score": 0.9},
-            {"ticker": "BBB", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 20, "risk_adjusted_score": 0.8},
-            {"ticker": "CCC", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 30, "risk_adjusted_score": 0.7},
+            {"ticker": "BBB", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 20, "open": 20, "high": 21, "low": 19, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.8},
+            {"ticker": "CCC", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 30, "open": 30, "high": 31, "low": 29, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.7},
         ]
     )
     plan = build_order_plan(signals, config(max_orders=3, max_notional_per_order=500.0, max_total_notional=500.0))
-    assert list(plan["symbol"]) == ["BBB"]
+    approved = plan[plan["trade_quality_status"].eq("approved")]
+    assert list(approved["symbol"]) == ["BBB"]
 
 
 def test_order_plan_limits_sector_concentration_when_sector_is_available():
     signals = pd.DataFrame(
         [
-            {"ticker": "AAA", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 20, "risk_adjusted_score": 0.9, "sector": "Technology"},
-            {"ticker": "BBB", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 20, "risk_adjusted_score": 0.8, "sector": "Technology"},
-            {"ticker": "CCC", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 20, "risk_adjusted_score": 0.7, "sector": "Healthcare"},
+            {"ticker": "AAA", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 20, "open": 20, "high": 21, "low": 19, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.9, "sector": "Technology"},
+            {"ticker": "BBB", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 20, "open": 20, "high": 21, "low": 19, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.8, "sector": "Technology"},
+            {"ticker": "CCC", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 20, "open": 20, "high": 21, "low": 19, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.7, "sector": "Healthcare"},
         ]
     )
     plan = build_order_plan(signals, config(max_orders=3, max_sector_fraction=0.34))
