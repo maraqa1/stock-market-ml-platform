@@ -110,3 +110,49 @@ To grow later, change only the profile:
 STOCKML_PROFILE=nasdaq_1500 bash deployment/vm/install_full_scheduler.sh
 ```
 
+## Database
+
+PostgreSQL can be used as the persistent store for generated pipeline outputs while CSV exports remain available.
+
+Fresh VM PostgreSQL bootstrap:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y postgresql postgresql-contrib
+sudo -u postgres psql -c "CREATE USER stockml WITH PASSWORD 'stockml';"
+sudo -u postgres psql -c "CREATE DATABASE stockml OWNER stockml;"
+```
+
+Set a connection string:
+
+```bash
+export DATABASE_URL='postgresql+psycopg2://stockml:stockml@localhost:5432/stockml'
+```
+
+Initialize schema:
+
+```bash
+/opt/jupyter-env/bin/python3 scripts/init_database.py
+```
+
+Load latest generated outputs:
+
+```bash
+/opt/jupyter-env/bin/python3 scripts/load_latest_outputs_to_database.py
+```
+
+Run a profile and load its outputs into the database:
+
+```bash
+/opt/jupyter-env/bin/python3 scripts/run_profile_pipeline.py --profile nasdaq_500 --write-database
+```
+
+Enable database writes in the nightly scheduler:
+
+```bash
+export DATABASE_URL='postgresql+psycopg2://stockml:stockml@localhost:5432/stockml'
+STOCKML_PROFILE=nasdaq_500 STOCKML_WRITE_DATABASE=1 bash deployment/vm/install_full_scheduler.sh
+```
+
+The database loader stores normalized tables for universe, price history, metadata, sentiment, model artifacts, and wide JSON-backed panel rows for feature and Gold datasets. The portal still reads CSV outputs in this iteration; the database is the persistence layer for scale and later API/portal query work.
+

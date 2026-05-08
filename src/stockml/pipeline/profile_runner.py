@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from stockml.common.logging_utils import log
 from stockml.common.profiles import load_profile
+from stockml.db.loaders import load_latest_outputs
 from stockml.features.build_feature_panel import build_feature_panel
 from stockml.gold.build_gold_dataset import build_gold_dataset
 from stockml.metadata.build_metadata_enriched import build_metadata_enriched
@@ -19,7 +20,12 @@ def _limit(profile: Dict[str, Any], override_limit: int | None) -> int | None:
     return override_limit if override_limit is not None else profile.get("limit_tickers")
 
 
-def run_profile(profile_name: str, override_limit: int | None = None, skip_sentiment: bool = False) -> None:
+def run_profile(
+    profile_name: str,
+    override_limit: int | None = None,
+    skip_sentiment: bool = False,
+    write_database: bool = False,
+) -> None:
     profile = load_profile(profile_name)
     limit = _limit(profile, override_limit)
     exchange = profile.get("exchange")
@@ -58,6 +64,10 @@ def run_profile(profile_name: str, override_limit: int | None = None, skip_senti
     if profile.get("run_model", True):
         build_model_outputs(limit_tickers=limit)
 
+    if write_database:
+        counts = load_latest_outputs()
+        log(f"Database load complete: {counts}")
+
     log(f"Profile pipeline complete: {profile_name}")
 
 
@@ -66,11 +76,16 @@ def main() -> int:
     parser.add_argument("--profile", default="nasdaq_500")
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--skip-sentiment", action="store_true")
+    parser.add_argument("--write-database", action="store_true")
     args = parser.parse_args()
-    run_profile(args.profile, override_limit=args.limit_tickers, skip_sentiment=args.skip_sentiment)
+    run_profile(
+        args.profile,
+        override_limit=args.limit_tickers,
+        skip_sentiment=args.skip_sentiment,
+        write_database=args.write_database,
+    )
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
