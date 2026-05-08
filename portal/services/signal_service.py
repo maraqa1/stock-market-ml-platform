@@ -57,6 +57,9 @@ def signal_context(root: Optional[Path] = None) -> dict:
     long_rows = display[display["trade_action"].astype(str).str.lower().eq("long")].head(50).to_dict("records") if "trade_action" in display.columns else []
     short_rows = display[display["trade_action"].astype(str).str.lower().eq("short")].head(50).to_dict("records") if "trade_action" in display.columns else []
     no_decision = signals[signals["trade_action"].astype(str).str.lower().isin(["no decision", "neutral"])].head(50).to_dict("records") if "trade_action" in signals.columns else []
+    all_long_count = int(signals["trade_action"].astype(str).str.lower().eq("long").sum()) if "trade_action" in signals.columns else 0
+    all_short_count = int(signals["trade_action"].astype(str).str.lower().eq("short").sum()) if "trade_action" in signals.columns else 0
+    all_no_decision_count = int(signals["trade_action"].astype(str).str.lower().isin(["no decision", "neutral"]).sum()) if "trade_action" in signals.columns else 0
 
     return {
         "status": status_row,
@@ -66,9 +69,28 @@ def signal_context(root: Optional[Path] = None) -> dict:
         "long_count": len(long_rows),
         "short_count": len(short_rows),
         "no_decision_count": len(no_decision),
+        "all_long_count": all_long_count,
+        "all_short_count": all_short_count,
+        "all_no_decision_count": all_no_decision_count,
         "long_rows": long_rows,
         "short_rows": short_rows,
         "no_decision_rows": no_decision,
+        "signal_columns": [
+            "date",
+            "ticker",
+            "company",
+            "sector",
+            "close",
+            "trade_action",
+            "side_probability",
+            "probability_edge",
+            "expected_trade_return",
+            "risk_adjusted_score",
+            "selection_score",
+            "candidate_rank_overall",
+            "signal_reason_readable",
+        ],
+        "no_decision_columns": ["ticker", "company", "sector", "side_probability", "candidate_rank_overall", "no_decision_reason_readable"],
         "empty_signal_message": "No signals passed the validation and decision gates.",
         "files": [file_status(signal_file, "Model signal table"), file_status(status_file, "Model status")],
         "data_source": "PostgreSQL" if not db_signals.empty else "CSV",

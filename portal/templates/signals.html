@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="meta-strip">Data source: {{ data_source or "CSV" }}</section>
+<section class="kpi-grid">
+  <article class="kpi"><span>Displayed Long</span><strong>{{ long_count|fmt }}</strong></article>
+  <article class="kpi"><span>Displayed Short</span><strong>{{ short_count|fmt }}</strong></article>
+  <article class="kpi"><span>No Decision</span><strong>{{ all_no_decision_count|fmt }}</strong></article>
+  <article class="kpi"><span>Model</span><strong>{{ status.selected_model or "Unknown" }}</strong></article>
+</section>
 <section class="panel">
   <h2>Model Status</h2>
   <span class="badge {{ decision_grade }}">{{ decision_grade|reason }}</span>
@@ -11,8 +17,8 @@
   <section class="empty">{{ empty_signal_message }}</section>
 {% endif %}
 <section class="grid-2">
-  <article class="panel"><h2>Top Long Signals</h2>{{ table(long_rows) }}</article>
-  <article class="panel"><h2>Top Short Signals</h2>{{ table(short_rows) }}</article>
+  <article class="panel"><h2>Top Long Signals</h2>{{ table(long_rows, signal_columns) }}</article>
+  <article class="panel"><h2>Top Short Signals</h2>{{ table(short_rows, signal_columns) }}</article>
 </section>
-<section class="panel"><h2>No Decision Sample</h2>{{ table(no_decision_rows) }}</section>
+<section class="panel"><h2>No Decision Sample</h2>{{ table(no_decision_rows, no_decision_columns) }}</section>
 {% endblock %}
