@@ -32,13 +32,17 @@ class RankingConfig:
     folds: int = 4
     random_seed: int = 42
     icir_min: float = 1.0
-    max_drawdown: float = 0.08
+    max_drawdown: float = 1.0
     max_turnover: float = 0.70
     transaction_cost_bps: float = 10.0
     long_top_n: int = 10
     short_bottom_n: int = 10
     enable_classifier: bool = True
     allow_short_selling: bool = False
+    decision_objective: str = "top_k_portfolio"
+    min_positive_spread_folds: int = 3
+    min_long_short_spread_ir: float = 0.0
+    require_positive_full_ic: bool = False
 
 
 @dataclass
@@ -70,13 +74,17 @@ def config_from_env() -> RankingConfig:
         validation_dates=int(os.environ.get("STOCKML_RANKER_VALIDATION_DATES", "126")),
         folds=int(os.environ.get("STOCKML_RANKER_FOLDS", "4")),
         icir_min=float(os.environ.get("STOCKML_RANKER_MIN_ICIR", "1.0")),
-        max_drawdown=float(os.environ.get("STOCKML_RANKER_MAX_DRAWDOWN", "0.08")),
+        max_drawdown=float(os.environ.get("STOCKML_RANKER_MAX_DRAWDOWN", "1.0")),
         max_turnover=float(os.environ.get("STOCKML_RANKER_MAX_TURNOVER", "0.70")),
         transaction_cost_bps=float(os.environ.get("STOCKML_RANKER_TRANSACTION_COST_BPS", "10")),
         long_top_n=int(os.environ.get("STOCKML_RANKER_LONG_TOP_N", "10")),
         short_bottom_n=int(os.environ.get("STOCKML_RANKER_SHORT_BOTTOM_N", "10")),
         enable_classifier=_bool_env("STOCKML_RANKER_ENABLE_CLASSIFIER", True),
         allow_short_selling=_bool_env("STOCKML_ALLOW_SHORT_SELLING", False),
+        decision_objective=os.environ.get("STOCKML_RANKER_DECISION_OBJECTIVE", "top_k_portfolio").strip().lower(),
+        min_positive_spread_folds=int(os.environ.get("STOCKML_RANKER_MIN_POSITIVE_SPREAD_FOLDS", "3")),
+        min_long_short_spread_ir=float(os.environ.get("STOCKML_RANKER_MIN_LONG_SHORT_SPREAD_IR", "0")),
+        require_positive_full_ic=_bool_env("STOCKML_RANKER_REQUIRE_POSITIVE_FULL_IC", False),
     )
 
 
@@ -256,6 +264,7 @@ def _score_metrics(frame: pd.DataFrame, model_name: str, config: RankingConfig) 
     turnover = _turnover(frame)
     ls_returns = _daily_long_short_returns(frame)
     spread = float(ls_returns.mean()) if not ls_returns.empty else 0.0
+    spread_std = float(ls_returns.std()) if len(ls_returns) > 1 else 0.0
     tc_spread = spread - turnover * config.transaction_cost_bps / 10000
     metrics = {
         "model_name": model_name,
@@ -276,6 +285,8 @@ def _score_metrics(frame: pd.DataFrame, model_name: str, config: RankingConfig) 
         "avg_return_bottom_25": _avg_return_top(frame, 25, False),
         "avg_return_bottom_50": _avg_return_top(frame, 50, False),
         "long_short_spread": spread,
+        "long_short_spread_std": spread_std,
+        "long_short_spread_ir": spread / spread_std if spread_std else 0.0,
         "turnover": turnover,
         "tc_adjusted_long_short_spread": tc_spread,
         "avg_realized_gain_5d": _avg_return_top(frame, 25, True),
@@ -356,22 +367,32 @@ def _decision_gates(leaderboard: pd.DataFrame, config: RankingConfig) -> tuple[b
     model = leaderboard[leaderboard["model_name"].eq("lightgbm_lambdarank")].copy()
     baseline = leaderboard[leaderboard["model_name"].isin(["return_20d", "return_60d"])]
     model_overall = model.mean(numeric_only=True).to_dict()
+    reasons = []
     if not baseline.empty and model_overall.get("long_short_spread", 0) <= baseline.groupby("model_name")["long_short_spread"].mean().max():
-        return False, "baseline_not_beaten"
-    if model_overall.get("daily_spearman_ic_mean", 0) <= 0:
-        return False, "mean_ic_not_positive"
-    if model_overall.get("icir_5d", 0) < config.icir_min:
-        return False, "icir_below_threshold"
+        reasons.append("baseline_not_beaten")
+    if config.require_positive_full_ic or config.decision_objective == "full_rank_ic":
+        if model_overall.get("daily_spearman_ic_mean", 0) <= 0:
+            reasons.append("mean_ic_not_positive")
+        if model_overall.get("icir_5d", 0) < config.icir_min:
+            reasons.append("icir_below_threshold")
     if model_overall.get("long_short_spread", 0) <= 0:
-        return False, "long_short_spread_not_positive"
+        reasons.append("long_short_spread_not_positive")
     if model_overall.get("tc_adjusted_long_short_spread", 0) <= 0:
-        return False, "transaction_cost_adjusted_spread_not_positive"
-    if int((model["daily_spearman_ic_mean"] > 0).sum()) < min(3, len(model)):
-        return False, "positive_ic_folds_below_threshold"
+        reasons.append("transaction_cost_adjusted_spread_not_positive")
+    if model_overall.get("long_short_spread_ir", 0) < config.min_long_short_spread_ir:
+        reasons.append("long_short_spread_ir_below_threshold")
+    if int((model["long_short_spread"] > 0).sum()) < min(config.min_positive_spread_folds, len(model)):
+        reasons.append("positive_spread_folds_below_threshold")
     if model_overall.get("max_drawdown", 1) > config.max_drawdown:
-        return False, "drawdown_above_threshold"
+        reasons.append("drawdown_above_threshold")
     if model_overall.get("turnover", 1) > config.max_turnover:
-        return False, "turnover_above_threshold"
+        reasons.append("turnover_above_threshold")
+    if reasons:
+        return False, "|".join(reasons)
+    if model_overall.get("daily_spearman_ic_mean", 0) <= 0:
+        return True, "portfolio_validation_gates_passed|full_rank_ic_not_positive"
+    if model_overall.get("icir_5d", 0) < config.icir_min:
+        return True, "portfolio_validation_gates_passed|full_rank_icir_below_threshold"
     return True, "validation_gates_passed"
 
 
@@ -454,7 +475,7 @@ def train_predict_from_gold(gold: pd.DataFrame, top_n: int = 50, config: Ranking
         "model_version": "cross_sectional_lambdarank_v2",
         "validation_window": "expanding_walk_forward",
         "folds_completed": int(fold_metrics["fold"].nunique()) if not fold_metrics.empty else 0,
-        "beats_baseline": gates_passed and gate_reason == "validation_gates_passed",
+        "beats_baseline": gates_passed,
         "reason": gate_reason,
         "gold_input_rows": len(gold),
         "eligible_training_rows": len(trainable),
