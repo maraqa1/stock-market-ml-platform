@@ -145,6 +145,9 @@ def build_position_decisions(
         if current_price <= 0:
             decision, action = "watch", "manual_review"
             reasons.append("current_price_missing")
+        elif latest_signal == "Unknown":
+            decision, action = "watch", "manual_review"
+            reasons.append("latest_signal_unknown")
         elif latest_signal not in {"Long", "Short"}:
             decision, action = "close", "close_position"
             reasons.append("signal_no_longer_active")

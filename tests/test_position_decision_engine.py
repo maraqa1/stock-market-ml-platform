@@ -57,3 +57,11 @@ def test_close_when_signal_no_longer_active():
     decisions = build_position_decisions(positions, plan, now=NOW)
     assert decisions.iloc[0]["decision"] == "close"
     assert "signal_no_longer_active" in decisions.iloc[0]["decision_reason"]
+
+
+def test_unknown_signal_context_requires_watch_not_close():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 142, "side": "long"}])
+    decisions = build_position_decisions(positions, pd.DataFrame(), now=NOW, fallback_signal_time=NOW)
+    assert decisions.iloc[0]["decision"] == "watch"
+    assert decisions.iloc[0]["recommended_action"] == "manual_review"
+    assert "latest_signal_unknown" in decisions.iloc[0]["decision_reason"]
