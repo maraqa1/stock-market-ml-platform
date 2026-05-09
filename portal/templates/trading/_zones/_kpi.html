@@ -1,0 +1,22 @@
+<section class="kpi-row trading-zone" data-zone="kpi-row">
+  <article class="kpi-card">
+    <span class="kpi-card__label">Open Positions</span>
+    <strong class="kpi-card__value">{{ position_count|fmt }}</strong>
+    <small class="kpi-card__detail">from latest paper positions artifact</small>
+  </article>
+  <article class="kpi-card">
+    <span class="kpi-card__label">Unrealized P&amp;L</span>
+    <strong class="kpi-card__value">{{ position_unrealized_pl|fmt }}</strong>
+    <small class="kpi-card__detail">{{ position_unrealized_plpc|fmt }}</small>
+  </article>
+  <article class="kpi-card">
+    <span class="kpi-card__label">Orders Submitted</span>
+    <strong class="kpi-card__value">{{ orders_submitted|fmt }}</strong>
+    <small class="kpi-card__detail">{{ orders_rejected|fmt }} rejected/error</small>
+  </article>
+  <article class="kpi-card kpi-card--alert kpi-card--clickable">
+    <span class="kpi-card__label">Pending Decisions</span>
+    <strong class="kpi-card__value">0</strong>
+    <small class="kpi-card__detail">SPEC 12 action queue</small>
+  </article>
+</section>

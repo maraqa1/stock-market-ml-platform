@@ -198,6 +198,38 @@ th.numeric {
   padding-bottom: var(--space-10);
 }
 
+.trading-console {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.trading-console .header-strip,
+.trading-console .cadence-strip,
+.trading-console .kpi-row,
+.trading-console .zone {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.trading-console .header-strip,
+.trading-console .cadence-strip {
+  border-radius: var(--radius-2);
+}
+
+.trading-console .kpi-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.zone__body--stub {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.zone__body--stub p {
+  margin: 0;
+}
+
 .header-strip {
   display: flex;
   align-items: center;

@@ -76,6 +76,31 @@ def test_trading_refresh_redirects(client, monkeypatch):
     assert "root" in called
 
 
+def test_trading_page_renders_spec07_zone_skeleton(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    expected_order = [
+        b'data-zone="header"',
+        b'data-zone="cadence"',
+        b'data-zone="pipeline-freshness"',
+        b'data-zone="kpi-row"',
+        b'data-zone="basket-integrity"',
+        b'data-zone="monitor-activity"',
+        b'data-zone="action-queue"',
+        b'data-zone="open-positions"',
+        b'data-zone="run-summary"',
+        b'data-zone="todays-basket"',
+        b'data-zone="rejected-trimmed"',
+        b'data-zone="model-shortlist"',
+        b'data-zone="diagnostics"',
+    ]
+    cursor = -1
+    for marker in expected_order:
+        position = response.data.find(marker)
+        assert position > cursor
+        cursor = position
+
+
 def test_trading_refresh_data_returns_json(client, monkeypatch):
     def fake_refresh(root):
         return {"orders_tracked": 3, "tracking_path": "tracking.csv"}

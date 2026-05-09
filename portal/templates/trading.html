@@ -1,168 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="toolbar-strip">
-  <span class="meta-strip">Data source: {{ data_source }}</span>
-  <span class="auto-refresh-status" data-auto-refresh-url="/trading/refresh-data" data-auto-refresh-ms="5000">Auto-refreshing open positions every 5s</span>
-  <a class="button-link" href="/trading/lifecycle">Open lifecycle journal</a>
-  <form method="post" action="/trading/refresh">
-    <button class="button-link primary" type="submit">Refresh Alpaca Status</button>
-  </form>
-</section>
-{% if dry_run %}
-  <section class="warning">Alpaca paper trading is in dry-run mode. Planned orders are recorded, but no orders are submitted.</section>
-{% else %}
-  <section class="warning critical">Alpaca paper order submission is enabled. Each order must still pass account, buying-power, duplicate-order, and asset-tradability pre-flight checks before submission.</section>
-{% endif %}
-{% if request.args.get("action_status") %}
-  <section class="warning">
-    Manual action for {{ request.args.get("action_symbol") }}:
-    {{ request.args.get("action_status") }} - {{ request.args.get("action_message")|reason }}
-  </section>
-{% endif %}
-<section class="kpi-grid">
-  <article class="kpi"><span>Candidate Pool</span><strong>{{ candidate_pool_count|fmt }}</strong></article>
-  <article class="kpi"><span>Orders Planned</span><strong>{{ orders_planned|fmt }}</strong></article>
-  <article class="kpi"><span>Orders Submitted</span><strong>{{ orders_submitted|fmt }}</strong></article>
-  <article class="kpi"><span>Rejected / Error</span><strong>{{ orders_rejected|fmt }}</strong></article>
-  <article class="kpi"><span>Basket Notional</span><strong>{{ total_notional|fmt }}</strong></article>
-  <article class="kpi"><span>Tracked Orders</span><strong>{{ orders_tracked|fmt }}</strong></article>
-  <article class="kpi"><span>Open Orders</span><strong>{{ open_orders|fmt }}</strong></article>
-  <article class="kpi"><span>Filled Orders</span><strong>{{ filled_orders|fmt }}</strong></article>
-</section>
-<section class="grid-2">
-  <article class="panel">
-    <h2>Trading Workflow</h2>
-    <div class="summary-list">
-      <div><span>1 Candidate pool</span><strong>{{ candidate_pool_count|fmt }} screened names</strong></div>
-      <div><span>2 Final order plan</span><strong>{{ orders_planned|fmt }} selected orders</strong></div>
-      <div><span>3 Alpaca tracking</span><strong>{{ orders_tracked|fmt }} tracked records</strong></div>
-      <div><span>4 Position monitor</span><strong>10 minute review cycle</strong></div>
-    </div>
-  </article>
-  <article class="panel">
-    <h2>Candidate Pool Mix</h2>
-    <div class="summary-list">
-      <div><span>Signal side</span><strong>{{ candidate_pool_action_counts }}</strong></div>
-      <div><span>Trade quality</span><strong>{{ candidate_pool_status_counts }}</strong></div>
-      <div><span>Final order side mix</span><strong>{{ side_counts }}</strong></div>
-      <div><span>Final result status</span><strong>{{ status_counts }}</strong></div>
-    </div>
-  </article>
-</section>
-<section class="panel priority-panel">
-  <div class="panel-title-row">
-    <h2>Candidate Pool</h2>
-    <span class="meta-strip">{{ candidate_pool_count|fmt }} ranked Long/Short candidates before final order selection</span>
-  </div>
-  {% if not candidate_pool_rows %}
-    <div class="empty small">No candidate pool exists yet. Run <code>scripts/run_alpaca_paper_trader.py</code> after a model run.</div>
-  {% else %}
-    {{ table(candidate_pool_rows, candidate_pool_columns) }}
-  {% endif %}
-</section>
-<section class="panel positions-panel">
-  <div class="panel-title-row">
-    <h2>Paper Positions</h2>
-    <div class="position-summary pnl-{{ position_pnl_class }}">
-      <div><span>Position Value</span><strong>{{ position_market_value|fmt }}</strong></div>
-      <div><span>Cost Basis</span><strong>{{ position_cost_basis|fmt }}</strong></div>
-      <div><span>Total Gain / Loss</span><strong>{{ position_unrealized_pl|fmt }}</strong></div>
-      <div><span>Total Return</span><strong>{{ position_unrealized_plpc|fmt }}</strong></div>
-    </div>
-  </div>
-  <p class="muted">Keep records an operator override for audit. Close submits a paper close request only when paper submission is enabled; live trading remains blocked.</p>
-  {% if not position_rows %}
-    <div class="empty small">No paper positions were returned. This is expected before orders are submitted or filled.</div>
-  {% else %}
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Symbol</th>
-            <th>Qty</th>
-            <th>Market Value</th>
-            <th>Cost Basis</th>
-            <th>Unrealized P&amp;L</th>
-            <th>Unrealized Return</th>
-            <th>Current Price</th>
-            <th>Operator Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in position_rows %}
-            <tr>
-              <td>{{ row.symbol }}</td>
-              <td>{{ row.qty|fmt }}</td>
-              <td>{{ row.market_value|fmt }}</td>
-              <td>{{ row.cost_basis|fmt }}</td>
-              <td>{{ row.unrealized_pl|fmt }}</td>
-              <td>{{ row.unrealized_plpc|fmt }}</td>
-              <td>{{ row.current_price|fmt }}</td>
-              <td>
-                <div class="action-buttons">
-                  <form method="post" action="/trading/positions/{{ row.symbol }}/keep">
-                    <button class="button-link" type="submit">Keep</button>
-                  </form>
-                  <form method="post" action="/trading/positions/{{ row.symbol }}/close">
-                    <button class="button-link danger" type="submit">Close Paper Position</button>
-                  </form>
-                </div>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% endif %}
-</section>
-<section class="panel">
-  <h2>Manual Position Actions</h2>
-  {% if not operator_action_rows %}
-    <div class="empty small">No manual keep or close actions have been recorded yet.</div>
-  {% else %}
-    {{ table(operator_action_rows, operator_action_columns) }}
-  {% endif %}
-</section>
-<section class="grid-2">
-  <article class="panel">
-    <h2>Execution Guardrails</h2>
-    <div class="guardrail-grid">
-      {% for guardrail in guardrails %}
-        <div class="guardrail {{ guardrail.status }}">
-          <span>{{ guardrail.label }}</span>
-          <strong>{{ guardrail.value|fmt }}</strong>
-        </div>
-      {% endfor %}
-    </div>
-  </article>
-  <article class="panel">
-    <h2>Run Summary</h2>
-    <div class="summary-list">
-      <div><span>Side mix</span><strong>{{ side_counts }}</strong></div>
-      <div><span>Result status</span><strong>{{ status_counts }}</strong></div>
-      <div><span>Alpaca status</span><strong>{{ tracking_status_counts }}</strong></div>
-      <div><span>Order source</span><strong>Latest model signal table</strong></div>
-    </div>
-  </article>
-</section>
-<section class="panel">
-  <h2>Order Tracking</h2>
-  {% if not tracking_rows %}
-    <div class="empty small">No tracking snapshot exists yet. Run <code>scripts/run_alpaca_paper_trader.py --track-only</code> after an order run to refresh status.</div>
-  {% else %}
-    {{ table(tracking_rows, tracking_columns) }}
-  {% endif %}
-</section>
-<section class="panel">
-  <h2>Latest Order Plan</h2>
-  {% if not plan_rows %}
-    <div class="empty small">No Alpaca order plan exists yet. Run <code>scripts/run_alpaca_paper_trader.py</code> to create a dry-run plan.</div>
-  {% else %}
-    {{ table(plan_rows, plan_columns) }}
-  {% endif %}
-</section>
-<section class="panel">
-  <h2>Latest Order Results</h2>
-  {{ table(result_rows, result_columns) }}
+<section class="trading-console">
+  {% include "trading/_zones/_header.html" %}
+  {% include "trading/_zones/_cadence.html" %}
+  {% include "trading/_zones/_pipeline_freshness.html" %}
+  {% include "trading/_zones/_kpi.html" %}
+  {% include "trading/_zones/_basket_integrity.html" %}
+  {% include "trading/_zones/_monitor_activity.html" %}
+  {% include "trading/_zones/_action_queue.html" %}
+  {% include "trading/_zones/_positions.html" %}
+  {% include "trading/_zones/_run_summary.html" %}
+  {% include "trading/_zones/_basket.html" %}
+  {% include "trading/_zones/_rejected.html" %}
+  {% include "trading/_zones/_shortlist.html" %}
+  {% include "trading/_zones/_diagnostics.html" %}
 </section>
 {% endblock %}
