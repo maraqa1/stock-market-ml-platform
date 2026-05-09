@@ -54,11 +54,39 @@
     </details>
     <details data-key="diagnostics-guardrails">
       <summary class="details-summary">Execution Guardrails</summary>
-      <div class="empty small">Guardrail settings remain read-only here until SPEC 20 expands this diagnostics group.</div>
+      <div class="diagnostic-grid">
+        {% for guardrail in guardrails %}
+          <article class="diagnostic-card">
+            <span class="diagnostic-card__label">{{ guardrail.label }}</span>
+            <strong class="diagnostic-card__value">{{ guardrail.value }}</strong>
+            <span>{{ pill(guardrail.status) }}</span>
+          </article>
+        {% endfor %}
+      </div>
+      <details data-key="diagnostics-guardrail-edit" class="diagnostic-edit">
+        <summary class="button button-ghost button-small">Edit settings</summary>
+        <form class="settings-grid" aria-label="Execution guardrail settings">
+          {% for guardrail in guardrails %}
+            <label>
+              <span>{{ guardrail.label }}</span>
+              <input type="text" value="{{ guardrail.value }}" readonly>
+            </label>
+          {% endfor %}
+        </form>
+        <div class="empty small">Settings are read-only in this operator view. Update the VM environment and restart services to change execution guardrails.</div>
+      </details>
     </details>
     <details data-key="diagnostics-execution-quality">
       <summary class="details-summary">Execution Quality</summary>
-      <div class="empty small">Slippage, fill ratio, and latency will be derived from position events in SPEC 20.</div>
+      <div class="diagnostic-grid">
+        {% for metric in execution_quality %}
+          <article class="diagnostic-card">
+            <span class="diagnostic-card__label">{{ metric.label }}</span>
+            <strong class="diagnostic-card__value">{{ metric.value }}</strong>
+            <span>{{ pill(metric.status) }}</span>
+          </article>
+        {% endfor %}
+      </div>
     </details>
     <a class="button button-ghost button-small" href="/trading/lifecycle">Open Activity Journal</a>
   </div>

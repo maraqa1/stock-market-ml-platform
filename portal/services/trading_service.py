@@ -218,6 +218,25 @@ def _build_rejected_trimmed_rows(plan: pd.DataFrame, results: pd.DataFrame) -> l
     return rows
 
 
+def _execution_quality(results: pd.DataFrame, tracking: pd.DataFrame) -> list[dict]:
+    status_counts = _status_counts(results)
+    tracking_counts = _status_counts(tracking, "alpaca_status")
+    submitted = int(status_counts.get("submitted", 0))
+    filled = int(tracking_counts.get("filled", 0))
+    partial = int(tracking_counts.get("partially_filled", 0) + tracking_counts.get("partial", 0))
+    rejected = int(status_counts.get("rejected", 0) + status_counts.get("error", 0))
+    fill_ratio = f"{(filled / submitted * 100):.1f}%" if submitted else "Not available"
+    return [
+        {"label": "Submitted", "value": submitted, "status": "submitted" if submitted else "pending"},
+        {"label": "Filled", "value": filled, "status": "filled" if filled else "pending"},
+        {"label": "Partial fills", "value": partial, "status": "partial" if partial else "safe"},
+        {"label": "Rejected / Error", "value": rejected, "status": "rejected" if rejected else "safe"},
+        {"label": "Fill ratio", "value": fill_ratio, "status": "safe" if filled and submitted else "pending"},
+        {"label": "Slippage", "value": "Not available", "status": "pending"},
+        {"label": "Latency", "value": "Not available", "status": "pending"},
+    ]
+
+
 def _position_summary(positions: pd.DataFrame) -> dict[str, float | int]:
     market_value = _sum_column(positions, "market_value")
     cost_basis = _sum_column(positions, "cost_basis")
@@ -359,6 +378,7 @@ def trading_context(root: Path) -> dict:
         "status_counts": status_counts,
         "tracking_status_counts": tracking_status_counts,
         "guardrails": guardrails,
+        "execution_quality": _execution_quality(results, tracking),
         "plan_rows": _records(plan),
         "result_rows": _records(results),
         "tracking_rows": _records(tracking),

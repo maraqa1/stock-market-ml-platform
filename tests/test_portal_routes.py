@@ -143,6 +143,16 @@ def test_trading_page_renders_pipeline_history_diagnostics(client):
     assert b"Open Activity Journal" in response.data
 
 
+def test_trading_page_renders_spec20_diagnostics_sections(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Execution Guardrails" in response.data
+    assert b"Edit settings" in response.data
+    assert b"Execution Quality" in response.data
+    assert b"Fill ratio" in response.data
+    assert b"Slippage" in response.data
+
+
 def test_trading_page_renders_todays_basket_table(client):
     response = client.get("/trading")
     assert response.status_code == 200

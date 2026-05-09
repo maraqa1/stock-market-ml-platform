@@ -116,6 +116,8 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert ctx["rejected_trimmed_rows"][0]["symbol"] == "AAA"
     assert ctx["rejected_trimmed_rows"][0]["status"] == "trimmed"
     assert ctx["rejected_trimmed_rows"][0]["source"] == "Guardrail"
+    assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Rejected / Error"] == 0
+    assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Fill ratio"] == "Not available"
 
 
 def test_trading_context_rejected_trimmed_sources(tmp_path):

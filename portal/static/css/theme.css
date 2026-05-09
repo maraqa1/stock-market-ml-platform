@@ -1003,6 +1003,68 @@ dialog {
   display: inline-flex;
 }
 
+.diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.diagnostic-card {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+}
+
+.diagnostic-card__label {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+}
+
+.diagnostic-card__value {
+  display: block;
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-14);
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnostic-edit {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.settings-grid label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+}
+
+.settings-grid input {
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+
 .spec00-styleguide {
   padding: var(--space-4);
 }
