@@ -23,6 +23,22 @@ def _records(frame, limit: int = 50) -> list[dict]:
     return out.to_dict("records")
 
 
+def _records_by_rank(frame, limit: int = 50) -> list[dict]:
+    if frame.empty:
+        return []
+    out = frame.copy()
+    if "candidate_rank" in out.columns:
+        out["__rank"] = pd.to_numeric(out["candidate_rank"], errors="coerce").fillna(999999)
+        out = out.sort_values("__rank").drop(columns="__rank")
+    else:
+        out = _sort_by_confidence(out)
+    out = out.head(limit).fillna("")
+    for column in ["trade_quality_reason", "message"]:
+        if column in out.columns:
+            out[column] = out[column].apply(format_reasons)
+    return out.to_dict("records")
+
+
 def _sort_by_confidence(frame):
     if frame.empty:
         return frame
@@ -47,6 +63,12 @@ def _side_counts(plan) -> dict[str, int]:
     if plan.empty or "side" not in plan.columns:
         return {}
     return {str(key): int(value) for key, value in plan["side"].value_counts().to_dict().items()}
+
+
+def _action_counts(frame) -> dict[str, int]:
+    if frame.empty or "trade_action" not in frame.columns:
+        return {}
+    return {str(key): int(value) for key, value in frame["trade_action"].fillna("").value_counts().to_dict().items() if str(key)}
 
 
 def _status_counts(results, column: str = "status") -> dict[str, int]:
@@ -189,6 +211,8 @@ def trading_context(root: Path) -> dict:
         "dry_run": dry_run,
         "orders_planned": len(plan),
         "candidate_pool_count": len(candidate_pool),
+        "candidate_pool_status_counts": _status_counts(candidate_pool, "trade_quality_status"),
+        "candidate_pool_action_counts": _action_counts(candidate_pool),
         "orders_submitted": int(status_counts.get("submitted", 0)),
         "orders_rejected": int(status_counts.get("error", 0) + status_counts.get("rejected", 0)),
         "orders_tracked": len(tracking),
@@ -205,7 +229,7 @@ def trading_context(root: Path) -> dict:
         "tracking_rows": _records(tracking),
         "position_rows": _records(positions),
         "operator_action_rows": _records(actions, limit=10),
-        "candidate_pool_rows": _records(candidate_pool, limit=100),
+        "candidate_pool_rows": _records_by_rank(candidate_pool, limit=100),
         "plan_columns": [
             "symbol", "trade_quality_status", "trade_quality_reason", "side", "notional", "approved_notional",
             "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "risk_tier",
@@ -214,10 +238,9 @@ def trading_context(root: Path) -> dict:
             "order_eligible", "no_decision_reason",
         ],
         "candidate_pool_columns": [
-            "candidate_rank", "symbol", "trade_action", "trade_quality_status", "trade_quality_reason", "side",
-            "approved_notional", "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price",
-            "risk_tier", "volatility_tier", "liquidity_tier", "confidence_score", "risk_adjusted_score",
-            "order_eligible",
+            "candidate_rank", "symbol", "trade_action", "side", "trade_quality_status", "approved_notional",
+            "suggested_quantity", "current_price", "risk_tier", "volatility_tier", "liquidity_tier",
+            "confidence_score", "risk_adjusted_score", "trade_quality_reason",
         ],
         "result_columns": [
             "symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional",

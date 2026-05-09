@@ -71,6 +71,13 @@ def test_signal_context_sorts_highest_confidence_first(tmp_path):
 
 def test_trading_context_with_alpaca_artifacts(tmp_path):
     write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_1.csv",
+        [
+            {"candidate_rank": 2, "symbol": "BBB", "trade_action": "Short", "trade_quality_status": "rejected", "side": "sell"},
+            {"candidate_rank": 1, "symbol": "AAA", "trade_action": "Long", "trade_quality_status": "reduced", "side": "buy"},
+        ],
+    )
+    write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
         [{"symbol": "AAA", "side": "buy", "notional": 500, "trade_action": "Long", "side_probability": 0.7}],
     )
@@ -97,6 +104,10 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert ctx["position_cost_basis"] == 200
     assert ctx["position_unrealized_pl"] == 20
     assert ctx["position_unrealized_plpc"] == 0.1
+    assert ctx["candidate_pool_count"] == 2
+    assert ctx["candidate_pool_action_counts"] == {"Short": 1, "Long": 1}
+    assert ctx["candidate_pool_status_counts"] == {"rejected": 1, "reduced": 1}
+    assert [row["symbol"] for row in ctx["candidate_pool_rows"]] == ["AAA", "BBB"]
 
 
 def test_trading_context_sorts_plan_by_confidence(tmp_path):

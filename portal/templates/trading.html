@@ -20,14 +20,45 @@
   </section>
 {% endif %}
 <section class="kpi-grid">
-  <article class="kpi"><span>Orders Planned</span><strong>{{ orders_planned|fmt }}</strong></article>
   <article class="kpi"><span>Candidate Pool</span><strong>{{ candidate_pool_count|fmt }}</strong></article>
+  <article class="kpi"><span>Orders Planned</span><strong>{{ orders_planned|fmt }}</strong></article>
   <article class="kpi"><span>Orders Submitted</span><strong>{{ orders_submitted|fmt }}</strong></article>
   <article class="kpi"><span>Rejected / Error</span><strong>{{ orders_rejected|fmt }}</strong></article>
   <article class="kpi"><span>Basket Notional</span><strong>{{ total_notional|fmt }}</strong></article>
   <article class="kpi"><span>Tracked Orders</span><strong>{{ orders_tracked|fmt }}</strong></article>
   <article class="kpi"><span>Open Orders</span><strong>{{ open_orders|fmt }}</strong></article>
   <article class="kpi"><span>Filled Orders</span><strong>{{ filled_orders|fmt }}</strong></article>
+</section>
+<section class="grid-2">
+  <article class="panel">
+    <h2>Trading Workflow</h2>
+    <div class="summary-list">
+      <div><span>1 Candidate pool</span><strong>{{ candidate_pool_count|fmt }} screened names</strong></div>
+      <div><span>2 Final order plan</span><strong>{{ orders_planned|fmt }} selected orders</strong></div>
+      <div><span>3 Alpaca tracking</span><strong>{{ orders_tracked|fmt }} tracked records</strong></div>
+      <div><span>4 Position monitor</span><strong>10 minute review cycle</strong></div>
+    </div>
+  </article>
+  <article class="panel">
+    <h2>Candidate Pool Mix</h2>
+    <div class="summary-list">
+      <div><span>Signal side</span><strong>{{ candidate_pool_action_counts }}</strong></div>
+      <div><span>Trade quality</span><strong>{{ candidate_pool_status_counts }}</strong></div>
+      <div><span>Final order side mix</span><strong>{{ side_counts }}</strong></div>
+      <div><span>Final result status</span><strong>{{ status_counts }}</strong></div>
+    </div>
+  </article>
+</section>
+<section class="panel priority-panel">
+  <div class="panel-title-row">
+    <h2>Candidate Pool</h2>
+    <span class="meta-strip">{{ candidate_pool_count|fmt }} ranked Long/Short candidates before final order selection</span>
+  </div>
+  {% if not candidate_pool_rows %}
+    <div class="empty small">No candidate pool exists yet. Run <code>scripts/run_alpaca_paper_trader.py</code> after a model run.</div>
+  {% else %}
+    {{ table(candidate_pool_rows, candidate_pool_columns) }}
+  {% endif %}
 </section>
 <section class="panel positions-panel">
   <div class="panel-title-row">
@@ -120,14 +151,6 @@
     <div class="empty small">No tracking snapshot exists yet. Run <code>scripts/run_alpaca_paper_trader.py --track-only</code> after an order run to refresh status.</div>
   {% else %}
     {{ table(tracking_rows, tracking_columns) }}
-  {% endif %}
-</section>
-<section class="panel">
-  <h2>Approved Candidate Pool</h2>
-  {% if not candidate_pool_rows %}
-    <div class="empty small">No candidate pool exists yet. Run <code>scripts/run_alpaca_paper_trader.py</code> after a model run.</div>
-  {% else %}
-    {{ table(candidate_pool_rows, candidate_pool_columns) }}
   {% endif %}
 </section>
 <section class="panel">
