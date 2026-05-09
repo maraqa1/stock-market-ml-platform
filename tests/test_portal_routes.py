@@ -134,6 +134,15 @@ def test_trading_page_renders_monitor_activity_timeline(client):
     assert b"monitor checks today" in response.data or b"No monitor checks recorded today" in response.data
 
 
+def test_trading_page_renders_pipeline_history_diagnostics(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Pipeline Run History" in response.data
+    assert b"Candidates" in response.data
+    assert b"Selected" in response.data
+    assert b"Open Activity Journal" in response.data
+
+
 def test_trading_page_renders_todays_basket_table(client):
     response = client.get("/trading")
     assert response.status_code == 200

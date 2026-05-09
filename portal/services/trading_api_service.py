@@ -190,8 +190,61 @@ def pipeline_history_context(root: Path, days: int = 14) -> dict[str, Any]:
         for row in rows:
             stages_by_run.setdefault(row["run_id"], []).append(row)
     for row in runs:
-        row["stages"] = stages_by_run.get(row["run_id"], [])
-    return {"source": "database" if runs else "empty", "days": limit, "runs": runs}
+        stages = stages_by_run.get(row["run_id"], [])
+        row["stages"] = stages
+        row.update(_pipeline_history_summary(row, stages))
+    return {"source": "database" if runs else "empty", "days": limit, "stage_names": list(PIPELINE_STAGE_NAMES), "runs": runs}
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _duration_label(seconds: float | None) -> str:
+    if seconds is None:
+        return "Not available"
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes // 60
+    remaining = minutes % 60
+    return f"{hours}h {remaining}m"
+
+
+def _stage_output_count(stages_by_name: dict[str, dict[str, Any]], stage_name: str) -> int:
+    stage = stages_by_name.get(stage_name) or {}
+    try:
+        return int(stage.get("output_count") or 0)
+    except Exception:
+        return 0
+
+
+def _pipeline_history_summary(run: dict[str, Any], stages: list[dict[str, Any]]) -> dict[str, Any]:
+    started = _parse_datetime(run.get("started_at"))
+    completed = _parse_datetime(run.get("completed_at"))
+    duration_seconds = (completed - started).total_seconds() if started and completed else None
+    stages_by_name = {str(stage.get("stage_name")): stage for stage in stages}
+    status = str(run.get("status") or "missing")
+    error = str(run.get("error") or "")
+    failed_stage = next((stage for stage in stages if str(stage.get("status") or "").lower() == "failed"), None)
+    status_note = error or (f"{failed_stage.get('stage_name')} failed" if failed_stage else status.replace("_", " "))
+    return {
+        "stage_statuses": {name: str((stages_by_name.get(name) or {}).get("status") or "missing") for name in PIPELINE_STAGE_NAMES},
+        "duration_seconds": duration_seconds,
+        "duration_label": _duration_label(duration_seconds),
+        "candidate_count": _stage_output_count(stages_by_name, "candidates"),
+        "selected_count": _stage_output_count(stages_by_name, "selection"),
+        "status_note": status_note,
+    }
 
 
 def positions_context(root: Path) -> dict[str, Any]:

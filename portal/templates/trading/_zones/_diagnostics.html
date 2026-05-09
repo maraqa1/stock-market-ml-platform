@@ -1,9 +1,65 @@
-<section class="zone trading-zone" data-zone="diagnostics">
+{% from "_macros/pill.html" import dot, pill %}
+{% from "_macros/format.html" import number, time_utc %}
+<section class="zone trading-zone" data-zone="diagnostics" id="diagnostics">
   <div class="zone__header">
     <span>Diagnostics</span>
-    <span class="zone__header-meta">SPEC 20</span>
+    <span class="zone__header-meta">Pipeline history · Guardrails · Execution quality</span>
   </div>
-  <div class="zone__body zone__body--stub">
-    <p>Stub: guardrails, execution quality, pipeline history, and journal links will live in this collapsed group.</p>
+  <div class="zone__body">
+    <details data-key="diagnostics" open>
+      <summary class="details-summary">Pipeline Run History</summary>
+      <table class="data pipeline-history-table">
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Stages</th>
+            <th class="num">Duration</th>
+            <th class="num">Candidates</th>
+            <th class="num">Selected</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not pipeline_history.runs %}
+            <tr>
+              <td colspan="6" class="empty small">No recorded pipeline runs yet. The table will populate after pipeline recorder rows are written.</td>
+            </tr>
+          {% else %}
+            {% for run in pipeline_history.runs %}
+              <tr>
+                <td>
+                  <div class="num-l">{{ run.run_id }}</div>
+                  <div class="text-tertiary">{{ time_utc(run.started_at) if run.started_at else "Not available" }}</div>
+                </td>
+                <td>
+                  <div class="stage-dot-row">
+                    {% for stage_name in pipeline_history.stage_names or ["yahoo", "gold", "model", "candidates", "selection", "submitted"] %}
+                      {% set stage_status = run.stage_statuses.get(stage_name, "missing") if run.stage_statuses else "missing" %}
+                      <span title="{{ stage_name }}: {{ stage_status }}">{{ dot(stage_status, stage_name[:1]|upper) }}</span>
+                    {% endfor %}
+                  </div>
+                </td>
+                <td>{{ run.duration_label }}</td>
+                <td>{{ number(run.candidate_count or 0, 0) }}</td>
+                <td>{{ number(run.selected_count or 0, 0) }}</td>
+                <td>
+                  {{ pill(run.status or "missing") }}
+                  <span class="text-tertiary">{{ run.status_note }}</span>
+                </td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </details>
+    <details data-key="diagnostics-guardrails">
+      <summary class="details-summary">Execution Guardrails</summary>
+      <div class="empty small">Guardrail settings remain read-only here until SPEC 20 expands this diagnostics group.</div>
+    </details>
+    <details data-key="diagnostics-execution-quality">
+      <summary class="details-summary">Execution Quality</summary>
+      <div class="empty small">Slippage, fill ratio, and latency will be derived from position events in SPEC 20.</div>
+    </details>
+    <a class="button button-ghost button-small" href="/trading/lifecycle">Open Activity Journal</a>
   </div>
 </section>

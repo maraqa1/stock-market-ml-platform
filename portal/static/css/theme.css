@@ -992,6 +992,17 @@ dialog {
   padding-top: var(--space-3);
 }
 
+.stage-dot-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.stage-dot-row > span {
+  display: inline-flex;
+}
+
 .spec00-styleguide {
   padding: var(--space-4);
 }

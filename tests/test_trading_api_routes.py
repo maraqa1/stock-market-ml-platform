@@ -124,8 +124,9 @@ def test_pipeline_current_contract(api_client):
 
 def test_pipeline_history_contract(api_client):
     payload = _json(api_client, "/api/trading/pipeline/history?days=14")
-    assert set(payload) == {"source", "days", "runs"}
+    assert set(payload) == {"source", "days", "stage_names", "runs"}
     assert payload["days"] == 14
+    assert isinstance(payload["stage_names"], list)
     assert isinstance(payload["runs"], list)
 
 
