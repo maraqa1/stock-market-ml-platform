@@ -87,6 +87,30 @@ class AlpacaPaperClient:
         _raise_for_status("GET", url, response)
         return response.json()
 
+    def cancel_order(self, order_id: str) -> dict[str, Any]:
+        url = f"{self.config.base_url}/v2/orders/{order_id}"
+        response = requests.delete(
+            url,
+            headers=self._headers(),
+            timeout=self.timeout_seconds,
+        )
+        _raise_for_status("DELETE", url, response)
+        if response.status_code == 204 or not response.content:
+            return {"id": order_id, "status": "canceled"}
+        return response.json()
+
+    def cancel_all_orders(self) -> list[dict[str, Any]]:
+        url = f"{self.config.base_url}/v2/orders"
+        response = requests.delete(
+            url,
+            headers=self._headers(),
+            timeout=self.timeout_seconds,
+        )
+        _raise_for_status("DELETE", url, response)
+        if not response.content:
+            return []
+        return response.json()
+
     def close_position(self, symbol: str) -> dict[str, Any]:
         url = f"{self.config.base_url}/v2/positions/{symbol.upper()}"
         response = requests.delete(
