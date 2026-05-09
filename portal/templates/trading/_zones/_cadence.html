@@ -1,6 +1,7 @@
-<section class="cadence-strip trading-zone trading-zone--cadence" data-zone="cadence">
-  <span>Positions: <strong>live (5s)</strong></span>
-  <span>Monitor: <strong>every 10m</strong></span>
-  <span>Pipeline: <strong>nightly</strong></span>
-  <span>Mode: <strong>{{ "dry run" if dry_run else "paper submission enabled" }}</strong></span>
+<section class="cadence-strip trading-zone trading-zone--cadence" data-zone="cadence" data-next-monitor="{{ trading_cadence.next_monitor_at }}">
+  <span>Positions: <strong>{{ trading_cadence.positions_label }}</strong></span>
+  <span>Monitor: <strong>{{ trading_cadence.monitor_label }}</strong>, next <strong data-countdown-target>{{ trading_cadence.next_monitor_label }}</strong></span>
+  <span>Pipeline: <strong>{{ trading_cadence.pipeline_label }}</strong></span>
+  <span>Last run: <strong>{{ trading_cadence.last_run_label }}</strong></span>
+  <span>Mode: <strong>{{ trading_header.mode_label }}</strong></span>
 </section>

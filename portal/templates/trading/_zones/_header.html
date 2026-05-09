@@ -1,10 +1,10 @@
 <section class="header-strip trading-zone trading-zone--header" data-zone="header">
   <div class="header-strip__left">
-    <div class="header-strip__title">Paper Trading - Research Mode</div>
+    <div class="header-strip__title">{{ trading_header.title }}</div>
     <span class="mode-badge mode-badge--paper">Paper Only</span>
-    <span class="mode-badge mode-badge--live-disabled">Live Trading Disabled</span>
+    <span class="mode-badge mode-badge--live-disabled">{{ trading_header.live_label }}</span>
   </div>
   <div class="header-strip__right">
-    <span class="account">StockML operator console</span>
+    <span class="account">{{ trading_header.account_label }}</span>
   </div>
 </section>

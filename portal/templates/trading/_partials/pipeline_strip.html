@@ -1,0 +1,23 @@
+{% from "_macros/pill.html" import pill %}
+<div class="page-section-title">Pipeline Freshness - {{ pipeline_current.run.run_id or "No recorded run" }}</div>
+<div class="pipeline-strip">
+  {% for stage in pipeline_current.stages %}
+    {% set status = stage.status or "missing" %}
+    {% set pill_status = "success" if status in ["success", "completed"] else "error" if status in ["failed", "error"] else "pending" if status in ["pending", "running"] else "warning" %}
+    <button class="pipeline-stage pipeline-stage--{{ status }}" type="button" data-stage-name="{{ stage.stage_name }}">
+      <div class="pipeline-stage__name">{{ pill(pill_status, stage.stage_name|replace('_', ' ')|title) }}</div>
+      <div class="pipeline-stage__time">{{ stage.completed_at or stage.started_at or "No timestamp" }}</div>
+      <div class="pipeline-stage__count">{{ stage.output_count|default(0, true)|fmt }} output</div>
+      <div class="pipeline-stage__detail">{{ stage.detail or stage.output_metadata.detail or stage.error or stage.artifact or "Awaiting data" }}</div>
+    </button>
+  {% endfor %}
+</div>
+<div class="pipeline-banner">
+  {% if pipeline_current.run.status in ["success", "completed"] %}
+    All available stages green. Last update {{ pipeline_current.run.completed_at or pipeline_current.run.started_at }}.
+  {% elif pipeline_current.run.status == "missing" %}
+    No pipeline recorder run found yet. Showing latest artifact freshness where available.
+  {% else %}
+    Pipeline status: {{ pipeline_current.run.status or "unknown" }}{% if pipeline_current.run.error %} - {{ pipeline_current.run.error }}{% endif %}
+  {% endif %}
+</div>

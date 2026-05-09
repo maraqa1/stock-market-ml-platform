@@ -11,6 +11,7 @@ from portal.services.database_reader import db_available
 from portal.services.data_quality_service import data_quality_context
 from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
+from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.model_validation_service import model_validation_context
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.stock_detail_service import stock_detail_context
@@ -161,7 +162,21 @@ def create_app(root: Path | None = None) -> Flask:
 
     @app.route("/trading")
     def trading():
-        return render_template("trading.html", title="Paper Trading", **trading_context(root_path()))
+        root = root_path()
+        context = trading_context(root)
+        context.update(
+            {
+                "trading_header": trading_header_context(root),
+                "trading_cadence": trading_cadence_context(root),
+                "trading_kpis": trading_kpi_context(root),
+                "pipeline_current": pipeline_current_context(root),
+            }
+        )
+        return render_template("trading.html", title="Paper Trading", **context)
+
+    @app.route("/trading/_partials/pipeline-strip")
+    def trading_pipeline_strip_partial():
+        return render_template("trading/_partials/pipeline_strip.html", pipeline_current=pipeline_current_context(root_path()))
 
     @app.route("/trading/refresh", methods=["POST"])
     def trading_refresh():

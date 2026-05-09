@@ -333,6 +333,8 @@ th.numeric {
 }
 
 .pipeline-stage {
+  appearance: none;
+  text-align: left;
   flex: 1 1 0;
   min-width: 0;
   padding: var(--space-3);
@@ -340,6 +342,21 @@ th.numeric {
   border-radius: var(--radius-2);
   background: var(--bg-surface);
   cursor: pointer;
+}
+
+.pipeline-stage--missing,
+.pipeline-stage--skipped {
+  opacity: .68;
+}
+
+.pipeline-stage--failed,
+.pipeline-stage--error {
+  border-color: var(--status-danger-border);
+}
+
+.pipeline-stage--running,
+.pipeline-stage--pending {
+  border-color: var(--status-warning-border);
 }
 
 .pipeline-stage:hover {
@@ -385,6 +402,7 @@ th.numeric {
 .kpi-row .kpi-card {
   flex: 1 1 0;
   min-width: 0;
+  text-decoration: none;
 }
 
 .kpi-card--clickable {

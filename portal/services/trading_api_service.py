@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from portal.services.latest_file_reader import latest_file, readable_reason, safe_read_csv
+from portal.services.latest_file_reader import count_rows, latest_file, readable_reason, safe_read_csv
 from portal.services.trading_service import _position_summary, _status_counts
 from stockml.db.connection import get_engine
 from stockml.db.schema import PIPELINE_STAGE_NAMES, pipeline_runs, pipeline_stages, position_events
@@ -108,6 +108,47 @@ def _empty_stage(stage_name: str) -> dict[str, Any]:
     }
 
 
+def _artifact_stage(root: Path, stage_name: str, key: str, pattern: str, detail: str) -> dict[str, Any]:
+    path = latest_file(root, key, pattern)
+    if path is None:
+        return {**_empty_stage(stage_name), "detail": detail, "artifact": ""}
+    timestamp = _csv_timestamp(path)
+    return {
+        "stage_name": stage_name,
+        "status": "success",
+        "started_at": None,
+        "completed_at": timestamp,
+        "output_count": count_rows(path),
+        "output_metadata": {"artifact": path.name, "detail": detail},
+        "error": "",
+        "detail": detail,
+        "artifact": path.name,
+    }
+
+
+def _artifact_pipeline_context(root: Path) -> dict[str, Any]:
+    stages = [
+        _artifact_stage(root, "yahoo", "raw", "03_us_price_history_store*.csv", "price history store"),
+        _artifact_stage(root, "gold", "gold", "06_us_gold_ml_dataset_*.csv", "gold dataset"),
+        _artifact_stage(root, "model", "model_outputs", "advanced_model_signal_table_*.csv", "signal table"),
+        _artifact_stage(root, "candidates", "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv", "candidate pool"),
+        _artifact_stage(root, "selection", "portal_outputs", "08_alpaca_paper_order_plan_*.csv", "order plan"),
+        _artifact_stage(root, "submitted", "portal_outputs", "08_alpaca_paper_order_results_*.csv", "order results"),
+    ]
+    completed = [stage.get("completed_at") for stage in stages if stage.get("completed_at")]
+    last_update = max(completed) if completed else None
+    run = {
+        "run_id": "artifact-latest" if last_update else "",
+        "started_at": last_update,
+        "completed_at": last_update,
+        "status": "success" if last_update else "missing",
+        "current_stage": "",
+        "error": "",
+        "triggered_by": "artifact_fallback",
+    }
+    return {"source": "csv_artifacts", "run": run, "stage_names": list(PIPELINE_STAGE_NAMES), "stages": stages}
+
+
 def _latest_pipeline_run() -> dict[str, Any]:
     return _row_from_db(
         pipeline_runs.select().order_by(pipeline_runs.c.started_at.desc(), pipeline_runs.c.run_id.desc()).limit(1)
@@ -117,12 +158,7 @@ def _latest_pipeline_run() -> dict[str, Any]:
 def pipeline_current_context(root: Path) -> dict[str, Any]:
     run = _latest_pipeline_run()
     if not run:
-        return {
-            "source": "empty",
-            "run": {},
-            "stage_names": list(PIPELINE_STAGE_NAMES),
-            "stages": [_empty_stage(name) for name in PIPELINE_STAGE_NAMES],
-        }
+        return _artifact_pipeline_context(root)
     rows = _rows_from_db(
         pipeline_stages.select()
         .where(pipeline_stages.c.run_id == run["run_id"])
