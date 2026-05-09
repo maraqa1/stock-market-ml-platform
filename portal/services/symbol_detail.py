@@ -13,6 +13,17 @@ from stockml.db.connection import get_engine
 from stockml.services.events import position_id_for_symbol
 
 
+COMMON_REFERENCE = {
+    "AAPL": "Apple Inc.",
+    "AMZN": "Amazon.com, Inc.",
+    "GOOG": "Alphabet Inc.",
+    "GOOGL": "Alphabet Inc.",
+    "MSFT": "Microsoft Corporation",
+    "NVDA": "NVIDIA Corporation",
+    "TSLA": "Tesla, Inc.",
+}
+
+
 def _engine():
     return get_engine(required=False)
 
@@ -132,7 +143,18 @@ def _security(root: Path, symbol: str) -> dict[str, Any]:
             "industry": row.get("industry") or "",
             "market_cap": row.get("market_cap_band"),
         }
-    return _security_from_artifacts(root, symbol)
+    artifact_security = _security_from_artifacts(root, symbol)
+    if artifact_security:
+        return artifact_security
+    if symbol in COMMON_REFERENCE:
+        return {
+            "symbol": symbol,
+            "name": COMMON_REFERENCE[symbol],
+            "sector": "Reference",
+            "industry": "",
+            "market_cap": None,
+        }
+    return {}
 
 
 def _position(root: Path, symbol: str) -> dict[str, Any] | None:

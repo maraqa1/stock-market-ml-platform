@@ -91,3 +91,16 @@ def test_symbol_detail_unknown_returns_none():
         assert get("INVALID", root) is None
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def test_symbol_detail_common_reference_symbol_renders_without_current_artifacts():
+    root = temp_root()
+    try:
+        detail = get("TSLA", root)
+        assert detail is not None
+        assert detail["symbol"] == "TSLA"
+        assert detail["name"] == "Tesla, Inc."
+        assert detail["position"] is None
+        assert detail["today_signal"] is None
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
