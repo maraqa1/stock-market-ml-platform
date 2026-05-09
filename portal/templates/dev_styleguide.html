@@ -1,7 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="zone spec00-styleguide">
-  <div class="zone-header styleguide-header">
+<section class="spec00-styleguide">
+  <div class="header-strip">
+    <div class="header-strip__left">
+      <div class="header-strip__title">Paper Trading — Research Mode</div>
+      <span class="mode-badge mode-badge--paper">● Paper Only</span>
+      <span class="mode-badge mode-badge--live-disabled">Live · Disabled</span>
+    </div>
+    <div class="header-strip__right">
+      <span class="account"><strong>PA-12345</strong> · operator@stockml</span>
+    </div>
+  </div>
+
+  <div class="cadence-strip">
+    <span>Positions: <strong>live (5s)</strong></span>
+    <span>Monitor: <strong>every 10m</strong>, next 04:32</span>
+    <span>Pipeline: <strong>nightly</strong></span>
+    <span>Last run: <strong>02:00 UTC · run 2026-05-09-A</strong></span>
+  </div>
+
+  <div class="styleguide-header">
     <div>
       <p class="label">SPEC 00</p>
       <h2>Theme System</h2>
@@ -13,92 +31,135 @@
     </div>
   </div>
 
-  <div class="styleguide-grid">
+  <div class="page-section-title">Pipeline Freshness — run 2026-05-09-A</div>
+  <div class="pipeline-strip">
+    <div class="pipeline-stage">
+      <div class="pipeline-stage__name"><span class="pill pill-success">Yahoo</span></div>
+      <div class="pipeline-stage__time">02:00 UTC</div>
+      <div class="pipeline-stage__count">487 syms</div>
+      <div class="pipeline-stage__detail">14m run · OK</div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="pipeline-stage__name"><span class="pill pill-success">Gold</span></div>
+      <div class="pipeline-stage__time">02:14 UTC</div>
+      <div class="pipeline-stage__count">12.4M rows</div>
+      <div class="pipeline-stage__detail">v1.4 features</div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="pipeline-stage__name"><span class="pill pill-success">Model</span></div>
+      <div class="pipeline-stage__time">02:47 UTC</div>
+      <div class="pipeline-stage__count">487 scored</div>
+      <div class="pipeline-stage__detail">model v1.4</div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="pipeline-stage__name"><span class="pill pill-warning">Selection</span></div>
+      <div class="pipeline-stage__time">02:52 UTC</div>
+      <div class="pipeline-stage__count">5 picked</div>
+      <div class="pipeline-stage__detail">guardrails ok</div>
+    </div>
+  </div>
+  <div class="pipeline-banner">All stages green · Last update 09:30 UTC · Next nightly run 02:00 UTC</div>
+
+  <div class="kpi-row">
     <article class="kpi-card">
-      <span class="label">Open Positions</span>
-      <strong class="kpi-value">8 / 10</strong>
-      <small>L6 · <span class="side-short">▼ Short 2</span></small>
+      <span class="kpi-card__label">Open Positions</span>
+      <strong class="kpi-card__value">8 / 10</strong>
+      <small class="kpi-card__detail">L6 · <span class="side side-short">▼ Short 2</span></small>
     </article>
     <article class="kpi-card">
-      <span class="label">Unrealized P&amp;L</span>
-      <strong class="kpi-value money">+1,240.55</strong>
-      <small class="delta-up">▲ +0.84%</small>
+      <span class="kpi-card__label">Unrealized P&amp;L</span>
+      <strong class="kpi-card__value delta-up">+1,240.55</strong>
+      <small class="kpi-card__detail delta-up">▲ +0.84%</small>
     </article>
-    <article class="kpi-card">
-      <span class="label">Pending Decisions</span>
-      <strong class="kpi-value qty">3</strong>
-      <small>Monitor queue</small>
+    <article class="kpi-card kpi-card--alert kpi-card--clickable">
+      <span class="kpi-card__label">Pending Decisions</span>
+      <strong class="kpi-card__value">3</strong>
+      <small class="kpi-card__detail">Review →</small>
     </article>
   </div>
 
-  <div class="styleguide-section">
-    <h3>Status Pills</h3>
-    <div class="pill-row">
-      <span class="pill pill-safe">Safe</span>
-      <span class="pill pill-watch">Watch</span>
-      <span class="pill pill-close">Close</span>
-      <span class="pill pill-rotate">Rotate</span>
-      <span class="pill pill-approved">Approved</span>
-      <span class="pill pill-trimmed">Trimmed</span>
-      <span class="pill pill-rejected">Rejected</span>
-      <span class="pill pill-submitted">Submitted</span>
-      <span class="pill pill-filled">Filled</span>
-      <span class="pill pill-failed">Failed</span>
-      <span class="pill pill-short">Short</span>
+  <div class="zone">
+    <div class="zone__header">
+      <span>Status Pills</span>
+      <span class="zone__header-meta">colour + icon + text</span>
+    </div>
+    <div class="zone__body" style="padding: var(--space-4);">
+      <div class="pill-row">
+        <span class="pill pill-safe">Safe</span>
+        <span class="pill pill-watch">Watch</span>
+        <span class="pill pill-close">Close</span>
+        <span class="pill pill-rotate">Rotate</span>
+        <span class="pill pill-approved">Approved</span>
+        <span class="pill pill-trimmed">Trimmed</span>
+        <span class="pill pill-rejected">Rejected</span>
+        <span class="pill pill-submitted">Submitted</span>
+        <span class="pill pill-filled">Filled</span>
+        <span class="pill pill-failed">Failed</span>
+        <span class="pill pill-short">Short</span>
+      </div>
     </div>
   </div>
 
-  <div class="styleguide-section">
-    <h3>Buttons</h3>
-    <div class="pill-row">
-      <button class="btn btn-primary">Apply</button>
-      <button class="btn btn-danger">Close Position</button>
-      <button class="btn btn-ghost">Override</button>
-      <button disabled>Disabled</button>
+  <div class="zone">
+    <div class="zone__header">
+      <span>Buttons</span>
+      <span class="zone__header-meta">28px primary / danger / ghost</span>
+    </div>
+    <div class="zone__body" style="padding: var(--space-4);">
+      <div class="pill-row">
+        <button class="btn btn-primary">Apply</button>
+        <button class="btn btn-danger">Close Position</button>
+        <button class="btn btn-ghost">Override</button>
+        <button class="btn btn-sm">Small</button>
+        <button disabled>Disabled</button>
+      </div>
     </div>
   </div>
 
-  <div class="styleguide-section">
-    <h3>Dense Table</h3>
-    <div class="table-wrap">
-      <table>
+  <div class="zone">
+    <div class="zone__header">
+      <span>Open Positions</span>
+      <span class="zone__header-meta">live · refreshed 2s ago</span>
+    </div>
+    <div class="zone__body">
+      <table class="data">
         <thead>
           <tr>
             <th>Symbol</th>
             <th>Side</th>
-            <th class="numeric">Qty</th>
-            <th class="numeric">Entry</th>
-            <th class="numeric">Last</th>
-            <th class="numeric">P&amp;L $</th>
+            <th class="num">Qty</th>
+            <th class="num">Entry</th>
+            <th class="num">Last</th>
+            <th class="num">P&amp;L $</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td>FLEX</td>
-            <td><span class="side-long">▲ Long</span></td>
-            <td class="numeric">5</td>
-            <td class="numeric">142.00</td>
-            <td class="numeric">143.18</td>
-            <td class="numeric delta-up">+5.90</td>
+          <tr class="row-clickable">
+            <td class="num-l">FLEX</td>
+            <td><span class="side side-long">▲ Long</span></td>
+            <td class="num">5</td>
+            <td class="num">142.00</td>
+            <td class="num">143.18</td>
+            <td class="num text-up">+5.90</td>
             <td><span class="pill pill-safe">Safe</span></td>
           </tr>
-          <tr>
-            <td>GOOG</td>
-            <td><span class="side-short">▼ Short</span></td>
-            <td class="numeric">2</td>
-            <td class="numeric">171.25</td>
-            <td class="numeric">173.40</td>
-            <td class="numeric delta-down">−4.30</td>
+          <tr class="row-clickable row-selected">
+            <td class="num-l">GOOG</td>
+            <td><span class="side side-short">▼ Short</span></td>
+            <td class="num">2</td>
+            <td class="num">171.25</td>
+            <td class="num">173.40</td>
+            <td class="num text-down">−4.30</td>
             <td><span class="pill pill-watch">Watch</span></td>
           </tr>
-          <tr>
-            <td>AKAN</td>
-            <td><span class="side-long">▲ Long</span></td>
-            <td class="numeric">0</td>
-            <td class="numeric">29.10</td>
-            <td class="numeric">28.40</td>
-            <td class="numeric">0.00</td>
+          <tr class="row-clickable">
+            <td class="num-l">AKAN</td>
+            <td><span class="side side-long">▲ Long</span></td>
+            <td class="num">0</td>
+            <td class="num">29.10</td>
+            <td class="num">28.40</td>
+            <td class="num">0.00</td>
             <td><span class="pill pill-rejected">Rejected</span></td>
           </tr>
         </tbody>
