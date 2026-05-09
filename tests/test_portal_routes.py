@@ -124,6 +124,15 @@ def test_trading_page_renders_todays_basket_table(client):
     assert b"Order ID" in response.data
 
 
+def test_trading_page_renders_rejected_trimmed_table(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Rejected &amp; Trimmed" in response.data
+    assert b"Source" in response.data
+    assert b"Reason" in response.data
+    assert b"Planned" in response.data
+
+
 def test_pipeline_strip_partial_route_returns_fragment(client):
     response = client.get("/trading/_partials/pipeline-strip")
     assert response.status_code == 200

@@ -112,6 +112,38 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert ctx["basket_rows"][0]["planned_quantity"] == 2
     assert ctx["basket_rows"][0]["basket_status"] == "trimmed"
     assert ctx["basket_rows"][0]["reason_note"] == "Disabled"
+    assert ctx["rejected_trimmed_count"] == 1
+    assert ctx["rejected_trimmed_rows"][0]["symbol"] == "AAA"
+    assert ctx["rejected_trimmed_rows"][0]["status"] == "trimmed"
+    assert ctx["rejected_trimmed_rows"][0]["source"] == "Guardrail"
+
+
+def test_trading_context_rejected_trimmed_sources(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
+        [
+            {"symbol": "AAA", "side": "buy", "trade_action": "Long", "suggested_quantity": 2, "trade_quality_status": "reduced", "trade_quality_reason": "reduced", "client_order_id": "stockml-AAA"},
+            {"symbol": "BBB", "side": "sell", "trade_action": "Short", "suggested_quantity": 0, "trade_quality_status": "rejected", "trade_quality_reason": "market_cap_below_minimum", "client_order_id": "stockml-BBB"},
+            {"symbol": "CCC", "side": "buy", "trade_action": "Long", "suggested_quantity": 1, "trade_quality_status": "approved", "client_order_id": "stockml-CCC"},
+        ],
+    )
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_results_1.csv",
+        [
+            {"symbol": "AAA", "status": "dry_run", "client_order_id": "stockml-AAA", "message": ""},
+            {"symbol": "BBB", "status": "rejected", "client_order_id": "stockml-BBB", "message": "market_cap_below_minimum"},
+            {"symbol": "CCC", "status": "error", "client_order_id": "stockml-CCC", "message": "alpaca_order_submit_failed", "http_status": 422, "api_error": "bad request"},
+        ],
+    )
+    ctx = trading_context(tmp_path)
+    rows = {row["symbol"]: row for row in ctx["rejected_trimmed_rows"]}
+    assert ctx["rejected_trimmed_count"] == 3
+    assert rows["AAA"]["status"] == "trimmed"
+    assert rows["AAA"]["source"] == "Guardrail"
+    assert rows["BBB"]["status"] == "rejected"
+    assert rows["BBB"]["source"] == "Guardrail"
+    assert rows["CCC"]["status"] == "failed"
+    assert rows["CCC"]["source"] == "Broker"
 
 
 def test_trading_context_sorts_plan_by_confidence(tmp_path):

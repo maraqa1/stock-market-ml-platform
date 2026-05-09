@@ -95,6 +95,12 @@ def _numeric_value(value, default: float = 0.0) -> float:
     return float(default if pd.isna(parsed) else parsed)
 
 
+def _text_value(value) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
 def _status_from_basket_row(row: pd.Series) -> str:
     alpaca_status = str(row.get("alpaca_status", "") or "").strip().lower()
     result_status = str(row.get("status", "") or "").strip().lower()
@@ -117,20 +123,9 @@ def _status_from_basket_row(row: pd.Series) -> str:
 
 
 def _build_basket_rows(plan: pd.DataFrame, results: pd.DataFrame) -> list[dict]:
-    if plan.empty and results.empty:
+    merged = _merged_plan_results(plan, results)
+    if merged.empty:
         return []
-    plan_frame = plan.copy()
-    result_frame = results.copy()
-    if "client_order_id" not in plan_frame.columns:
-        plan_frame["client_order_id"] = ""
-    if "client_order_id" not in result_frame.columns:
-        result_frame["client_order_id"] = ""
-    merged = plan_frame.merge(
-        result_frame,
-        on="client_order_id",
-        how="outer",
-        suffixes=("", "_result"),
-    )
     rows = []
     for _, row in merged.iterrows():
         symbol = str(row.get("symbol") or row.get("symbol_result") or "").upper()
@@ -156,6 +151,66 @@ def _build_basket_rows(plan: pd.DataFrame, results: pd.DataFrame) -> list[dict]:
                 "basket_status": _status_from_basket_row(row),
                 "reason_note": note,
                 "order_id": row.get("order_id", "") or "",
+                "client_order_id": row.get("client_order_id", "") or "",
+                "position_id": position_id_for_symbol(symbol) if symbol else "",
+            }
+        )
+    return rows
+
+
+def _merged_plan_results(plan: pd.DataFrame, results: pd.DataFrame) -> pd.DataFrame:
+    if plan.empty and results.empty:
+        return pd.DataFrame()
+    plan_frame = plan.copy()
+    result_frame = results.copy()
+    if "client_order_id" not in plan_frame.columns:
+        plan_frame["client_order_id"] = ""
+    if "client_order_id" not in result_frame.columns:
+        result_frame["client_order_id"] = ""
+    return plan_frame.merge(
+        result_frame,
+        on="client_order_id",
+        how="outer",
+        suffixes=("", "_result"),
+    )
+
+
+def _rejected_trimmed_source(row: pd.Series) -> str:
+    result_status = _text_value(row.get("status", "")).lower()
+    if _status_from_basket_row(row) == "trimmed":
+        return "Guardrail"
+    if result_status == "error" or _text_value(row.get("api_error", "")) or _numeric_value(row.get("http_status", 0), 0) >= 400:
+        return "Broker"
+    if _text_value(row.get("trade_quality_reason", "")) or _text_value(row.get("message", "")):
+        return "Guardrail"
+    return "Pipeline"
+
+
+def _build_rejected_trimmed_rows(plan: pd.DataFrame, results: pd.DataFrame) -> list[dict]:
+    merged = _merged_plan_results(plan, results)
+    if merged.empty:
+        return []
+    rows = []
+    for _, row in merged.iterrows():
+        basket_status = _status_from_basket_row(row)
+        if basket_status not in {"rejected", "trimmed", "failed"}:
+            continue
+        symbol = str(row.get("symbol") or row.get("symbol_result") or "").upper()
+        side = row.get("side") or row.get("side_result") or ""
+        trade_action = row.get("trade_action") or row.get("trade_action_result") or ""
+        message = row.get("message", "")
+        quality_reason = row.get("trade_quality_reason", "")
+        planned_qty = int(_numeric_value(row.get("suggested_quantity", 0), 0))
+        rows.append(
+            {
+                "symbol": symbol,
+                "side": side,
+                "trade_action": trade_action,
+                "planned_quantity": planned_qty,
+                "status": basket_status,
+                "source": _rejected_trimmed_source(row),
+                "reason": format_reasons(message or quality_reason or ""),
+                "time": row.get("updated_at", "") or row.get("submitted_at", "") or "",
                 "client_order_id": row.get("client_order_id", "") or "",
                 "position_id": position_id_for_symbol(symbol) if symbol else "",
             }
@@ -269,6 +324,7 @@ def trading_context(root: Path) -> dict:
     dry_run = not config.submit_orders or bool(status_counts.get("dry_run", 0))
     position_summary = _position_summary(positions)
     basket_rows = _build_basket_rows(plan, results)
+    rejected_trimmed_rows = _build_rejected_trimmed_rows(plan, results)
     basket_symbols = []
     if not plan.empty and "symbol" in plan.columns:
         basket_symbols = sorted({str(symbol).upper() for symbol in plan["symbol"].dropna()})
@@ -310,6 +366,8 @@ def trading_context(root: Path) -> dict:
         "operator_action_rows": _records(actions, limit=10),
         "candidate_pool_rows": _records_by_rank(candidate_pool, limit=100),
         "basket_rows": basket_rows,
+        "rejected_trimmed_rows": rejected_trimmed_rows,
+        "rejected_trimmed_count": len(rejected_trimmed_rows),
         "plan_columns": [
             "symbol", "trade_quality_status", "trade_quality_reason", "side", "notional", "approved_notional",
             "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "risk_tier",

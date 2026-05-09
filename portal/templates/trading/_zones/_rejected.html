@@ -1,9 +1,45 @@
-<section class="zone trading-zone" data-zone="rejected-trimmed">
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import number, side, time_utc %}
+<section class="zone trading-zone" data-zone="rejected-trimmed" id="rejected-trimmed">
   <div class="zone__header">
     <span>Rejected &amp; Trimmed</span>
-    <span class="zone__header-meta">SPEC 18</span>
+    <span class="zone__header-meta">{{ rejected_trimmed_count }} rows</span>
   </div>
-  <div class="zone__body zone__body--stub">
-    <p>Stub: compact guardrail and broker rejection table will appear here.</p>
+  <div class="zone__body">
+    <details data-key="rejected-trimmed" {% if rejected_trimmed_rows %}open{% endif %}>
+      <summary class="details-summary">Show guardrail and broker decisions</summary>
+      <table class="data rejected-trimmed-table">
+        <thead>
+          <tr>
+            <th>Sym</th>
+            <th>Side</th>
+            <th class="num">Planned</th>
+            <th>Status</th>
+            <th>Source</th>
+            <th>Reason</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not rejected_trimmed_rows %}
+            <tr>
+              <td colspan="7" class="empty small">No rejected or trimmed rows in the latest basket.</td>
+            </tr>
+          {% else %}
+            {% for row in rejected_trimmed_rows %}
+              <tr class="row-clickable" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
+                <td class="num-l">{{ row.symbol }}</td>
+                <td>{{ side(row.trade_action or row.side) }}</td>
+                <td>{{ number(row.planned_quantity or 0, 0) }}</td>
+                <td>{{ pill(row.status) }}</td>
+                <td>{{ row.source }}</td>
+                <td>{{ row.reason or "-" }}</td>
+                <td>{{ time_utc(row.time) if row.time else "-" }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </details>
   </div>
 </section>
