@@ -157,6 +157,7 @@ def lifecycle_context(root: Path) -> dict:
 def trading_context(root: Path) -> dict:
     config = alpaca_config()
     plan_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
+    candidate_pool_file = latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
     result_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_results_*.csv")
     tracking_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
