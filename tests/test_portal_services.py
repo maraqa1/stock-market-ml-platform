@@ -79,7 +79,7 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     )
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
-        [{"symbol": "AAA", "side": "buy", "notional": 500, "trade_action": "Long", "side_probability": 0.7}],
+        [{"symbol": "AAA", "side": "buy", "notional": 500, "trade_action": "Long", "side_probability": 0.7, "suggested_quantity": 2, "trade_quality_status": "reduced", "client_order_id": "stockml-AAA"}],
     )
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_results_1.csv",
@@ -108,6 +108,10 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert ctx["candidate_pool_action_counts"] == {"Short": 1, "Long": 1}
     assert ctx["candidate_pool_status_counts"] == {"rejected": 1, "reduced": 1}
     assert [row["symbol"] for row in ctx["candidate_pool_rows"]] == ["AAA", "BBB"]
+    assert ctx["basket_rows"][0]["symbol"] == "AAA"
+    assert ctx["basket_rows"][0]["planned_quantity"] == 2
+    assert ctx["basket_rows"][0]["basket_status"] == "trimmed"
+    assert ctx["basket_rows"][0]["reason_note"] == "Disabled"
 
 
 def test_trading_context_sorts_plan_by_confidence(tmp_path):

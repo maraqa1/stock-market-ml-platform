@@ -6,6 +6,7 @@ import pandas as pd
 
 from portal.services.latest_file_reader import file_status, latest_file, safe_read_csv
 from stockml.decisions.reason_formatter import format_reasons
+from stockml.services.events import position_id_for_symbol
 from stockml.trading.config import alpaca_config
 from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
@@ -87,6 +88,79 @@ def _sum_column(frame: pd.DataFrame, column: str) -> float:
     if frame.empty or column not in frame.columns:
         return 0.0
     return float(pd.to_numeric(frame[column], errors="coerce").fillna(0).sum())
+
+
+def _numeric_value(value, default: float = 0.0) -> float:
+    parsed = pd.to_numeric(value, errors="coerce")
+    return float(default if pd.isna(parsed) else parsed)
+
+
+def _status_from_basket_row(row: pd.Series) -> str:
+    alpaca_status = str(row.get("alpaca_status", "") or "").strip().lower()
+    result_status = str(row.get("status", "") or "").strip().lower()
+    quality_status = str(row.get("trade_quality_status", "") or "").strip().lower()
+    if alpaca_status == "filled":
+        return "filled"
+    if alpaca_status in {"partially_filled", "partial"}:
+        return "partial"
+    if result_status == "submitted":
+        return "submitted"
+    if result_status == "error":
+        return "failed"
+    if result_status == "rejected" or quality_status == "rejected":
+        return "rejected"
+    if quality_status == "reduced":
+        return "trimmed"
+    if quality_status == "approved":
+        return "approved"
+    return result_status or quality_status or "pending"
+
+
+def _build_basket_rows(plan: pd.DataFrame, results: pd.DataFrame) -> list[dict]:
+    if plan.empty and results.empty:
+        return []
+    plan_frame = plan.copy()
+    result_frame = results.copy()
+    if "client_order_id" not in plan_frame.columns:
+        plan_frame["client_order_id"] = ""
+    if "client_order_id" not in result_frame.columns:
+        result_frame["client_order_id"] = ""
+    merged = plan_frame.merge(
+        result_frame,
+        on="client_order_id",
+        how="outer",
+        suffixes=("", "_result"),
+    )
+    rows = []
+    for _, row in merged.iterrows():
+        symbol = str(row.get("symbol") or row.get("symbol_result") or "").upper()
+        side = row.get("side") or row.get("side_result") or ""
+        trade_action = row.get("trade_action") or row.get("trade_action_result") or ""
+        result_status = row.get("status", "")
+        message = row.get("message", "")
+        quality_reason = row.get("trade_quality_reason", "")
+        note = format_reasons(message or quality_reason or "")
+        planned_qty = int(_numeric_value(row.get("suggested_quantity", 0), 0))
+        filled_qty = _numeric_value(row.get("filled_qty", 0), 0)
+        avg_fill = _numeric_value(row.get("filled_avg_price", 0), 0)
+        submitted = str(result_status or "").lower() == "submitted"
+        rows.append(
+            {
+                "symbol": symbol,
+                "side": side,
+                "trade_action": trade_action,
+                "planned_quantity": planned_qty,
+                "sent_quantity": planned_qty if submitted else "",
+                "filled_quantity": "" if filled_qty == 0 else filled_qty,
+                "avg_fill": "" if avg_fill == 0 else avg_fill,
+                "basket_status": _status_from_basket_row(row),
+                "reason_note": note,
+                "order_id": row.get("order_id", "") or "",
+                "client_order_id": row.get("client_order_id", "") or "",
+                "position_id": position_id_for_symbol(symbol) if symbol else "",
+            }
+        )
+    return rows
 
 
 def _position_summary(positions: pd.DataFrame) -> dict[str, float | int]:
@@ -194,6 +268,7 @@ def trading_context(root: Path) -> dict:
     tracking_status_counts = _status_counts(tracking, "alpaca_status")
     dry_run = not config.submit_orders or bool(status_counts.get("dry_run", 0))
     position_summary = _position_summary(positions)
+    basket_rows = _build_basket_rows(plan, results)
     basket_symbols = []
     if not plan.empty and "symbol" in plan.columns:
         basket_symbols = sorted({str(symbol).upper() for symbol in plan["symbol"].dropna()})
@@ -234,6 +309,7 @@ def trading_context(root: Path) -> dict:
         "position_rows": _records(positions),
         "operator_action_rows": _records(actions, limit=10),
         "candidate_pool_rows": _records_by_rank(candidate_pool, limit=100),
+        "basket_rows": basket_rows,
         "plan_columns": [
             "symbol", "trade_quality_status", "trade_quality_reason", "side", "notional", "approved_notional",
             "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "risk_tier",

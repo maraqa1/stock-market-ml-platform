@@ -1,9 +1,46 @@
-<section class="zone trading-zone" data-zone="todays-basket">
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import number, side %}
+<section class="zone trading-zone" data-zone="todays-basket" id="todays-basket">
   <div class="zone__header">
     <span>Today's Basket</span>
-    <span class="zone__header-meta">SPEC 17</span>
+    <span class="zone__header-meta">{{ orders_planned }} planned · {{ orders_submitted }} submitted · {{ filled_orders }} filled</span>
   </div>
-  <div class="zone__body zone__body--stub">
-    <p>Stub: merged plan, order results, and fill status table will replace the old order plan/results tables.</p>
+  <div class="zone__body">
+    <table class="data basket-table">
+      <thead>
+        <tr>
+          <th>Sym</th>
+          <th>Side</th>
+          <th class="num">Planned</th>
+          <th class="num">Sent</th>
+          <th class="num">Filled</th>
+          <th class="num">Avg Fill</th>
+          <th>Status</th>
+          <th>Reason / Note</th>
+          <th>Order ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if not basket_rows %}
+          <tr>
+            <td colspan="9" class="empty small">No basket rows found. Run the paper trader to generate today's order plan and results.</td>
+          </tr>
+        {% else %}
+          {% for row in basket_rows %}
+            <tr class="row-clickable" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
+              <td class="num-l">{{ row.symbol }}</td>
+              <td>{{ side(row.trade_action or row.side) }}</td>
+              <td>{{ number(row.planned_quantity or 0, 0) }}</td>
+              <td>{{ number(row.sent_quantity, 0) if row.sent_quantity != "" else "-" }}</td>
+              <td>{{ number(row.filled_quantity, 2) if row.filled_quantity != "" else "-" }}</td>
+              <td>{{ number(row.avg_fill, 2) if row.avg_fill != "" else "-" }}</td>
+              <td>{{ pill(row.basket_status) }}</td>
+              <td>{{ row.reason_note or "-" }}</td>
+              <td class="num-l">{{ row.order_id or "-" }}</td>
+            </tr>
+          {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
   </div>
 </section>

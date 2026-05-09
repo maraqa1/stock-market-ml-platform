@@ -116,6 +116,14 @@ def test_trading_page_renders_spec08_09_10_top_of_page(client):
     assert b"Submitted" in response.data
 
 
+def test_trading_page_renders_todays_basket_table(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Today's Basket" in response.data
+    assert b"Reason / Note" in response.data
+    assert b"Order ID" in response.data
+
+
 def test_pipeline_strip_partial_route_returns_fragment(client):
     response = client.get("/trading/_partials/pipeline-strip")
     assert response.status_code == 200
