@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from stockml.common.paths import OPERATOR_ACTIONS_DIR, ensure_data_dirs
+from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
 
@@ -110,6 +111,23 @@ def apply_manual_position_action(
                 result["message"] = f"manual_close_error: {exc}"
 
     path = _append_action(result, output_path)
+    if clean_symbol:
+        event_type = "operator_keep" if clean_action == "keep" else "operator_close"
+        if clean_action in {"keep", "close"}:
+            record_event_safely(
+                position_id_for_symbol(clean_symbol),
+                event_type,
+                "manual_position_actions",
+                {
+                    "symbol": clean_symbol,
+                    "operator_action": clean_action,
+                    "status": result.get("status"),
+                    "message": result.get("message"),
+                    "order_id": result.get("order_id"),
+                    "client_order_id": result.get("client_order_id"),
+                    "alpaca_status": result.get("alpaca_status"),
+                    "action_path": str(path),
+                },
+            )
     result["action_path"] = str(path)
     return result
-

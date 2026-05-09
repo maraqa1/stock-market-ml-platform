@@ -7,6 +7,7 @@ import pandas as pd
 
 from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
+from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
@@ -62,17 +63,32 @@ def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple
                 continue
             try:
                 live = client.get_order(order_id)
-                tracking_rows.append(
-                    {
-                        **row,
-                        "alpaca_status": live.get("status", row.get("alpaca_status", "")),
-                        "filled_qty": live.get("filled_qty", row.get("filled_qty", "")),
-                        "filled_avg_price": live.get("filled_avg_price", row.get("filled_avg_price", "")),
-                        "submitted_at": live.get("submitted_at", row.get("submitted_at", "")),
-                        "updated_at": live.get("updated_at", row.get("updated_at", "")),
-                        "message": row.get("message", ""),
-                    }
-                )
+                tracked = {
+                    **row,
+                    "alpaca_status": live.get("status", row.get("alpaca_status", "")),
+                    "filled_qty": live.get("filled_qty", row.get("filled_qty", "")),
+                    "filled_avg_price": live.get("filled_avg_price", row.get("filled_avg_price", "")),
+                    "submitted_at": live.get("submitted_at", row.get("submitted_at", "")),
+                    "updated_at": live.get("updated_at", row.get("updated_at", "")),
+                    "message": row.get("message", ""),
+                }
+                tracking_rows.append(tracked)
+                filled_qty = pd.to_numeric(tracked.get("filled_qty", 0), errors="coerce")
+                if str(tracked.get("alpaca_status", "")).lower() == "filled" or (not pd.isna(filled_qty) and filled_qty > 0):
+                    record_event_safely(
+                        position_id_for_symbol(tracked.get("symbol", "")),
+                        "filled",
+                        "alpaca_tracking",
+                        {
+                            "symbol": tracked.get("symbol", ""),
+                            "order_id": tracked.get("order_id", ""),
+                            "client_order_id": tracked.get("client_order_id", ""),
+                            "filled_qty": tracked.get("filled_qty", ""),
+                            "filled_avg_price": tracked.get("filled_avg_price", ""),
+                            "alpaca_status": tracked.get("alpaca_status", ""),
+                            "tracking_path": str(tracking_path),
+                        },
+                    )
             except Exception as exc:
                 tracking_rows.append({**row, "message": f"tracking_error: {exc}"})
         try:
@@ -99,6 +115,23 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     result_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_results_{stamp}.csv"
     candidate_pool.to_csv(candidate_pool_path, index=False)
     plan.to_csv(plan_path, index=False)
+    for selected in plan.to_dict("records"):
+        selected_eligible = bool(selected.get("order_eligible")) and int(selected.get("suggested_quantity", 0) or 0) >= 1
+        if str(selected.get("trade_quality_status", "")).lower() in {"approved", "reduced"} and selected_eligible:
+            record_event_safely(
+                position_id_for_symbol(selected.get("symbol", "")),
+                "selected",
+                "paper_order_plan",
+                {
+                    "symbol": selected.get("symbol", ""),
+                    "side": selected.get("side", ""),
+                    "trade_action": selected.get("trade_action", ""),
+                    "trade_quality_status": selected.get("trade_quality_status", ""),
+                    "approved_notional": selected.get("approved_notional", selected.get("notional", "")),
+                    "suggested_quantity": selected.get("suggested_quantity", ""),
+                    "plan_path": str(plan_path),
+                },
+            )
 
     result_rows = []
     can_submit = config.submit_orders and config.paper_trading_enabled and not config.live_trading_enabled
@@ -111,7 +144,14 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
         for order in plan.to_dict("records"):
             eligible = bool(order.get("order_eligible")) and int(order.get("suggested_quantity", 0) or 0) >= 1
             if str(order.get("trade_quality_status", "")).lower() not in {"approved", "reduced"} or not eligible:
-                result_rows.append(_result_row(order, "rejected", message=format_reasons(order.get("trade_quality_reason", "trade_quality_rejected"))))
+                message = format_reasons(order.get("trade_quality_reason", "trade_quality_rejected"))
+                result_rows.append(_result_row(order, "rejected", message=message))
+                record_event_safely(
+                    position_id_for_symbol(order.get("symbol", "")),
+                    "guardrail_blocked",
+                    "paper_trader",
+                    {"symbol": order.get("symbol", ""), "reason": message, "stage": "trade_quality_gate"},
+                )
                 continue
             request = {
                 "symbol": order["symbol"],
@@ -126,13 +166,38 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
                 payload_check = validate_order_payload(request, max_order_notional=config.max_notional_per_order)
                 if not payload_check.valid:
                     result_rows.append(_result_row(order, "rejected", message=payload_check.reason, diagnostics={"submitted_payload": str(request)}))
+                    record_event_safely(
+                        position_id_for_symbol(order.get("symbol", "")),
+                        "guardrail_blocked",
+                        "paper_trader",
+                        {"symbol": order.get("symbol", ""), "reason": payload_check.reason, "stage": "order_payload_validation"},
+                    )
                     continue
                 allowed, guard_message = validate_order(order, client, context, seen_client_ids)
                 if not allowed:
                     result_rows.append(_result_row(order, "rejected", message=guard_message))
+                    record_event_safely(
+                        position_id_for_symbol(order.get("symbol", "")),
+                        "guardrail_blocked",
+                        "paper_trader",
+                        {"symbol": order.get("symbol", ""), "reason": guard_message, "stage": "submission_preflight"},
+                    )
                     continue
                 response = client.submit_order(request)
                 result_rows.append(_result_row(order, "submitted", response.get("id", ""), response=response))
+                record_event_safely(
+                    position_id_for_symbol(order.get("symbol", "")),
+                    "submitted",
+                    "paper_trader",
+                    {
+                        "symbol": order.get("symbol", ""),
+                        "order_id": response.get("id", ""),
+                        "client_order_id": order.get("client_order_id", ""),
+                        "side": order.get("side", ""),
+                        "qty": order.get("suggested_quantity", ""),
+                        "alpaca_status": response.get("status", ""),
+                    },
+                )
             except AlpacaAPIError as exc:
                 result_rows.append(
                     _result_row(
@@ -142,13 +207,36 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
                         diagnostics={**exc.as_dict(), "submitted_payload": str(request)},
                     )
                 )
+                record_event_safely(
+                    position_id_for_symbol(order.get("symbol", "")),
+                    "broker_rejected",
+                    "paper_trader",
+                    {
+                        "symbol": order.get("symbol", ""),
+                        "reason": "alpaca_order_submit_failed",
+                        **exc.as_dict(),
+                    },
+                )
             except Exception as exc:
                 result_rows.append(_result_row(order, "error", message=f"order_submit_exception: {exc}", diagnostics={"submitted_payload": str(request)}))
+                record_event_safely(
+                    position_id_for_symbol(order.get("symbol", "")),
+                    "broker_rejected",
+                    "paper_trader",
+                    {"symbol": order.get("symbol", ""), "reason": f"order_submit_exception: {exc}"},
+                )
     else:
         for order in plan.to_dict("records"):
             eligible = bool(order.get("order_eligible")) and int(order.get("suggested_quantity", 0) or 0) >= 1
             if str(order.get("trade_quality_status", "")).lower() not in {"approved", "reduced"} or not eligible:
-                result_rows.append(_result_row(order, "rejected", message=format_reasons(order.get("trade_quality_reason", "trade_quality_rejected"))))
+                message = format_reasons(order.get("trade_quality_reason", "trade_quality_rejected"))
+                result_rows.append(_result_row(order, "rejected", message=message))
+                record_event_safely(
+                    position_id_for_symbol(order.get("symbol", "")),
+                    "guardrail_blocked",
+                    "paper_trader",
+                    {"symbol": order.get("symbol", ""), "reason": message, "stage": "trade_quality_gate"},
+                )
             else:
                 result_rows.append(_result_row(order, "dry_run", message="STOCKML_ALPACA_SUBMIT_ORDERS is false"))
 

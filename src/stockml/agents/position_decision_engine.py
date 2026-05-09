@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.common.paths import AGENT_DECISIONS_DIR, ensure_data_dirs, timestamp
+from stockml.services.events import position_id_for_symbol, record_event_safely
 
 
 DECISION_COLUMNS = [
@@ -283,4 +284,32 @@ def write_position_decisions(decisions: pd.DataFrame, stamp: str | None = None) 
     ensure_data_dirs()
     path = AGENT_DECISIONS_DIR / f"position_decisions_{stamp or timestamp()}.csv"
     decisions.to_csv(path, index=False)
+    for row in decisions.to_dict("records"):
+        symbol = _text(row.get("symbol"))
+        if not symbol:
+            continue
+        decision = _text(row.get("decision")).lower()
+        event_type = {
+            "hold": "monitor_safe",
+            "watch": "monitor_watch",
+            "close": "monitor_close",
+            "replace": "monitor_rotate",
+        }.get(decision, "monitor_watch")
+        record_event_safely(
+            position_id_for_symbol(symbol),
+            event_type,
+            "position_monitor",
+            {
+                "symbol": symbol,
+                "decision": row.get("decision"),
+                "recommended_action": row.get("recommended_action"),
+                "decision_reason": row.get("decision_reason"),
+                "current_price": row.get("current_price"),
+                "unrealized_pl": row.get("unrealized_pl"),
+                "unrealized_plpc": row.get("unrealized_plpc"),
+                "replacement_symbol": row.get("replacement_symbol"),
+                "replacement_reason": row.get("replacement_reason"),
+                "decision_path": str(path),
+            },
+        )
     return path
