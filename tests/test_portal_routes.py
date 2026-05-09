@@ -1,4 +1,6 @@
 import pytest
+import pandas as pd
+import shutil
 from pathlib import Path
 
 from portal.app import create_app
@@ -8,6 +10,30 @@ from portal.app import create_app
 def client():
     root = Path("_tmp_portal_routes")
     root.mkdir(parents=True, exist_ok=True)
+    app = create_app(root)
+    app.config.update(TESTING=True)
+    return app.test_client()
+
+
+def write_csv(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+@pytest.fixture()
+def symbol_client():
+    root = Path("_tmp_symbol_routes")
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    write_csv(
+        root / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "TSLA", "side": "long", "qty": 2, "avg_entry_price": 240, "current_price": 245, "market_value": 490, "cost_basis": 480, "unrealized_pl": 10, "unrealized_plpc": 0.0208}],
+    )
+    write_csv(
+        root / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_1.csv",
+        [{"candidate_rank": 7, "symbol": "TSLA", "company": "Tesla, Inc.", "sector": "Consumer Cyclical", "trade_action": "Long", "risk_adjusted_score": 0.71, "expected_trade_return": 0.016, "order_eligible": True}],
+    )
     app = create_app(root)
     app.config.update(TESTING=True)
     return app.test_client()
@@ -67,6 +93,33 @@ def test_search_api_run_id_returns_runs_only(client):
     assert response.status_code == 200
     payload = response.get_json()
     assert [group["key"] for group in payload["groups"]] == ["runs"]
+
+
+def test_symbol_detail_page_renders_fixture_data(symbol_client):
+    response = symbol_client.get("/symbols/TSLA")
+    assert response.status_code == 200
+    assert b"TSLA" in response.data
+    assert b"Position" in response.data
+    assert b"Today's Signal" in response.data
+    assert b"Data Freshness" in response.data
+    assert b"30-Day History" in response.data
+    assert b"Activity" in response.data
+    assert b"data-close-position" in response.data
+
+
+def test_symbol_detail_api_and_missing_symbol(symbol_client):
+    response = symbol_client.get("/api/symbols/TSLA")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["symbol"] == "TSLA"
+    assert {"position", "today_signal", "freshness", "history", "events"}.issubset(payload)
+    assert symbol_client.get("/symbols/INVALID").status_code == 404
+
+
+def test_trading_symbol_cells_link_to_symbol_detail(symbol_client):
+    response = symbol_client.get("/trading")
+    assert response.status_code == 200
+    assert b'href="/symbols/TSLA"' in response.data
 
 
 def test_styleguide_supports_light_theme(client):

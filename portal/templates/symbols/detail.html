@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% from "_macros/format.html" import money, number, pct, qty, side, signed_money, signed_pct, time_utc %}
+{% from "_macros/pill.html" import pill, dot %}
+{% block content %}
+<section class="symbol-detail">
+  <div class="symbol-heading">
+    <div>
+      <h1>{{ detail.symbol }} &middot; {{ detail.name }}</h1>
+      <p>{{ detail.sector }}</p>
+    </div>
+    <div class="symbol-heading__stats">
+      <span>Last {{ money(detail.last_price) }}</span>
+      <span>{{ signed_pct(detail.change_today_pct) }} today</span>
+      <span>Volume {{ number(detail.volume, 0) }}</span>
+      <span>Market cap {{ number(detail.market_cap, 0) if detail.market_cap is not string else detail.market_cap }}</span>
+    </div>
+  </div>
+
+  <section class="zone">
+    <div class="zone__header">
+      <span>Position</span>
+      <span class="zone__header-meta">paper account only</span>
+    </div>
+    <div class="zone__body">
+      {% if detail.position %}
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Side</th>
+              <th class="num">Qty</th>
+              <th class="num">Entry</th>
+              <th class="num">P&amp;L $</th>
+              <th class="num">P&amp;L %</th>
+              <th class="num">Age</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-lineage-url="/trading/positions/{{ detail.position.id }}/lineage">
+              <td>{{ side(detail.position.side) }}</td>
+              <td>{{ qty(detail.position.qty) }}</td>
+              <td>{{ money(detail.position.entry) }}</td>
+              <td>{{ signed_money(detail.position.pnl_dollars) }}</td>
+              <td>{{ signed_pct(detail.position.pnl_pct) }}</td>
+              <td class="num">{{ detail.position.age_days or "Open" }}</td>
+              <td>{{ pill(detail.position.status) }}</td>
+              <td>
+                <button class="btn btn-danger btn-sm" type="button" data-close-position data-position-id="{{ detail.position.id }}" data-symbol="{{ detail.symbol }}" data-qty="{{ detail.position.qty }}" data-market-value="{{ detail.position.market_value or 0 }}">Close</button>
+                <button class="btn btn-ghost btn-sm" type="button" data-open-lineage data-lineage-url="/trading/positions/{{ detail.position.id }}/lineage">Open lineage &rarr;</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty small">Not currently held.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="zone">
+    <div class="zone__header">
+      <span>Today's Signal</span>
+      <span class="zone__header-meta">latest model shortlist</span>
+    </div>
+    <div class="zone__body">
+      {% if detail.today_signal %}
+        <div class="symbol-signal-grid">
+          <div><span class="label">Rank</span><strong class="num-l">{{ detail.today_signal.rank }} / {{ detail.today_signal.of or "?" }}</strong></div>
+          <div><span class="label">Bias</span><strong>{{ side(detail.today_signal.bias) }}</strong></div>
+          <div><span class="label">Score</span><strong>{{ number(detail.today_signal.score, 4) }}</strong></div>
+          <div><span class="label">Expected edge</span><strong>{{ signed_pct(detail.today_signal.expected_edge_pct) }}</strong></div>
+          <div><span class="label">In basket</span><strong>{{ pill("approved", "Yes") if detail.today_signal.in_basket else pill("pending", "No") }}</strong></div>
+        </div>
+        {% if detail.today_signal.top_features %}
+          <div class="feature-bars">
+            {% for feature in detail.today_signal.top_features %}
+              <div class="feature-bar">
+                <span>{{ feature.name }}</span>
+                <div><i style="width: {{ (feature.contribution|float * 100)|round(1) }}%"></i></div>
+                <b class="num">{{ number(feature.contribution, 4) }}</b>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% else %}
+        <div class="empty small">Not in today's shortlist.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="zone">
+    <div class="zone__header"><span>Data Freshness</span></div>
+    <div class="zone__body freshness-grid">
+      <span>{{ dot("info", "EOD prices") }} {{ time_utc(detail.freshness.eod_prices) }}</span>
+      <span>{{ dot("info", "Features") }} {{ time_utc(detail.freshness.features) }}</span>
+      <span>{{ dot("info", "Sentiment") }} {{ time_utc(detail.freshness.sentiment) }}</span>
+      <span>{{ dot("info", "Filings") }} {{ time_utc(detail.freshness.filings) }}</span>
+      <span>{{ dot("info", "Earnings next") }} {{ detail.freshness.earnings_next or "Not available" }}</span>
+    </div>
+  </section>
+
+  <section class="zone">
+    <div class="zone__header"><span>30-Day History</span></div>
+    <div class="zone__body history-grid">
+      {% if not detail.history.scores and not detail.history.signals and not detail.history.pnl %}
+        <div class="empty small">No prediction history for this symbol.</div>
+      {% else %}
+        <div><span class="label">Daily score</span>{% for row in detail.history.scores %}<span class="history-chip num-l">{{ number(row.value, 3) }}</span>{% endfor %}</div>
+        <div><span class="label">Daily signal</span>{% for row in detail.history.signals %}<span class="history-chip">{{ pill(row.bias) if row.bias != "neutral" else "-" }}</span>{% endfor %}</div>
+        <div><span class="label">Daily P&amp;L</span>{% for row in detail.history.pnl %}<span class="history-chip">{{ signed_pct(row.value) }}</span>{% endfor %}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="zone">
+    <div class="zone__header">
+      <span>Activity</span>
+      <span class="zone__header-meta">{{ detail.events|length }} recent events</span>
+    </div>
+    <div class="zone__body">
+      {% if not detail.events %}
+        <div class="empty small">No activity recorded for this symbol.</div>
+      {% else %}
+        <ol class="lineage-list">
+          {% for event in detail.events %}
+            <li>
+              <div class="lineage-event-dot">{{ dot(event.event_type) }}</div>
+              <div>
+                <strong>{{ event.event_type|replace('_', ' ')|title }}</strong>
+                <span class="num time">{{ event.event_at }}</span>
+                <p>{{ event.source }}{% if event.details %}: {{ event.details }}{% endif %}</p>
+              </div>
+            </li>
+          {% endfor %}
+        </ol>
+      {% endif %}
+    </div>
+  </section>
+</section>
+
+<dialog class="confirm-dialog" data-confirm-dialog>
+  <form method="dialog">
+    <h2 data-confirm-title>Confirm action</h2>
+    <p data-confirm-text></p>
+    <p class="muted">Paper account only. Live trading remains disabled.</p>
+    <menu>
+      <button class="btn btn-ghost" value="cancel">Cancel</button>
+      <button class="btn btn-danger" value="confirm" data-confirm-primary><span data-confirm-primary-label>Confirm</span></button>
+    </menu>
+  </form>
+</dialog>
+<dialog class="lineage-dialog" data-lineage-dialog>
+  <button class="btn btn-ghost dialog-close" type="button" data-dialog-close>Close</button>
+  <div data-lineage-content></div>
+</dialog>
+<div class="toast" data-toast hidden></div>
+{% endblock %}

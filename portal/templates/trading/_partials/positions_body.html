@@ -7,7 +7,7 @@
 {% else %}
   {% for row in positions_api["positions"] %}
     <tr class="row-clickable" data-position-id="{{ row.position_id }}" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
-      <td class="num-l">{{ row.symbol }}</td>
+      <td class="num-l"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
       <td>{{ side(row.side or "long") }}</td>
       <td>{{ qty(row.qty or 0) }}</td>
       <td>{{ money(row.entry_price or "") }}</td>

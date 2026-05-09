@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
 from portal.services.database_reader import db_available
@@ -15,6 +15,7 @@ from portal.services.kpi import trading_cadence_context, trading_header_context,
 from portal.services.model_validation_service import model_validation_context
 from portal.services.search import search
 from portal.services.signal_service import no_decision_context, signal_context
+from portal.services.symbol_detail import get as symbol_detail_get
 from portal.services.stock_detail_service import stock_detail_context
 from portal.services.trading_api_service import (
     action_queue_context,
@@ -76,9 +77,9 @@ def create_app(root: Path | None = None) -> Flask:
                 html.append("<tr>")
                 for col in columns:
                     value = row.get(col, "")
-                    if col == "ticker" and value:
+                    if col in {"ticker", "symbol"} and value:
                         ticker = escape(str(value).upper())
-                        html.append(f'<td><a class="ticker-link" href="{url_for("stock_detail", ticker=ticker)}">{ticker}</a></td>')
+                        html.append(f'<td><a class="ticker-link" href="{url_for("symbol_detail", symbol=ticker)}">{ticker}</a></td>')
                     elif col in {"trade_action", "decision_grade", "sentiment_status"}:
                         badge_value = escape(str(value or "Not available"))
                         html.append(f'<td><span class="badge {badge_value}">{badge_value}</span></td>')
@@ -125,6 +126,13 @@ def create_app(root: Path | None = None) -> Flask:
         except ValueError:
             limit = 5
         return jsonify(search(request.args.get("q", ""), limit=limit, root=root_path(), scope=request.args.get("scope", "all")))
+
+    @app.route("/api/symbols/<symbol>")
+    def api_symbol_detail(symbol: str):
+        detail = symbol_detail_get(symbol, root_path())
+        if detail is None:
+            abort(404)
+        return jsonify(detail)
 
     @app.route("/dev/styleguide")
     def dev_styleguide():
@@ -284,6 +292,13 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/diagnostics")
     def diagnostics():
         return redirect(url_for("trading", _anchor="diagnostics"))
+
+    @app.route("/symbols/<symbol>")
+    def symbol_detail(symbol: str):
+        detail = symbol_detail_get(symbol, root_path())
+        if detail is None:
+            abort(404)
+        return render_template("symbols/detail.html", title=detail["symbol"], detail=detail)
 
     @app.route("/api/trading/pipeline/current")
     def api_trading_pipeline_current():

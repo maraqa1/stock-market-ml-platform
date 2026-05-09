@@ -28,7 +28,7 @@
         {% else %}
           {% for row in basket_rows %}
             <tr class="row-clickable" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
-              <td class="num-l">{{ row.symbol }}</td>
+              <td class="num-l"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
               <td>{{ side(row.trade_action or row.side) }}</td>
               <td>{{ number(row.planned_quantity or 0, 0) }}</td>
               <td>{{ number(row.sent_quantity, 0) if row.sent_quantity != "" else "-" }}</td>

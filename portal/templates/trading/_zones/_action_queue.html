@@ -25,7 +25,7 @@
         <tbody>
           {% for item in action_queue["items"] %}
             <tr data-queue-row="{{ item.event_id }}">
-              <td class="num-l">{{ item.symbol }}</td>
+              <td class="num-l"><a href="/symbols/{{ item.symbol }}">{{ item.symbol }}</a></td>
               <td>{{ side(item.side or "long") }}</td>
               <td>{{ signed_money(item.unrealized_pl or 0) }} {{ signed_pct(item.unrealized_plpc or 0) }}</td>
               <td class="num">{{ item.signal_age_minutes|default("", true) }}</td>

@@ -1177,6 +1177,84 @@ dialog {
   display: inline-flex;
 }
 
+.symbol-detail {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.symbol-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.symbol-heading h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-16);
+  font-weight: var(--fw-medium);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.symbol-heading p,
+.symbol-heading__stats {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+}
+
+.symbol-heading__stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.symbol-signal-grid,
+.freshness-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.symbol-signal-grid > div {
+  min-width: 120px;
+}
+
+.feature-bars,
+.history-grid {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.feature-bar {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) 1fr 80px;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.feature-bar div {
+  height: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-page);
+}
+
+.feature-bar i {
+  display: block;
+  height: 100%;
+  background: var(--status-info);
+}
+
+.history-chip {
+  display: inline-flex;
+  margin: 0 var(--space-1) var(--space-1) 0;
+}
+
 .diagnostic-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

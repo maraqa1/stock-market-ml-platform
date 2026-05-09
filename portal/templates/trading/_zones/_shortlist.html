@@ -50,7 +50,7 @@
               {% set bias = (row.trade_action or row.side or "Neutral")|lower %}
               <tr data-shortlist-row data-side="{{ 'short' if bias in ['short', 'sell'] else 'long' if bias in ['long', 'buy'] else 'neutral' }}" data-sector="{{ (row.sector or '')|lower }}">
                 <td>{{ number(row.candidate_rank or loop.index, 0) }}</td>
-                <td class="num-l">{{ row.symbol }}</td>
+                <td class="num-l"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
                 <td>{{ side(row.trade_action or row.side) }}</td>
                 <td>{{ number(row.risk_adjusted_score or 0, 4) }}</td>
                 <td>{{ number(row.expected_trade_return or 0, 4) }}</td>

@@ -195,17 +195,29 @@ const lineageDialog = document.querySelector("[data-lineage-dialog]");
 const lineageContent = document.querySelector("[data-lineage-content]");
 document.querySelector("[data-dialog-close]")?.addEventListener("click", () => lineageDialog?.close());
 
-document.addEventListener("click", async (event) => {
-  const row = event.target.closest("[data-lineage-url]");
-  if (!row || event.target.closest("button, a, form")) return;
+const openLineageUrl = async (url) => {
   try {
-    const response = await fetch(row.dataset.lineageUrl);
+    const response = await fetch(url);
     if (!response.ok) throw new Error(`Lineage failed: ${response.status}`);
     if (lineageContent) lineageContent.innerHTML = await response.text();
     lineageDialog?.showModal();
   } catch (error) {
     showToast(error.message, true);
   }
+};
+
+document.addEventListener("click", async (event) => {
+  const trigger = event.target.closest("[data-open-lineage]");
+  if (!trigger) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await openLineageUrl(trigger.dataset.lineageUrl);
+});
+
+document.addEventListener("click", async (event) => {
+  const row = event.target.closest("[data-lineage-url]");
+  if (!row || event.target.closest("button, a, form")) return;
+  await openLineageUrl(row.dataset.lineageUrl);
 });
 
 document.addEventListener("click", (event) => {
