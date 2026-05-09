@@ -2,9 +2,9 @@ from __future__ import annotations
 
 
 REASON_LABELS = {
-    "not_long_or_short": "Not a Long or Short decision",
+    "not_long_or_short": "Neutral decision",
     "model_not_decision_grade": "Model not decision-grade",
-    "no_decision_reason_present": "No Decision reason present",
+    "no_decision_reason_present": "Neutral reason present",
     "current_price_missing": "Current price missing",
     "current_price_invalid": "Current price invalid",
     "price_below_minimum": "Price below minimum",
@@ -36,7 +36,7 @@ REASON_LABELS = {
     "unsupported_operator_action": "Unsupported operator action",
     "symbol_required": "Symbol required",
     "approved": "Approved",
-    "reduced": "Reduced size",
+    "reduced": "Trimmed size",
 }
 
 

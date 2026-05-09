@@ -25,9 +25,9 @@
         <a class="{{ 'active' if request.path == '/' else '' }}" href="/">Home</a>
         <a class="{{ 'active' if request.path == '/signals' else '' }}" href="/signals">Signals</a>
         <a class="{{ 'active' if request.path == '/trading' else '' }}" href="/trading">Paper Trading</a>
-        <a class="{{ 'active' if request.path == '/trading/lifecycle' else '' }}" href="/trading/lifecycle">Trade Lifecycle</a>
+        <a class="{{ 'active' if request.path == '/journal' else '' }}" href="/journal">Activity Journal</a>
         <a class="{{ 'active' if request.path == '/model-validation' else '' }}" href="/model-validation">Validation</a>
-        <a class="{{ 'active' if request.path == '/no-decision' else '' }}" href="/no-decision">No Decision</a>
+        <a class="{{ 'active' if request.path == '/no-decision' else '' }}" href="/no-decision">Neutral</a>
         <span>Data Estate</span>
         <a class="{{ 'active' if request.path == '/universe' else '' }}" href="/universe">Universe</a>
         <a class="{{ 'active' if request.path == '/data-quality' else '' }}" href="/data-quality">Quality</a>
@@ -52,7 +52,7 @@
         <a class="{{ 'active' if request.path == '/' else '' }}" href="/">Overview</a>
         <a class="{{ 'active' if request.path == '/signals' else '' }}" href="/signals">Executive</a>
         <a class="{{ 'active' if request.path == '/trading' else '' }}" href="/trading">Trading</a>
-        <a class="{{ 'active' if request.path == '/trading/lifecycle' else '' }}" href="/trading/lifecycle">Lifecycle</a>
+        <a class="{{ 'active' if request.path == '/journal' else '' }}" href="/journal">Journal</a>
         <a class="{{ 'active' if request.path == '/model-validation' else '' }}" href="/model-validation">Validation</a>
         <a class="{{ 'active' if request.path in ['/gold', '/data-quality', '/universe'] else '' }}" href="/gold">Dataset</a>
       </section>

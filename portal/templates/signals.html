@@ -4,7 +4,7 @@
 <section class="kpi-grid">
   <article class="kpi"><span>Displayed Long</span><strong>{{ long_count|fmt }}</strong></article>
   <article class="kpi"><span>Displayed Short</span><strong>{{ short_count|fmt }}</strong></article>
-  <article class="kpi"><span>No Decision</span><strong>{{ all_no_decision_count|fmt }}</strong></article>
+  <article class="kpi"><span>Neutral</span><strong>{{ all_no_decision_count|fmt }}</strong></article>
   <article class="kpi"><span>Model</span><strong>{{ status.selected_model or "Unknown" }}</strong></article>
 </section>
 <section class="panel">
@@ -15,7 +15,7 @@
 </section>
 <section class="panel intro">
   <h2>Decision Logic</h2>
-  <p>Signals are shown only when the model and ranking gates allow them. When evidence is weak, the platform keeps the stock in No Decision instead of forcing a trade call.</p>
+  <p>Signals are shown only when the model and ranking gates allow them. When evidence is weak, the platform keeps the stock Neutral instead of forcing a trade call.</p>
 </section>
 {% if not long_rows and not short_rows %}
   <section class="empty">{{ empty_signal_message }}</section>
@@ -24,5 +24,5 @@
   <article class="panel"><h2>Top Long Signals</h2>{{ table(long_rows, signal_columns) }}</article>
   <article class="panel"><h2>Top Short Signals</h2>{{ table(short_rows, signal_columns) }}</article>
 </section>
-<section class="panel"><h2>No Decision Sample</h2>{{ table(no_decision_rows, no_decision_columns) }}</section>
+<section class="panel"><h2>Neutral Sample</h2>{{ table(no_decision_rows, no_decision_columns) }}</section>
 {% endblock %}

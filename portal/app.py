@@ -132,7 +132,7 @@ def create_app(root: Path | None = None) -> Flask:
                 {"label": "Gold tickers", "value": gold["ticker_count"]},
                 {"label": "Long", "value": signals["long_count"]},
                 {"label": "Short", "value": signals["short_count"]},
-                {"label": "No Decision", "value": signals["no_decision_count"]},
+                {"label": "Neutral", "value": signals["no_decision_count"]},
             ],
             model_status=signals,
             files=[
@@ -238,7 +238,15 @@ def create_app(root: Path | None = None) -> Flask:
 
     @app.route("/trading/lifecycle")
     def trading_lifecycle():
-        return render_template("trading_lifecycle.html", title="Trade Lifecycle", **lifecycle_context(root_path()))
+        return redirect(url_for("journal"), code=301)
+
+    @app.route("/lifecycle")
+    def lifecycle_redirect():
+        return redirect(url_for("journal"), code=301)
+
+    @app.route("/journal")
+    def journal():
+        return render_template("trading_lifecycle.html", title="Activity Journal", **lifecycle_context(root_path()))
 
     @app.route("/api/trading/pipeline/current")
     def api_trading_pipeline_current():
@@ -282,7 +290,7 @@ def create_app(root: Path | None = None) -> Flask:
 
     @app.route("/no-decision")
     def no_decision():
-        return render_template("no_decision.html", title="No Decision", **no_decision_context(root_path()))
+        return render_template("no_decision.html", title="Neutral", **no_decision_context(root_path()))
 
     @app.route("/stock/<ticker>")
     def stock_detail(ticker: str):

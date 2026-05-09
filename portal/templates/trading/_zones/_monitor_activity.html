@@ -36,7 +36,7 @@
         <span>{{ state_changes|length }} state changes</span>
         <span>last check {{ time_utc(last_check.event_at) }}</span>
       {% else %}
-        <span class="text-tertiary">No monitor checks recorded today.</span>
+        <span class="stale-inline">No monitor checks recorded today.</span>
       {% endif %}
     </div>
     {% if state_changes %}

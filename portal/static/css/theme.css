@@ -992,6 +992,36 @@ dialog {
   padding-top: var(--space-3);
 }
 
+.stale-inline {
+  color: var(--status-warning);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.filter-row label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+}
+
+.filter-row select {
+  height: 28px;
+  min-width: 140px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+}
+
 .stage-dot-row {
   display: flex;
   flex-wrap: wrap;

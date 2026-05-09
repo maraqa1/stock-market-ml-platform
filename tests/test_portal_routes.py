@@ -14,9 +14,16 @@ def client():
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/trading/lifecycle", "/model-validation", "/no-decision", "/dev/styleguide"]:
+    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/journal", "/model-validation", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
+
+
+def test_lifecycle_routes_redirect_to_journal(client):
+    for route in ["/lifecycle", "/trading/lifecycle"]:
+        response = client.get(route)
+        assert response.status_code == 301
+        assert response.headers["Location"].endswith("/journal")
 
 
 def test_base_loads_spec00_theme(client):
@@ -168,6 +175,15 @@ def test_trading_page_renders_rejected_trimmed_table(client):
     assert b"Source" in response.data
     assert b"Reason" in response.data
     assert b"Planned" in response.data
+
+
+def test_trading_page_renders_model_shortlist_filters(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Model Shortlist" in response.data
+    assert b"data-shortlist-side" in response.data
+    assert b"data-shortlist-sector" in response.data
+    assert b"Show ranked model shortlist" in response.data
 
 
 def test_pipeline_strip_partial_route_returns_fragment(client):

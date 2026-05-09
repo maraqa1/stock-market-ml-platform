@@ -347,6 +347,9 @@ def trading_context(root: Path) -> dict:
     basket_symbols = []
     if not plan.empty and "symbol" in plan.columns:
         basket_symbols = sorted({str(symbol).upper() for symbol in plan["symbol"].dropna()})
+    candidate_pool_sectors: list[str] = []
+    if not candidate_pool.empty and "sector" in candidate_pool.columns:
+        candidate_pool_sectors = sorted({str(sector) for sector in candidate_pool["sector"].dropna() if str(sector).strip()})
 
     guardrails = [
         {"label": "Submit orders", "value": "Disabled" if not config.submit_orders else "Enabled", "status": "safe" if not config.submit_orders else "warning"},
@@ -366,6 +369,7 @@ def trading_context(root: Path) -> dict:
         "candidate_pool_count": len(candidate_pool),
         "candidate_pool_status_counts": _status_counts(candidate_pool, "trade_quality_status"),
         "candidate_pool_action_counts": _action_counts(candidate_pool),
+        "candidate_pool_sectors": candidate_pool_sectors,
         "basket_symbols": basket_symbols,
         "orders_submitted": int(status_counts.get("submitted", 0)),
         "orders_rejected": int(status_counts.get("error", 0) + status_counts.get("rejected", 0)),

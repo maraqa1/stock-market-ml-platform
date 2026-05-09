@@ -1,7 +1,17 @@
 document.addEventListener("click", (event) => {
   const row = event.target.closest("tr");
-  if (!row) return;
+  if (!row || event.target.closest("button, a, form, select, input, summary")) return;
   row.classList.toggle("selected");
+});
+
+document.querySelectorAll("details[data-key]").forEach((node) => {
+  const key = `trading.details.${node.dataset.key}`;
+  const saved = localStorage.getItem(key);
+  if (saved === "open") node.open = true;
+  if (saved === "closed") node.open = false;
+  node.addEventListener("toggle", () => {
+    localStorage.setItem(key, node.open ? "open" : "closed");
+  });
 });
 
 const autoRefresh = document.querySelector("[data-auto-refresh-url]");
@@ -49,7 +59,9 @@ if (pipelineZone) {
   const refreshUrl = pipelineZone.dataset.pipelineRefreshUrl;
   const refreshMs = Number(pipelineZone.dataset.pipelineRefreshMs || 60000);
   const target = pipelineZone.querySelector("[data-pipeline-strip]");
+  const banner = pipelineZone.querySelector("[data-pipeline-stale-banner]");
   let inFlight = false;
+  let failures = 0;
 
   window.setInterval(async () => {
     if (inFlight || document.hidden || !target) return;
@@ -58,7 +70,14 @@ if (pipelineZone) {
       const response = await fetch(refreshUrl);
       if (!response.ok) throw new Error(`Pipeline refresh failed: ${response.status}`);
       target.innerHTML = await response.text();
+      failures = 0;
+      if (banner) banner.hidden = true;
     } catch (error) {
+      failures += 1;
+      if (banner && failures >= 1) {
+        banner.hidden = false;
+        banner.textContent = "Pipeline freshness may be stale.";
+      }
       console.error(error);
     } finally {
       inFlight = false;
@@ -81,6 +100,7 @@ const confirmDialog = document.querySelector("[data-confirm-dialog]");
 const confirmText = confirmDialog?.querySelector("[data-confirm-text]");
 const confirmTitle = confirmDialog?.querySelector("[data-confirm-title]");
 const confirmPrimary = confirmDialog?.querySelector("[data-confirm-primary]");
+const confirmPrimaryLabel = confirmDialog?.querySelector("[data-confirm-primary-label]");
 
 const confirmAction = ({ title, text, danger = true }) =>
   new Promise((resolve) => {
@@ -91,9 +111,11 @@ const confirmAction = ({ title, text, danger = true }) =>
     if (confirmTitle) confirmTitle.textContent = title;
     if (confirmText) confirmText.textContent = text;
     if (confirmPrimary) {
+      confirmPrimary.disabled = false;
       confirmPrimary.classList.toggle("btn-danger", danger);
       confirmPrimary.classList.toggle("btn-primary", !danger);
     }
+    if (confirmPrimaryLabel) confirmPrimaryLabel.textContent = "Confirm";
     const handler = () => {
       confirmDialog.removeEventListener("close", handler);
       resolve(confirmDialog.returnValue === "confirm");
@@ -127,6 +149,8 @@ document.addEventListener("click", async (event) => {
   });
   if (!ok) return;
   queueButton.disabled = true;
+  if (confirmPrimary) confirmPrimary.disabled = true;
+  if (confirmPrimaryLabel) confirmPrimaryLabel.textContent = "Working...";
   try {
     const result = await postJson(`/trading/queue/${encodeURIComponent(eventId)}/${action}`, {
       symbol,
@@ -156,6 +180,8 @@ document.addEventListener("click", async (event) => {
   });
   if (!ok) return;
   closeButton.disabled = true;
+  if (confirmPrimary) confirmPrimary.disabled = true;
+  if (confirmPrimaryLabel) confirmPrimaryLabel.textContent = "Working...";
   try {
     const result = await postJson(`/api/trading/positions/${encodeURIComponent(positionId)}/close`, { symbol });
     showToast(`Close recorded${result.broker_order_id ? ` · broker order ${result.broker_order_id}` : ""}`);
@@ -189,6 +215,24 @@ document.addEventListener("click", (event) => {
   if (lineageContent && template) lineageContent.innerHTML = template.innerHTML;
   lineageDialog?.showModal();
 });
+
+const shortlistFilters = document.querySelector("[data-shortlist-filters]");
+if (shortlistFilters) {
+  const sideSelect = shortlistFilters.querySelector("[data-shortlist-side]");
+  const sectorSelect = shortlistFilters.querySelector("[data-shortlist-sector]");
+  const rows = Array.from(document.querySelectorAll("[data-shortlist-row]"));
+  const applyFilters = () => {
+    const side = sideSelect?.value || "";
+    const sector = sectorSelect?.value || "";
+    rows.forEach((row) => {
+      const sideOk = !side || row.dataset.side === side;
+      const sectorOk = !sector || row.dataset.sector === sector;
+      row.hidden = !(sideOk && sectorOk);
+    });
+  };
+  sideSelect?.addEventListener("change", applyFilters);
+  sectorSelect?.addEventListener("change", applyFilters);
+}
 
 const positionsBody = document.querySelector("[data-positions-body]");
 if (positionsBody) {
