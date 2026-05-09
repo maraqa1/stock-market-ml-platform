@@ -139,3 +139,18 @@ def test_paper_trader_records_submitted_and_guardrail_events(monkeypatch):
     assert result["orders_submitted"] == 1
     assert [event[0][1] for event in events] == ["selected", "submitted", "guardrail_blocked"]
     assert [event[0][0] for event in events] == ["paper:FLEX", "paper:FLEX", "paper:AKAN"]
+
+
+def test_paper_trader_stamps_client_order_ids_per_run():
+    plan = pd.DataFrame(
+        [
+            {"client_order_id": "stockml-20260508-FWRD-buy"},
+            {"client_order_id": "stockml-20260508-VERY-LONG-SYMBOL-NAME-buy"},
+        ]
+    )
+
+    stamped = paper_trader._stamp_client_order_ids(plan, "20260509_172837")
+
+    assert stamped.iloc[0]["client_order_id"] == "stockml-20260508-FWRD-buy-20260509172837"
+    assert stamped.iloc[0]["client_order_id"] != plan.iloc[0]["client_order_id"]
+    assert all(len(value) <= 48 for value in stamped["client_order_id"])

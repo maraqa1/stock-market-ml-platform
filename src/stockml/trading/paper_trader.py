@@ -47,6 +47,22 @@ def _clean_text(value: object) -> str:
     return "" if text.lower() in {"nan", "none", "null"} else text
 
 
+def _stamp_client_order_ids(plan: pd.DataFrame, stamp: str) -> pd.DataFrame:
+    if plan.empty or "client_order_id" not in plan.columns:
+        return plan
+    out = plan.copy()
+    suffix = f"-{stamp.replace('_', '')}"
+    max_len = 48
+
+    def stamped(value: object) -> str:
+        base = _clean_text(value) or "stockml-order"
+        keep = max(1, max_len - len(suffix))
+        return f"{base[:keep]}{suffix}"
+
+    out["client_order_id"] = out["client_order_id"].apply(stamped)
+    return out
+
+
 def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple[Path, Path]:
     tracking_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_tracking_{stamp}.csv"
     positions_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_positions_{stamp}.csv"
@@ -110,6 +126,7 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     candidate_pool = build_candidate_pool(signals, config)
     plan = build_order_plan(signals, config)
     stamp = timestamp()
+    plan = _stamp_client_order_ids(plan, stamp)
     candidate_pool_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_candidate_pool_{stamp}.csv"
     plan_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_plan_{stamp}.csv"
     result_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_results_{stamp}.csv"
