@@ -51,27 +51,28 @@ def _numeric_column(frame: pd.DataFrame, column: str, default: float = 0.0) -> p
     return pd.to_numeric(frame[column], errors="coerce").fillna(default)
 
 
-def _balanced_side_selection(frame: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
+def _balanced_side_selection(frame: pd.DataFrame, config: AlpacaConfig, limit: int) -> pd.DataFrame:
     if frame.empty or not config.allow_short_selling:
-        return frame.head(config.max_orders)
+        return frame.head(limit)
     actions = frame["trade_action"].astype(str).str.strip().str.lower()
     longs = frame[actions.eq("long")].copy()
     shorts = frame[actions.eq("short")].copy()
     if longs.empty or shorts.empty:
-        return frame.head(config.max_orders)
+        return frame.head(limit)
 
-    long_slots = (config.max_orders + 1) // 2
-    short_slots = config.max_orders // 2
+    long_slots = (limit + 1) // 2
+    short_slots = limit // 2
     selected = pd.concat([longs.head(long_slots), shorts.head(short_slots)], ignore_index=False)
-    if len(selected) < config.max_orders:
+    if len(selected) < limit:
         remaining = frame.drop(index=selected.index, errors="ignore")
-        selected = pd.concat([selected, remaining.head(config.max_orders - len(selected))], ignore_index=False)
-    return selected.sort_values("_sort_score", ascending=False).head(config.max_orders)
+        selected = pd.concat([selected, remaining.head(limit - len(selected))], ignore_index=False)
+    return selected.sort_values("_sort_score", ascending=False).head(limit)
 
 
-def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
+def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig, limit: int | None = None) -> pd.DataFrame:
     if signals.empty or not REQUIRED_SIGNAL_COLUMNS.issubset(signals.columns):
         return pd.DataFrame()
+    limit = limit or config.max_orders
     frame = signals.copy()
     actions = frame["trade_action"].astype(str).str.strip().str.lower()
     allowed_actions = {"long"}
@@ -95,18 +96,19 @@ def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig) -> pd.
     frame["risk_adjusted_score"] = _numeric_column(frame, "risk_adjusted_score")
     frame["_sort_score"] = frame["risk_adjusted_score"].abs()
     frame = frame.sort_values("_sort_score", ascending=False)
-    frame = _balanced_side_selection(frame, config)
-    frame = _limit_sector_concentration(frame, config)
-    return frame.head(config.max_orders).drop(columns=["_sort_score"])
+    frame = _balanced_side_selection(frame, config, limit)
+    frame = _limit_sector_concentration(frame, config, limit)
+    return frame.head(limit).drop(columns=["_sort_score"])
 
 
-def _limit_sector_concentration(frame: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
+def _limit_sector_concentration(frame: pd.DataFrame, config: AlpacaConfig, limit: int | None = None) -> pd.DataFrame:
     if "sector" not in frame.columns or frame.empty:
         return frame
+    limit = limit or config.max_orders
     max_fraction = min(max(config.max_sector_fraction, 0.0), 1.0)
     if max_fraction <= 0:
         return frame.iloc[0:0]
-    max_per_sector = max(1, int(config.max_orders * max_fraction))
+    max_per_sector = max(1, int(limit * max_fraction))
     selected = []
     sector_counts: dict[str, int] = {}
     for _, row in frame.iterrows():
@@ -115,11 +117,46 @@ def _limit_sector_concentration(frame: pd.DataFrame, config: AlpacaConfig) -> pd
             continue
         selected.append(row)
         sector_counts[sector] = sector_counts.get(sector, 0) + 1
-        if len(selected) >= config.max_orders:
+        if len(selected) >= limit:
             break
     if not selected:
         return frame.iloc[0:0]
     return pd.DataFrame(selected)
+
+
+def build_candidate_pool(
+    signals: pd.DataFrame,
+    config: AlpacaConfig,
+    price_snapshot: Optional[pd.DataFrame] = None,
+    metadata: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    filtered = filter_tradeable_signals(signals, config, limit=max(config.candidate_pool_size, config.max_orders))
+    if filtered.empty:
+        return pd.DataFrame()
+    gated = apply_trade_quality_gate(filtered, config, price_snapshot=price_snapshot, metadata=metadata)
+    pool = pd.DataFrame([order_row(row, config) for _, row in gated.iterrows()])
+    if pool.empty:
+        return pool
+    pool["candidate_rank"] = range(1, len(pool) + 1)
+    pool["candidate_status"] = pool["trade_quality_status"]
+    return pool
+
+
+def _select_final_orders(candidate_pool: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
+    if candidate_pool.empty:
+        return candidate_pool
+    eligible = candidate_pool[
+        candidate_pool["trade_quality_status"].astype(str).str.lower().isin({"approved", "reduced"})
+        & candidate_pool["order_eligible"].astype(bool)
+        & (pd.to_numeric(candidate_pool["suggested_quantity"], errors="coerce").fillna(0) >= 1)
+    ].copy()
+    if eligible.empty:
+        return candidate_pool.head(config.max_orders).copy()
+    eligible["_sort_score"] = pd.to_numeric(eligible.get("risk_adjusted_score", 0), errors="coerce").abs().fillna(0)
+    eligible = eligible.sort_values("_sort_score", ascending=False)
+    selected = _balanced_side_selection(eligible, config, config.max_orders).drop(columns=["_sort_score"], errors="ignore")
+    selected = _limit_sector_concentration(selected, config, config.max_orders)
+    return selected.head(config.max_orders).copy()
 
 
 def build_order_plan(
@@ -128,10 +165,10 @@ def build_order_plan(
     price_snapshot: Optional[pd.DataFrame] = None,
     metadata: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    filtered = filter_tradeable_signals(signals, config)
-    if filtered.empty:
+    candidate_pool = build_candidate_pool(signals, config, price_snapshot=price_snapshot, metadata=metadata)
+    if candidate_pool.empty:
         return pd.DataFrame()
-    gated = apply_trade_quality_gate(filtered, config, price_snapshot=price_snapshot, metadata=metadata)
+    gated = _select_final_orders(candidate_pool, config)
     running_notional = 0.0
     for idx, row in gated.iterrows():
         if str(row.get("trade_quality_status", "")).lower() not in {"approved", "reduced"}:
@@ -145,4 +182,4 @@ def build_order_plan(
             gated.loc[idx, "order_eligible"] = False
         else:
             running_notional += approved
-    return pd.DataFrame([order_row(row, config) for _, row in gated.iterrows()])
+    return gated.reset_index(drop=True)

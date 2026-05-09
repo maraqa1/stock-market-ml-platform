@@ -32,9 +32,11 @@ def main() -> int:
     stamp = timestamp()
     refreshed = refresh_order_tracking()
     plan_path = _latest_portal("08_alpaca_paper_order_plan_*.csv")
+    candidate_pool_path = _latest_portal("08_alpaca_paper_candidate_pool_*.csv")
     result_path = _latest_portal("08_alpaca_paper_order_results_*.csv")
     positions_path = Path(refreshed["positions_path"])
     plan = _read_csv(plan_path)
+    candidate_pool = _read_csv(candidate_pool_path)
     results = _read_csv(result_path)
     positions = _read_csv(positions_path)
     fallback_signal_time = (
@@ -49,6 +51,7 @@ def main() -> int:
         positions,
         plan,
         results,
+        candidate_pool,
         now=datetime.now(timezone.utc),
         signal_ttl_minutes=10,
         fallback_signal_time=fallback_signal_time,

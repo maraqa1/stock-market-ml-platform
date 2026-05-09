@@ -65,3 +65,58 @@ def test_unknown_signal_context_requires_watch_not_close():
     assert decisions.iloc[0]["decision"] == "watch"
     assert decisions.iloc[0]["recommended_action"] == "manual_review"
     assert "latest_signal_unknown" in decisions.iloc[0]["decision_reason"]
+
+
+def test_replace_when_close_signal_has_available_candidate():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 142, "side": "long"}])
+    plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "No Decision", "signal_generated_at": "2026-05-08T15:55:00Z"}])
+    candidate_pool = pd.DataFrame(
+        [
+            {
+                "symbol": "ADMA",
+                "trade_action": "Long",
+                "side": "buy",
+                "candidate_rank": 1,
+                "trade_quality_status": "reduced",
+                "order_eligible": True,
+                "suggested_quantity": 10,
+            }
+        ]
+    )
+    decisions = build_position_decisions(positions, plan, candidate_pool=candidate_pool, now=NOW)
+    row = decisions.iloc[0]
+    assert row["decision"] == "replace"
+    assert row["replacement_symbol"] == "ADMA"
+    assert "replacement_available" in row["decision_reason"]
+
+
+def test_replace_when_materially_better_same_side_candidate_exists():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 142, "side": "long"}])
+    plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "Long", "signal_generated_at": "2026-05-08T15:55:00Z"}])
+    candidate_pool = pd.DataFrame(
+        [
+            {
+                "symbol": "FLEX",
+                "trade_action": "Long",
+                "side": "buy",
+                "candidate_rank": 25,
+                "trade_quality_status": "reduced",
+                "order_eligible": True,
+                "suggested_quantity": 5,
+            },
+            {
+                "symbol": "ADMA",
+                "trade_action": "Long",
+                "side": "buy",
+                "candidate_rank": 5,
+                "trade_quality_status": "reduced",
+                "order_eligible": True,
+                "suggested_quantity": 10,
+            },
+        ]
+    )
+    decisions = build_position_decisions(positions, plan, candidate_pool=candidate_pool, now=NOW)
+    row = decisions.iloc[0]
+    assert row["decision"] == "replace"
+    assert row["replacement_symbol"] == "ADMA"
+    assert "replacement_rank_improvement" in row["decision_reason"]

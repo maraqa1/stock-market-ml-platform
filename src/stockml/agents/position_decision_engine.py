@@ -26,6 +26,10 @@ DECISION_COLUMNS = [
     "decision",
     "recommended_action",
     "decision_reason",
+    "replacement_symbol",
+    "replacement_side",
+    "replacement_rank",
+    "replacement_reason",
 ]
 
 
@@ -84,10 +88,12 @@ def build_position_decisions(
     positions: pd.DataFrame,
     plan: pd.DataFrame | None = None,
     results: pd.DataFrame | None = None,
+    candidate_pool: pd.DataFrame | None = None,
     *,
     now: datetime | None = None,
     signal_ttl_minutes: int = 10,
     fallback_signal_time: datetime | None = None,
+    min_replacement_rank_improvement: int = 10,
 ) -> pd.DataFrame:
     if positions.empty:
         return pd.DataFrame(columns=DECISION_COLUMNS)
@@ -95,6 +101,7 @@ def build_position_decisions(
     now = now or datetime.now(timezone.utc)
     plan = plan.copy() if plan is not None and not plan.empty else pd.DataFrame(columns=["symbol"])
     results = results.copy() if results is not None and not results.empty else pd.DataFrame(columns=["symbol"])
+    candidate_pool = candidate_pool.copy() if candidate_pool is not None and not candidate_pool.empty else pd.DataFrame(columns=["symbol"])
     frame = positions.copy()
     if "symbol" not in frame.columns:
         frame["symbol"] = ""
@@ -119,6 +126,24 @@ def build_position_decisions(
         ]
         frame = frame.merge(plan[keep].drop_duplicates("symbol", keep="last"), on="symbol", how="left", suffixes=("", "_plan"))
 
+    if not candidate_pool.empty:
+        candidate_pool["symbol"] = candidate_pool["symbol"].astype(str).str.upper()
+        pool_status = candidate_pool.get("trade_quality_status", pd.Series("", index=candidate_pool.index)).astype(str).str.lower()
+        pool_eligible = candidate_pool.get("order_eligible", pd.Series(False, index=candidate_pool.index)).astype(bool)
+        active_pool = candidate_pool[pool_status.isin({"approved", "reduced"}) & pool_eligible].copy()
+        pool_keep = [
+            col
+            for col in ["symbol", "trade_action", "candidate_rank", "side", "confidence_score", "risk_adjusted_score"]
+            if col in active_pool.columns
+        ]
+        if pool_keep:
+            frame = frame.merge(
+                active_pool[pool_keep].drop_duplicates("symbol", keep="last"),
+                on="symbol",
+                how="left",
+                suffixes=("", "_pool"),
+            )
+
     if not results.empty:
         results = results.copy()
         results["symbol"] = results["symbol"].astype(str).str.upper()
@@ -126,9 +151,11 @@ def build_position_decisions(
         frame = frame.merge(results[keep].drop_duplicates("symbol", keep="last"), on="symbol", how="left", suffixes=("", "_result"))
 
     decisions = []
+    replacement_pool = _replacement_pool(candidate_pool)
     for _, row in frame.iterrows():
         side = _text(row.get("side")) or _text(row.get("side_plan")) or _text(row.get("position_side")) or "long"
-        latest_signal = _text(row.get("trade_action")) or "Unknown"
+        latest_signal = _text(row.get("trade_action")) or _text(row.get("trade_action_pool")) or "Unknown"
+        current_rank = _num(row.get("candidate_rank"), default=float("nan"))
         current_price = _num(row.get("current_price") or row.get("last_price"))
         avg_entry = _num(row.get("avg_entry_price") or row.get("filled_avg_price"))
         stop_loss = _num(row.get("stop_loss_price"), default=float("nan"))
@@ -141,6 +168,12 @@ def build_position_decisions(
         decision = "hold"
         action = "keep_position"
         is_short = side.lower() in {"short", "sell"}
+        desired_action = "Short" if is_short else "Long"
+        replacement = _best_replacement(replacement_pool, _text(row.get("symbol")), desired_action)
+        replacement_symbol = _text(replacement.get("symbol")) if replacement is not None else ""
+        replacement_side = _text(replacement.get("side")) if replacement is not None else ""
+        replacement_rank = _num(replacement.get("candidate_rank"), default=float("nan")) if replacement is not None else float("nan")
+        replacement_reason = ""
 
         if current_price <= 0:
             decision, action = "watch", "manual_review"
@@ -180,6 +213,16 @@ def build_position_decisions(
             decision, action = "watch", "rescore_before_add_or_hold"
             reasons.append("signal_stale")
 
+        if replacement is not None:
+            if decision == "close":
+                decision, action = "replace", "close_then_open_replacement"
+                replacement_reason = "current_position_exit_with_available_replacement"
+                reasons.append("replacement_available")
+            elif decision in {"hold", "watch"} and pd.notna(current_rank) and replacement_rank + min_replacement_rank_improvement <= current_rank:
+                decision, action = "replace", "close_then_open_replacement"
+                replacement_reason = "materially_better_candidate_available"
+                reasons.append("replacement_rank_improvement")
+
         if not reasons:
             reasons.append("position_within_rules")
 
@@ -202,9 +245,38 @@ def build_position_decisions(
                 "decision": decision,
                 "recommended_action": action,
                 "decision_reason": "|".join(dict.fromkeys(reasons)),
+                "replacement_symbol": replacement_symbol,
+                "replacement_side": replacement_side,
+                "replacement_rank": int(replacement_rank) if pd.notna(replacement_rank) else "",
+                "replacement_reason": replacement_reason,
             }
         )
     return pd.DataFrame(decisions, columns=DECISION_COLUMNS)
+
+
+def _replacement_pool(candidate_pool: pd.DataFrame) -> pd.DataFrame:
+    if candidate_pool.empty or "symbol" not in candidate_pool.columns:
+        return pd.DataFrame()
+    pool = candidate_pool.copy()
+    pool["symbol"] = pool["symbol"].astype(str).str.upper()
+    if "candidate_rank" not in pool.columns:
+        pool["candidate_rank"] = range(1, len(pool) + 1)
+    status = pool.get("trade_quality_status", pd.Series("", index=pool.index)).astype(str).str.lower()
+    eligible = pool.get("order_eligible", pd.Series(False, index=pool.index)).astype(bool)
+    qty = pd.to_numeric(pool.get("suggested_quantity", pd.Series(0, index=pool.index)), errors="coerce").fillna(0)
+    return pool[status.isin({"approved", "reduced"}) & eligible & (qty >= 1)].sort_values("candidate_rank")
+
+
+def _best_replacement(pool: pd.DataFrame, current_symbol: str, desired_action: str) -> pd.Series | None:
+    if pool.empty:
+        return None
+    candidates = pool[
+        pool["symbol"].ne(current_symbol.upper())
+        & pool.get("trade_action", pd.Series("", index=pool.index)).astype(str).str.lower().eq(desired_action.lower())
+    ]
+    if candidates.empty:
+        return None
+    return candidates.iloc[0]
 
 
 def write_position_decisions(decisions: pd.DataFrame, stamp: str | None = None) -> Path:

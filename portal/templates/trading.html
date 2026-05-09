@@ -21,6 +21,7 @@
 {% endif %}
 <section class="kpi-grid">
   <article class="kpi"><span>Orders Planned</span><strong>{{ orders_planned|fmt }}</strong></article>
+  <article class="kpi"><span>Candidate Pool</span><strong>{{ candidate_pool_count|fmt }}</strong></article>
   <article class="kpi"><span>Orders Submitted</span><strong>{{ orders_submitted|fmt }}</strong></article>
   <article class="kpi"><span>Rejected / Error</span><strong>{{ orders_rejected|fmt }}</strong></article>
   <article class="kpi"><span>Basket Notional</span><strong>{{ total_notional|fmt }}</strong></article>
@@ -119,6 +120,14 @@
     <div class="empty small">No tracking snapshot exists yet. Run <code>scripts/run_alpaca_paper_trader.py --track-only</code> after an order run to refresh status.</div>
   {% else %}
     {{ table(tracking_rows, tracking_columns) }}
+  {% endif %}
+</section>
+<section class="panel">
+  <h2>Approved Candidate Pool</h2>
+  {% if not candidate_pool_rows %}
+    <div class="empty small">No candidate pool exists yet. Run <code>scripts/run_alpaca_paper_trader.py</code> after a model run.</div>
+  {% else %}
+    {{ table(candidate_pool_rows, candidate_pool_columns) }}
   {% endif %}
 </section>
 <section class="panel">

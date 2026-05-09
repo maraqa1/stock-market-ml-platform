@@ -10,7 +10,7 @@ from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
-from stockml.trading.order_planner import build_order_plan, latest_signal_table
+from stockml.trading.order_planner import build_candidate_pool, build_order_plan, latest_signal_table
 from stockml.trading.submission_guards import load_submission_context, validate_order
 
 
@@ -91,10 +91,13 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     ensure_data_dirs()
     config = alpaca_config()
     signals = latest_signal_table(signal_file)
+    candidate_pool = build_candidate_pool(signals, config)
     plan = build_order_plan(signals, config)
     stamp = timestamp()
+    candidate_pool_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_candidate_pool_{stamp}.csv"
     plan_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_plan_{stamp}.csv"
     result_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_results_{stamp}.csv"
+    candidate_pool.to_csv(candidate_pool_path, index=False)
     plan.to_csv(plan_path, index=False)
 
     result_rows = []
@@ -154,10 +157,12 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     tracking_path, positions_path = _write_tracking_snapshot(results, config, stamp)
     return {
         "orders_planned": len(plan),
+        "candidate_pool_rows": len(candidate_pool),
         "orders_approved": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower().isin(["approved", "reduced"])).sum()) if not plan.empty else 0,
         "orders_rejected": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower() == "rejected").sum()) if not plan.empty else 0,
         "orders_submitted": sum(1 for row in result_rows if row["status"] == "submitted"),
         "dry_run": not config.submit_orders,
+        "candidate_pool_path": candidate_pool_path,
         "plan_path": plan_path,
         "result_path": result_path,
         "tracking_path": tracking_path,

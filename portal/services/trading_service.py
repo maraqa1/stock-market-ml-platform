@@ -91,6 +91,7 @@ def position_action(root: Path, symbol: str, action: str) -> dict:
 def refresh_trading_artifacts(root: Path) -> dict[str, str | int]:
     refreshed = refresh_order_tracking()
     plan_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
+    candidate_pool_file = latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
     result_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_results_*.csv")
     plan = safe_read_csv(plan_file, nrows=1000)
     results = safe_read_csv(result_file, nrows=1000)
@@ -142,7 +143,8 @@ def lifecycle_context(root: Path) -> dict:
         "pnl_columns": ["symbol", "qty", "market_value", "cost_basis", "unrealized_pl", "unrealized_plpc"],
         "decision_columns": [
             "symbol", "decision", "recommended_action", "decision_reason", "latest_signal", "signal_age_minutes",
-            "current_price", "stop_loss_price", "take_profit_price", "unrealized_pl", "unrealized_plpc",
+            "replacement_symbol", "replacement_side", "replacement_rank", "current_price", "stop_loss_price",
+            "take_profit_price", "unrealized_pl", "unrealized_plpc",
         ],
         "files": [
             file_status(journal_file, "Paper trade journal"),
@@ -160,6 +162,7 @@ def trading_context(root: Path) -> dict:
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     actions_file = latest_file(root, "operator_actions", "operator_position_actions_*.csv")
     plan = safe_read_csv(plan_file, nrows=500)
+    candidate_pool = safe_read_csv(candidate_pool_file, nrows=500)
     results = safe_read_csv(result_file, nrows=500)
     tracking = safe_read_csv(tracking_file, nrows=500)
     positions = safe_read_csv(positions_file, nrows=500)
@@ -184,6 +187,7 @@ def trading_context(root: Path) -> dict:
         "data_source": "CSV artifacts",
         "dry_run": dry_run,
         "orders_planned": len(plan),
+        "candidate_pool_count": len(candidate_pool),
         "orders_submitted": int(status_counts.get("submitted", 0)),
         "orders_rejected": int(status_counts.get("error", 0) + status_counts.get("rejected", 0)),
         "orders_tracked": len(tracking),
@@ -200,12 +204,19 @@ def trading_context(root: Path) -> dict:
         "tracking_rows": _records(tracking),
         "position_rows": _records(positions),
         "operator_action_rows": _records(actions, limit=10),
+        "candidate_pool_rows": _records(candidate_pool, limit=100),
         "plan_columns": [
             "symbol", "trade_quality_status", "trade_quality_reason", "side", "notional", "approved_notional",
             "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price", "risk_tier",
             "volatility_tier", "liquidity_tier", "market_cap", "avg_dollar_volume_20d", "volatility_20d",
             "confidence_score", "side_probability", "probability_edge", "risk_adjusted_score",
             "order_eligible", "no_decision_reason",
+        ],
+        "candidate_pool_columns": [
+            "candidate_rank", "symbol", "trade_action", "trade_quality_status", "trade_quality_reason", "side",
+            "approved_notional", "suggested_quantity", "current_price", "stop_loss_price", "take_profit_price",
+            "risk_tier", "volatility_tier", "liquidity_tier", "confidence_score", "risk_adjusted_score",
+            "order_eligible",
         ],
         "result_columns": [
             "symbol", "status", "alpaca_status", "order_id", "client_order_id", "side", "notional",
@@ -219,6 +230,7 @@ def trading_context(root: Path) -> dict:
         "operator_action_columns": ["timestamp", "symbol", "operator_action", "status", "message", "order_id", "alpaca_status"],
         "files": [
             file_status(plan_file, "Alpaca order plan"),
+            file_status(candidate_pool_file, "Alpaca candidate pool"),
             file_status(result_file, "Alpaca order results"),
             file_status(tracking_file, "Alpaca order tracking"),
             file_status(positions_file, "Alpaca positions"),

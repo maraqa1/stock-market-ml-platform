@@ -31,6 +31,7 @@ class AlpacaConfig:
     min_expected_trade_return: float = 0.002
     live_trading_enabled: bool = False
     paper_trading_enabled: bool = True
+    candidate_pool_size: int = 50
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -66,4 +67,5 @@ def alpaca_config() -> AlpacaConfig:
         min_expected_trade_return=float(os.environ.get("STOCKML_MIN_EXPECTED_TRADE_RETURN", "0.002")),
         live_trading_enabled=_bool_env("STOCKML_LIVE_TRADING_ENABLED", default=False),
         paper_trading_enabled=_bool_env("STOCKML_PAPER_TRADING_ENABLED", default=True),
+        candidate_pool_size=int(os.environ.get("STOCKML_CANDIDATE_POOL_SIZE", "50")),
     )
