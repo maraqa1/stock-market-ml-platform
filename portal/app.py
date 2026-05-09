@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect, render_template, url_for
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
 from portal.services.database_reader import db_available
@@ -92,6 +92,12 @@ def create_app(root: Path | None = None) -> Flask:
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
             }
         )
+
+    @app.route("/dev/styleguide")
+    def dev_styleguide():
+        selected_theme = request.args.get("theme", "dark")
+        theme = selected_theme if selected_theme in {"dark", "light"} else "dark"
+        return render_template("dev_styleguide.html", title="Styleguide", theme=theme)
 
     @app.route("/")
     def index():

@@ -1,19 +1,36 @@
 import pytest
+from pathlib import Path
 
 from portal.app import create_app
 
 
 @pytest.fixture()
-def client(tmp_path):
-    app = create_app(tmp_path)
+def client():
+    root = Path("_tmp_portal_routes")
+    root.mkdir(parents=True, exist_ok=True)
+    app = create_app(root)
     app.config.update(TESTING=True)
     return app.test_client()
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/trading/lifecycle", "/model-validation", "/no-decision"]:
+    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/trading/lifecycle", "/model-validation", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
+
+
+def test_base_loads_spec00_theme(client):
+    response = client.get("/dev/styleguide")
+    assert response.status_code == 200
+    assert b'data-theme="dark"' in response.data
+    assert b"css/theme.css" in response.data
+
+
+def test_styleguide_supports_light_theme(client):
+    response = client.get("/dev/styleguide?theme=light")
+    assert response.status_code == 200
+    assert b'data-theme="light"' in response.data
+    assert b"Theme System" in response.data
 
 
 def test_health_returns_json(client):
