@@ -1,9 +1,53 @@
-<section class="zone trading-zone" data-zone="monitor-activity">
+{% from "_macros/pill.html" import dot %}
+{% from "_macros/format.html" import time_utc %}
+<section class="zone trading-zone" data-zone="monitor-activity" id="monitor-activity">
   <div class="zone__header">
     <span>Monitor Activity</span>
-    <span class="zone__header-meta">SPEC 16</span>
+    <span class="zone__header-meta">{{ monitor_activity.counts.monitor_checks }} checks &middot; {{ monitor_activity.counts.state_changes }} changes</span>
   </div>
-  <div class="zone__body zone__body--stub">
-    <p>Stub: intraday 10-minute monitor timeline with stale-check warnings will appear here.</p>
+  <div class="zone__body">
+    {% set checks = monitor_activity.checks or [] %}
+    {% set state_changes = monitor_activity.state_changes or [] %}
+    <div class="monitor-timeline" aria-label="Intraday monitor checks">
+      <svg viewBox="0 0 1000 54" role="img" aria-label="Monitor checks from market open to close">
+        <line x1="24" y1="26" x2="976" y2="26" class="monitor-timeline__line"></line>
+        <text x="24" y="50" class="monitor-timeline__label">09:30</text>
+        <text x="932" y="50" class="monitor-timeline__label">Close</text>
+        {% if checks %}
+          {% for check in checks[:64] %}
+            {% set x = 24 + ((loop.index0 / ([checks|length - 1, 1]|max)) * 952) %}
+            {% set is_change = check.event_type in ["monitor_watch", "monitor_close", "monitor_rotate"] %}
+            <circle
+              cx="{{ x }}"
+              cy="26"
+              r="{{ 6 if is_change else 4 }}"
+              class="monitor-timeline__dot {{ 'monitor-timeline__dot--change' if is_change else '' }}"
+            ></circle>
+          {% endfor %}
+        {% else %}
+          <circle cx="500" cy="26" r="5" class="monitor-timeline__dot monitor-timeline__dot--missing"></circle>
+        {% endif %}
+      </svg>
+    </div>
+    <div class="monitor-activity-footer">
+      {% if checks %}
+        {% set last_check = checks[-1] %}
+        <span>{{ checks|length }} monitor checks today</span>
+        <span>{{ state_changes|length }} state changes</span>
+        <span>last check {{ time_utc(last_check.event_at) }}</span>
+      {% else %}
+        <span class="text-tertiary">No monitor checks recorded today.</span>
+      {% endif %}
+    </div>
+    {% if state_changes %}
+      <div class="monitor-change-list">
+        {% for event in state_changes[:6] %}
+          {% set details = event.details or {} %}
+          <span>{{ dot(event.event_type, event.event_type|replace('_', ' ')|title) }}</span>
+          <span class="num-l">{{ details.symbol or event.position_id }}</span>
+          <span>{{ (details.decision_reason or details.reason or "")|reason }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
   </div>
 </section>

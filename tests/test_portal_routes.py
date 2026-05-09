@@ -126,6 +126,14 @@ def test_trading_page_renders_basket_integrity_counts(client):
     assert b"data-basket-lineage-template" in response.data
 
 
+def test_trading_page_renders_monitor_activity_timeline(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Monitor Activity" in response.data
+    assert b"monitor-timeline" in response.data
+    assert b"monitor checks today" in response.data or b"No monitor checks recorded today" in response.data
+
+
 def test_trading_page_renders_todays_basket_table(client):
     response = client.get("/trading")
     assert response.status_code == 200
