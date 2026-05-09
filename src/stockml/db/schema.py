@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    CheckConstraint,
     JSON,
     BigInteger,
     Boolean,
@@ -8,6 +9,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
+    Index,
     Integer,
     MetaData,
     String,
@@ -18,6 +20,30 @@ from sqlalchemy import (
 )
 
 metadata = MetaData()
+
+PIPELINE_STAGE_NAMES = ("yahoo", "gold", "model", "candidates", "selection", "submitted")
+POSITION_EVENT_TYPES = (
+    "scored",
+    "ranked",
+    "selected",
+    "submitted",
+    "filled",
+    "partial",
+    "monitor_safe",
+    "monitor_watch",
+    "monitor_close",
+    "monitor_rotate",
+    "operator_keep",
+    "operator_close",
+    "operator_override",
+    "broker_rejected",
+    "guardrail_blocked",
+)
+
+
+def _in_values(column: str, values: tuple[str, ...]) -> str:
+    quoted = ", ".join(f"'{value}'" for value in values)
+    return f"{column} IN ({quoted})"
 
 ingestion_runs = Table(
     "ingestion_runs",
@@ -30,6 +56,46 @@ ingestion_runs = Table(
     Column("row_count", Integer, default=0),
     Column("message", Text),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)
+
+pipeline_runs = Table(
+    "pipeline_runs",
+    metadata,
+    Column("run_id", String(100), primary_key=True),
+    Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("completed_at", DateTime(timezone=True)),
+    Column("status", String(50), nullable=False, default="running"),
+    Column("current_stage", String(50)),
+    Column("error", Text),
+    Column("triggered_by", String(100)),
+)
+
+pipeline_stages = Table(
+    "pipeline_stages",
+    metadata,
+    Column("run_id", String(100), primary_key=True),
+    Column("stage_name", String(50), primary_key=True),
+    Column("started_at", DateTime(timezone=True)),
+    Column("completed_at", DateTime(timezone=True)),
+    Column("status", String(50), nullable=False, default="pending"),
+    Column("output_count", Integer, default=0),
+    Column("output_metadata", JSON),
+    Column("error", Text),
+    CheckConstraint(_in_values("stage_name", PIPELINE_STAGE_NAMES), name="ck_pipeline_stages_stage_name"),
+)
+
+position_events = Table(
+    "position_events",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("position_id", String(200), nullable=False),
+    Column("event_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("event_type", String(50), nullable=False),
+    Column("source", String(100), nullable=False),
+    Column("details", JSON),
+    CheckConstraint(_in_values("event_type", POSITION_EVENT_TYPES), name="ck_position_events_event_type"),
+    Index("ix_position_events_position_event_at", "position_id", "event_at"),
+    Index("ix_position_events_event_at", "event_at"),
 )
 
 equity_universe = Table(
@@ -124,4 +190,3 @@ model_artifacts = Table(
 
 def create_all(engine) -> None:
     metadata.create_all(engine)
-
