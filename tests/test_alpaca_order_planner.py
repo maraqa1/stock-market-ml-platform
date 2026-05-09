@@ -194,7 +194,7 @@ def test_candidate_pool_uses_ranked_long_and_short_shortlist_when_shorting_enabl
     assert set(pool.loc[pool["trade_action"].eq("Short"), "side"]) == {"sell"}
 
 
-def test_candidate_pool_uses_top_ranked_long_shortlist_when_shorting_disabled():
+def test_candidate_pool_still_shows_ranked_long_and_short_research_shortlist_when_shorting_disabled():
     signals = pd.DataFrame(
         [
             trade_signal(
@@ -212,7 +212,10 @@ def test_candidate_pool_uses_top_ranked_long_shortlist_when_shorting_disabled():
     pool = build_candidate_pool(signals, config(candidate_pool_size=10, max_orders=4, allow_short_selling=False))
 
     assert len(pool) == 10
-    assert pool["trade_action"].value_counts().to_dict() == {"Long": 10}
+    assert pool["trade_action"].value_counts().to_dict() == {"Long": 5, "Short": 5}
+    short_rows = pool[pool["trade_action"].eq("Short")]
+    assert set(short_rows["trade_quality_status"]) == {"rejected"}
+    assert short_rows["trade_quality_reason"].str.contains("shorting_disabled").all()
 
 
 def test_build_order_plan_uses_notional_paper_orders():

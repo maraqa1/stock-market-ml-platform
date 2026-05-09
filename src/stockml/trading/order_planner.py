@@ -146,17 +146,13 @@ def _ranked_shortlist(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFra
         return filter_tradeable_signals(signals, config, limit=max(config.candidate_pool_size, config.max_orders))
 
     size = max(config.candidate_pool_size, config.max_orders)
-    if config.allow_short_selling:
-        long_slots = (size + 1) // 2
-        short_slots = size // 2
-        longs = frame.sort_values("rank_overall", ascending=True).head(long_slots).copy()
-        shorts = frame.sort_values("rank_overall", ascending=False).head(short_slots).copy()
-        longs["trade_action"] = "Long"
-        shorts["trade_action"] = "Short"
-        shortlist = pd.concat([longs, shorts], ignore_index=False)
-    else:
-        shortlist = frame.sort_values("rank_overall", ascending=True).head(size).copy()
-        shortlist["trade_action"] = "Long"
+    long_slots = (size + 1) // 2
+    short_slots = size // 2
+    longs = frame.sort_values("rank_overall", ascending=True).head(long_slots).copy()
+    shorts = frame.sort_values("rank_overall", ascending=False).head(short_slots).copy()
+    longs["trade_action"] = "Long"
+    shorts["trade_action"] = "Short"
+    shortlist = pd.concat([longs, shorts], ignore_index=False)
 
     shortlist["side_probability"] = _numeric_column(shortlist, "side_probability")
     shortlist["probability_edge"] = _numeric_column(shortlist, "probability_edge")
