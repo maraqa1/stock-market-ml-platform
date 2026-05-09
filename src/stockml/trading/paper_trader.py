@@ -263,6 +263,7 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     return {
         "orders_planned": len(plan),
         "candidate_pool_rows": len(candidate_pool),
+        "candidate_pool_size": config.candidate_pool_size,
         "orders_approved": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower().isin(["approved", "reduced"])).sum()) if not plan.empty else 0,
         "orders_rejected": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower() == "rejected").sum()) if not plan.empty else 0,
         "orders_submitted": sum(1 for row in result_rows if row["status"] == "submitted"),

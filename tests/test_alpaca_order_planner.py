@@ -194,6 +194,27 @@ def test_candidate_pool_uses_ranked_long_and_short_shortlist_when_shorting_enabl
     assert set(pool.loc[pool["trade_action"].eq("Short"), "side"]) == {"sell"}
 
 
+def test_candidate_pool_size_is_configurable():
+    signals = pd.DataFrame(
+        [
+            trade_signal(
+                f"T{i:02d}",
+                "No Decision",
+                score=0.1,
+                rank_overall=i + 1,
+                side_probability=0.7,
+                probability_edge=0.2,
+                expected_trade_return=0.02,
+            )
+            for i in range(30)
+        ]
+    )
+    pool = build_candidate_pool(signals, config(candidate_pool_size=12, max_orders=4, allow_short_selling=True))
+
+    assert len(pool) == 12
+    assert pool["trade_action"].value_counts().to_dict() == {"Long": 6, "Short": 6}
+
+
 def test_candidate_pool_still_shows_ranked_long_and_short_research_shortlist_when_shorting_disabled():
     signals = pd.DataFrame(
         [

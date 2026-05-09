@@ -41,6 +41,16 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return value in {"1", "true", "yes", "y"}
 
 
+def _int_env(name: str, default: int, minimum: int | None = None) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        value = default
+    if minimum is not None:
+        return max(minimum, value)
+    return value
+
+
 def alpaca_config() -> AlpacaConfig:
     _hydrate_environment()
     return AlpacaConfig(
@@ -49,7 +59,7 @@ def alpaca_config() -> AlpacaConfig:
         base_url=os.environ.get("ALPACA_BASE_URL", "https://paper-api.alpaca.markets").rstrip("/"),
         submit_orders=_bool_env("STOCKML_ALPACA_SUBMIT_ORDERS", default=False),
         extended_hours=_bool_env("STOCKML_ALPACA_EXTENDED_HOURS", default=False),
-        max_orders=int(os.environ.get("STOCKML_ALPACA_MAX_ORDERS", "10")),
+        max_orders=_int_env("STOCKML_ALPACA_MAX_ORDERS", 10, minimum=1),
         max_notional_per_order=float(os.environ.get("STOCKML_ALPACA_MAX_NOTIONAL_PER_ORDER", "1000")),
         max_total_notional=float(os.environ.get("STOCKML_ALPACA_MAX_TOTAL_NOTIONAL", "10000")),
         min_trade_price=float(os.environ.get("STOCKML_ALPACA_MIN_TRADE_PRICE", "5")),
@@ -67,5 +77,5 @@ def alpaca_config() -> AlpacaConfig:
         min_expected_trade_return=float(os.environ.get("STOCKML_MIN_EXPECTED_TRADE_RETURN", "0.002")),
         live_trading_enabled=_bool_env("STOCKML_LIVE_TRADING_ENABLED", default=False),
         paper_trading_enabled=_bool_env("STOCKML_PAPER_TRADING_ENABLED", default=True),
-        candidate_pool_size=int(os.environ.get("STOCKML_CANDIDATE_POOL_SIZE", "50")),
+        candidate_pool_size=_int_env("STOCKML_CANDIDATE_POOL_SIZE", 50, minimum=1),
     )
