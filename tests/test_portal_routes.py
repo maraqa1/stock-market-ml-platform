@@ -42,6 +42,18 @@ def test_styleguide_renders_shared_status_pill_and_dot_macros(client):
     assert b"dot dot-rejected" in response.data
 
 
+def test_styleguide_renders_side_and_number_format_macros(client):
+    response = client.get("/dev/styleguide")
+    assert response.status_code == 200
+    assert b"side side-long" in response.data
+    assert b"side side-short" in response.data
+    assert b"side side-neutral" in response.data
+    assert b"+$42.25" in response.data
+    assert b"-$18.50" in response.data
+    assert b"+3.10%" in response.data
+    assert b"-1.40%" in response.data
+
+
 def test_health_returns_json(client):
     response = client.get("/health")
     assert response.status_code == 200

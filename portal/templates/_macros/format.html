@@ -1,0 +1,76 @@
+{% macro side(value) -%}
+  {%- set raw = (value|string)|trim|lower -%}
+  {%- if raw in ['short', 'sell', 's'] -%}
+    <span class="side side-short">▼ Short</span>
+  {%- elif raw in ['long', 'buy', 'l'] -%}
+    <span class="side side-long">▲ Long</span>
+  {%- else -%}
+    <span class="side side-neutral">Neutral</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro number(value, decimals=2) -%}
+  {%- if value is none or value == '' -%}
+    <span class="num">Not available</span>
+  {%- else -%}
+    <span class="num">{{ ("{:,.%df}" % decimals).format(value|float) }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro money(value, decimals=2) -%}
+  {%- if value is none or value == '' -%}
+    <span class="num money">Not available</span>
+  {%- else -%}
+    <span class="num money">${{ ("{:,.%df}" % decimals).format(value|float) }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro pct(value, decimals=2) -%}
+  {%- if value is none or value == '' -%}
+    <span class="num pct">Not available</span>
+  {%- else -%}
+    <span class="num pct">{{ ("{:,.%df}" % decimals).format((value|float) * 100) }}%</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro signed_money(value, decimals=2) -%}
+  {%- if value is none or value == '' -%}
+    <span class="num money">Not available</span>
+  {%- else -%}
+    {%- set amount = value|float -%}
+    <span class="num money {{ 'text-up' if amount > 0 else 'text-down' if amount < 0 else '' }}">{{ '+' if amount > 0 else '-' if amount < 0 else '' }}${{ ("{:,.%df}" % decimals).format((amount|abs)) }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro signed_pct(value, decimals=2) -%}
+  {%- if value is none or value == '' -%}
+    <span class="num pct">Not available</span>
+  {%- else -%}
+    {%- set amount = value|float -%}
+    <span class="num pct {{ 'text-up' if amount > 0 else 'text-down' if amount < 0 else '' }}">{{ '+' if amount > 0 else '-' if amount < 0 else '' }}{{ ("{:,.%df}" % decimals).format((amount|abs) * 100) }}%</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro qty(value, decimals=0) -%}
+  {%- if value is none or value == '' -%}
+    <span class="num qty">Not available</span>
+  {%- else -%}
+    <span class="num qty">{{ ("{:,.%df}" % decimals).format(value|float) }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro time_utc(value) -%}
+  {%- if value is none or value == '' -%}
+    <span class="num time">Not available</span>
+  {%- else -%}
+    <span class="num time">{{ value|string|replace('T', ' ')|replace('+00:00', ' UTC')|replace('Z', ' UTC') }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro relative_time(value) -%}
+  {%- if value is none or value == '' -%}
+    <span class="num time">Not available</span>
+  {%- else -%}
+    <span class="num time">{{ value }}</span>
+  {%- endif -%}
+{%- endmacro %}

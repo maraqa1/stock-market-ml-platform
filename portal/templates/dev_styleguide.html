@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 {% from "_macros/pill.html" import pill, dot %}
+{% from "_macros/format.html" import money, pct, qty, side, signed_money, signed_pct, time_utc %}
 {% block content %}
 <section class="spec00-styleguide">
   <div class="header-strip">
     <div class="header-strip__left">
-      <div class="header-strip__title">Paper Trading — Research Mode</div>
-      <span class="mode-badge mode-badge--paper">● Paper Only</span>
-      <span class="mode-badge mode-badge--live-disabled">Live · Disabled</span>
+      <div class="header-strip__title">Paper Trading - Research Mode</div>
+      <span class="mode-badge mode-badge--paper">Paper Only</span>
+      <span class="mode-badge mode-badge--live-disabled">Live Disabled</span>
     </div>
     <div class="header-strip__right">
-      <span class="account"><strong>PA-12345</strong> · operator@stockml</span>
+      <span class="account"><strong>PA-12345</strong> operator@stockml</span>
     </div>
   </div>
 
@@ -17,14 +18,14 @@
     <span>Positions: <strong>live (5s)</strong></span>
     <span>Monitor: <strong>every 10m</strong>, next 04:32</span>
     <span>Pipeline: <strong>nightly</strong></span>
-    <span>Last run: <strong>02:00 UTC · run 2026-05-09-A</strong></span>
+    <span>Last run: <strong>02:00 UTC, run 2026-05-09-A</strong></span>
   </div>
 
   <div class="styleguide-header">
     <div>
-      <p class="label">SPEC 00</p>
+      <p class="label">SPEC 00 / 05 / 06</p>
       <h2>Theme System</h2>
-      <p>Dark-first operator console tokens, status language, numeric rhythm, and table density.</p>
+      <p>Dark-first operator console tokens, status language, numeric rhythm, side indicators, and table density.</p>
     </div>
     <div class="styleguide-theme-actions">
       <a class="btn btn-ghost" href="/dev/styleguide?theme=dark">Dark</a>
@@ -32,50 +33,50 @@
     </div>
   </div>
 
-  <div class="page-section-title">Pipeline Freshness — run 2026-05-09-A</div>
+  <div class="page-section-title">Pipeline Freshness - run 2026-05-09-A</div>
   <div class="pipeline-strip">
     <div class="pipeline-stage">
-      <div class="pipeline-stage__name"><span class="pill pill-success">Yahoo</span></div>
+      <div class="pipeline-stage__name">{{ pill('success', 'Yahoo') }}</div>
       <div class="pipeline-stage__time">02:00 UTC</div>
       <div class="pipeline-stage__count">487 syms</div>
-      <div class="pipeline-stage__detail">14m run · OK</div>
+      <div class="pipeline-stage__detail">14m run, OK</div>
     </div>
     <div class="pipeline-stage">
-      <div class="pipeline-stage__name"><span class="pill pill-success">Gold</span></div>
+      <div class="pipeline-stage__name">{{ pill('success', 'Gold') }}</div>
       <div class="pipeline-stage__time">02:14 UTC</div>
       <div class="pipeline-stage__count">12.4M rows</div>
       <div class="pipeline-stage__detail">v1.4 features</div>
     </div>
     <div class="pipeline-stage">
-      <div class="pipeline-stage__name"><span class="pill pill-success">Model</span></div>
+      <div class="pipeline-stage__name">{{ pill('success', 'Model') }}</div>
       <div class="pipeline-stage__time">02:47 UTC</div>
       <div class="pipeline-stage__count">487 scored</div>
       <div class="pipeline-stage__detail">model v1.4</div>
     </div>
     <div class="pipeline-stage">
-      <div class="pipeline-stage__name"><span class="pill pill-warning">Selection</span></div>
+      <div class="pipeline-stage__name">{{ pill('warning', 'Selection') }}</div>
       <div class="pipeline-stage__time">02:52 UTC</div>
       <div class="pipeline-stage__count">5 picked</div>
       <div class="pipeline-stage__detail">guardrails ok</div>
     </div>
   </div>
-  <div class="pipeline-banner">All stages green · Last update 09:30 UTC · Next nightly run 02:00 UTC</div>
+  <div class="pipeline-banner">All stages green. Last update 09:30 UTC. Next nightly run 02:00 UTC.</div>
 
   <div class="kpi-row">
     <article class="kpi-card">
       <span class="kpi-card__label">Open Positions</span>
       <strong class="kpi-card__value">8 / 10</strong>
-      <small class="kpi-card__detail">L6 · <span class="side side-short">▼ Short 2</span></small>
+      <small class="kpi-card__detail">L6, {{ side('short') }} 2</small>
     </article>
     <article class="kpi-card">
       <span class="kpi-card__label">Unrealized P&amp;L</span>
-      <strong class="kpi-card__value delta-up">+1,240.55</strong>
-      <small class="kpi-card__detail delta-up">▲ +0.84%</small>
+      <strong class="kpi-card__value delta-up">{{ signed_money(1240.55) }}</strong>
+      <small class="kpi-card__detail delta-up">up {{ signed_pct(0.0084) }}</small>
     </article>
     <article class="kpi-card kpi-card--alert kpi-card--clickable">
       <span class="kpi-card__label">Pending Decisions</span>
       <strong class="kpi-card__value">3</strong>
-      <small class="kpi-card__detail">Review →</small>
+      <small class="kpi-card__detail">Review</small>
     </article>
   </div>
 
@@ -116,6 +117,28 @@
 
   <div class="zone">
     <div class="zone__header">
+      <span>Format Macros</span>
+      <span class="zone__header-meta">side + tabular numeric output</span>
+    </div>
+    <div class="zone__body" style="padding: var(--space-4);">
+      <div class="pill-row">
+        {{ side('long') }}
+        {{ side('short') }}
+        {{ side('neutral') }}
+        {{ qty(1250) }}
+        {{ money(1250000.42) }}
+        {{ pct(0.1234) }}
+        {{ signed_money(42.25) }}
+        {{ signed_money(-18.5) }}
+        {{ signed_pct(0.031) }}
+        {{ signed_pct(-0.014) }}
+        {{ time_utc('2026-05-09T14:30:00Z') }}
+      </div>
+    </div>
+  </div>
+
+  <div class="zone">
+    <div class="zone__header">
       <span>Buttons</span>
       <span class="zone__header-meta">28px primary / danger / ghost</span>
     </div>
@@ -133,7 +156,7 @@
   <div class="zone">
     <div class="zone__header">
       <span>Open Positions</span>
-      <span class="zone__header-meta">live · refreshed 2s ago</span>
+      <span class="zone__header-meta">live, refreshed 2s ago</span>
     </div>
     <div class="zone__body">
       <table class="data">
@@ -151,29 +174,29 @@
         <tbody>
           <tr class="row-clickable">
             <td class="num-l">FLEX</td>
-            <td><span class="side side-long">▲ Long</span></td>
-            <td class="num">5</td>
-            <td class="num">142.00</td>
-            <td class="num">143.18</td>
-            <td class="num text-up">+5.90</td>
+            <td>{{ side('long') }}</td>
+            <td>{{ qty(5) }}</td>
+            <td>{{ money(142) }}</td>
+            <td>{{ money(143.18) }}</td>
+            <td>{{ signed_money(5.90) }}</td>
             <td>{{ pill('safe') }}</td>
           </tr>
           <tr class="row-clickable row-selected">
             <td class="num-l">GOOG</td>
-            <td><span class="side side-short">▼ Short</span></td>
-            <td class="num">2</td>
-            <td class="num">171.25</td>
-            <td class="num">173.40</td>
-            <td class="num text-down">−4.30</td>
+            <td>{{ side('short') }}</td>
+            <td>{{ qty(2) }}</td>
+            <td>{{ money(171.25) }}</td>
+            <td>{{ money(173.40) }}</td>
+            <td>{{ signed_money(-4.30) }}</td>
             <td>{{ pill('watch') }}</td>
           </tr>
           <tr class="row-clickable">
             <td class="num-l">AKAN</td>
-            <td><span class="side side-long">▲ Long</span></td>
-            <td class="num">0</td>
-            <td class="num">29.10</td>
-            <td class="num">28.40</td>
-            <td class="num">0.00</td>
+            <td>{{ side('long') }}</td>
+            <td>{{ qty(0) }}</td>
+            <td>{{ money(29.10) }}</td>
+            <td>{{ money(28.40) }}</td>
+            <td>{{ signed_money(0) }}</td>
             <td>{{ pill('rejected') }}</td>
           </tr>
         </tbody>

@@ -634,7 +634,8 @@ tbody tr:hover {
 }
 
 .side-long,
-.side-short {
+.side-short,
+.side-neutral {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -653,6 +654,10 @@ tbody tr:hover {
 
 .side-long {
   color: var(--text-secondary);
+}
+
+.side-neutral {
+  color: var(--text-tertiary);
 }
 
 .btn,
