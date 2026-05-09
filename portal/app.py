@@ -27,6 +27,7 @@ from portal.services.trading_api_service import (
 )
 from portal.services.trading_service import lifecycle_context, position_action, refresh_trading_artifacts, trading_context
 from portal.services.universe_service import universe_context
+from stockml.services.events import record_event_safely
 
 
 def create_app(root: Path | None = None) -> Flask:
@@ -170,6 +171,8 @@ def create_app(root: Path | None = None) -> Flask:
                 "trading_cadence": trading_cadence_context(root),
                 "trading_kpis": trading_kpi_context(root),
                 "pipeline_current": pipeline_current_context(root),
+                "action_queue": action_queue_context(root),
+                "positions_api": positions_context(root),
             }
         )
         return render_template("trading.html", title="Paper Trading", **context)
@@ -177,6 +180,36 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/trading/_partials/pipeline-strip")
     def trading_pipeline_strip_partial():
         return render_template("trading/_partials/pipeline_strip.html", pipeline_current=pipeline_current_context(root_path()))
+
+    @app.route("/trading/_partials/positions-body")
+    def trading_positions_body_partial():
+        return render_template("trading/_partials/positions_body.html", positions_api=positions_context(root_path()))
+
+    @app.route("/trading/positions/<path:position_id>/lineage")
+    def trading_position_lineage_partial(position_id: str):
+        return render_template("trading/_partials/lineage.html", lineage=position_lineage_context(root_path(), position_id))
+
+    @app.route("/api/trading/positions/<path:position_id>/close", methods=["POST"])
+    def api_trading_position_close(position_id: str):
+        symbol = position_id.split(":", 1)[-1].upper()
+        result = position_action(root_path(), symbol, "close")
+        return jsonify({"status": result.get("status", ""), "symbol": symbol, "broker_order_id": result.get("order_id", ""), "message": result.get("message", ""), "result": result})
+
+    @app.route("/trading/queue/<event_id>/<action>", methods=["POST"])
+    def trading_queue_action(event_id: str, action: str):
+        payload = request.get_json(silent=True) or request.form
+        symbol = str(payload.get("symbol", "")).upper()
+        position_id = str(payload.get("position_id") or f"paper:{symbol}")
+        decision = str(payload.get("decision", "")).lower()
+        if action == "apply" and decision == "close":
+            result = position_action(root_path(), symbol, "close")
+        elif action in {"apply", "override"}:
+            result = position_action(root_path(), symbol, "keep")
+            if action == "override":
+                record_event_safely(position_id, "operator_override", "portal_queue", {"event_id": event_id, "symbol": symbol, "decision": decision})
+        else:
+            result = {"status": "rejected", "message": "unsupported_queue_action", "order_id": ""}
+        return jsonify({"status": result.get("status", ""), "event_id": event_id, "symbol": symbol, "broker_order_id": result.get("order_id", ""), "message": result.get("message", ""), "result": result})
 
     @app.route("/trading/refresh", methods=["POST"])
     def trading_refresh():

@@ -177,3 +177,48 @@ def test_queue_contract(api_client):
     assert payload["counts"]["total"] == 1
     assert payload["counts"]["close"] == 1
     assert payload["items"][0]["position_id"] == "paper:AAA"
+
+
+def test_positions_body_partial_contract(api_client):
+    response = api_client.get("/trading/_partials/positions-body")
+    assert response.status_code == 200
+    assert b"data-position-id=\"paper:AAA\"" in response.data
+    assert b"data-close-position" in response.data
+
+
+def test_position_lineage_fragment_contract(api_client):
+    response = api_client.get("/trading/positions/paper:AAA/lineage")
+    assert response.status_code == 200
+    assert b"Position Lineage" in response.data
+    assert b"paper:AAA" in response.data
+
+
+def test_queue_apply_posts_json(api_client, monkeypatch):
+    called = {}
+
+    def fake_position_action(root, symbol, action):
+        called["symbol"] = symbol
+        called["action"] = action
+        return {"status": "dry_run", "message": "manual_close_dry_run_submit_orders_disabled", "order_id": ""}
+
+    monkeypatch.setattr("portal.app.position_action", fake_position_action)
+    response = api_client.post(
+        "/trading/queue/queue-1/apply",
+        json={"symbol": "AAA", "position_id": "paper:AAA", "decision": "close"},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "dry_run"
+    assert called == {"symbol": "AAA", "action": "close"}
+
+
+def test_position_close_posts_json(api_client, monkeypatch):
+    def fake_position_action(root, symbol, action):
+        return {"status": "submitted", "message": "manual_close_submitted", "order_id": "broker-1"}
+
+    monkeypatch.setattr("portal.app.position_action", fake_position_action)
+    response = api_client.post("/api/trading/positions/paper:AAA/close", json={"symbol": "AAA"})
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "submitted"
+    assert payload["broker_order_id"] == "broker-1"

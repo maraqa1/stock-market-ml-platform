@@ -1,0 +1,21 @@
+{% from "_macros/pill.html" import dot %}
+<section class="lineage-panel">
+  <h2>Position Lineage</h2>
+  <p class="muted">{{ lineage.position_id }} · {{ lineage.summary.event_count }} events · {{ lineage.summary.state_change_count }} state changes</p>
+  {% if not lineage.events %}
+    <div class="empty small">No lineage events recorded yet for this position.</div>
+  {% else %}
+    <ol class="lineage-list">
+      {% for event in lineage.events %}
+        <li>
+          <div class="lineage-event-dot">{{ dot(event.event_type) }}</div>
+          <div>
+            <strong>{{ event.event_type|replace('_', ' ')|title }}</strong>
+            <span class="num time">{{ event.event_at }}</span>
+            <p>{{ event.source }}{% if event.details %}: {{ event.details }}{% endif %}</p>
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  {% endif %}
+</section>

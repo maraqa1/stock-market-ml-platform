@@ -15,4 +15,20 @@
   {% include "trading/_zones/_shortlist.html" %}
   {% include "trading/_zones/_diagnostics.html" %}
 </section>
+<dialog class="confirm-dialog" data-confirm-dialog>
+  <form method="dialog">
+    <h2 data-confirm-title>Confirm action</h2>
+    <p data-confirm-text></p>
+    <p class="muted">Paper account only. Live trading remains disabled.</p>
+    <menu>
+      <button class="btn btn-ghost" value="cancel">Cancel</button>
+      <button class="btn btn-danger" value="confirm" data-confirm-primary>Confirm</button>
+    </menu>
+  </form>
+</dialog>
+<dialog class="lineage-dialog" data-lineage-dialog>
+  <button class="btn btn-ghost dialog-close" type="button" data-dialog-close>Close</button>
+  <div data-lineage-content></div>
+</dialog>
+<div class="toast" data-toast hidden></div>
 {% endblock %}

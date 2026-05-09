@@ -202,6 +202,9 @@ def positions_context(root: Path) -> dict[str, Any]:
         symbol = str(row.get("symbol") or "").upper()
         row["position_id"] = position_id_for_symbol(symbol) if symbol else ""
         row["status"] = "open"
+        qty = _float(row.get("qty"))
+        cost_basis = _float(row.get("cost_basis"))
+        row["entry_price"] = _float(row.get("avg_entry_price")) or (cost_basis / qty if qty else None)
         row["lineage_event_count"] = len(_position_events(row["position_id"])) if row["position_id"] else 0
     return {
         "source": "csv_artifacts",
@@ -209,6 +212,18 @@ def positions_context(root: Path) -> dict[str, Any]:
         "summary": _position_summary(positions),
         "positions": rows,
     }
+
+
+def _float(value: Any) -> float | None:
+    try:
+        if value in {None, ""}:
+            return None
+        number = float(value)
+        if pd.isna(number):
+            return None
+        return number
+    except Exception:
+        return None
 
 
 def _position_events(position_id: str) -> list[dict[str, Any]]:

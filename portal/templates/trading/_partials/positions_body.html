@@ -1,0 +1,24 @@
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import money, qty, side, signed_money, signed_pct %}
+{% if not positions_api["positions"] %}
+  <tr>
+    <td colspan="10" class="empty small">No open paper positions returned.</td>
+  </tr>
+{% else %}
+  {% for row in positions_api["positions"] %}
+    <tr class="row-clickable" data-position-id="{{ row.position_id }}" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
+      <td class="num-l">{{ row.symbol }}</td>
+      <td>{{ side(row.side or "long") }}</td>
+      <td>{{ qty(row.qty or 0) }}</td>
+      <td>{{ money(row.entry_price or "") }}</td>
+      <td>{{ money(row.current_price or "") }}</td>
+      <td>{{ signed_money(row.unrealized_pl or 0) }}</td>
+      <td>{{ signed_pct(row.unrealized_plpc or 0) }}</td>
+      <td class="num">Open</td>
+      <td>{{ pill(row.status or "safe") }}</td>
+      <td>
+        <button class="btn btn-danger btn-sm" type="button" data-close-position data-position-id="{{ row.position_id }}" data-symbol="{{ row.symbol }}" data-qty="{{ row.qty }}" data-market-value="{{ row.market_value }}">Close</button>
+      </td>
+    </tr>
+  {% endfor %}
+{% endif %}

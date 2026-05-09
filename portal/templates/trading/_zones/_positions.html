@@ -1,9 +1,28 @@
-<section class="zone trading-zone" data-zone="open-positions">
+<section class="zone trading-zone" data-zone="open-positions" id="open-positions">
   <div class="zone__header">
     <span>Open Positions</span>
-    <span class="zone__header-meta">SPEC 13</span>
+    <span class="zone__header-meta" data-position-staleness>live, refreshed {{ positions_api.refreshed_at or "not available" }}</span>
   </div>
-  <div class="zone__body zone__body--stub">
-    <p>Stub: live 5-second polling position table with explicit paper-only close controls will appear here.</p>
+  <div class="zone__body">
+    <div class="stale-banner" data-position-stale-banner hidden>Position prices may be stale.</div>
+    <table class="data positions-table">
+      <thead>
+        <tr>
+          <th>Sym</th>
+          <th>L/S</th>
+          <th class="num">Qty</th>
+          <th class="num">Entry</th>
+          <th class="num">Last</th>
+          <th class="num">P&amp;L $</th>
+          <th class="num">P&amp;L %</th>
+          <th class="num">Age</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody data-positions-body data-refresh-url="/trading/_partials/positions-body">
+        {% include "trading/_partials/positions_body.html" %}
+      </tbody>
+    </table>
   </div>
 </section>

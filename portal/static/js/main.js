@@ -65,3 +65,143 @@ if (pipelineZone) {
     }
   }, refreshMs);
 }
+
+const toast = document.querySelector("[data-toast]");
+const showToast = (message, isError = false) => {
+  if (!toast) return;
+  toast.textContent = message;
+  toast.hidden = false;
+  toast.classList.toggle("toast--error", isError);
+  window.setTimeout(() => {
+    toast.hidden = true;
+  }, isError ? 8000 : 4000);
+};
+
+const confirmDialog = document.querySelector("[data-confirm-dialog]");
+const confirmText = confirmDialog?.querySelector("[data-confirm-text]");
+const confirmTitle = confirmDialog?.querySelector("[data-confirm-title]");
+const confirmPrimary = confirmDialog?.querySelector("[data-confirm-primary]");
+
+const confirmAction = ({ title, text, danger = true }) =>
+  new Promise((resolve) => {
+    if (!confirmDialog) {
+      resolve(window.confirm(text));
+      return;
+    }
+    if (confirmTitle) confirmTitle.textContent = title;
+    if (confirmText) confirmText.textContent = text;
+    if (confirmPrimary) {
+      confirmPrimary.classList.toggle("btn-danger", danger);
+      confirmPrimary.classList.toggle("btn-primary", !danger);
+    }
+    const handler = () => {
+      confirmDialog.removeEventListener("close", handler);
+      resolve(confirmDialog.returnValue === "confirm");
+    };
+    confirmDialog.addEventListener("close", handler);
+    confirmDialog.showModal();
+  });
+
+const postJson = async (url, payload) => {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || `Request failed: ${response.status}`);
+  return data;
+};
+
+document.addEventListener("click", async (event) => {
+  const queueButton = event.target.closest("[data-queue-action]");
+  if (!queueButton) return;
+  const action = queueButton.dataset.queueAction;
+  const symbol = queueButton.dataset.symbol;
+  const eventId = queueButton.dataset.eventId;
+  const decision = queueButton.dataset.decision;
+  const ok = await confirmAction({
+    title: action === "apply" ? "Apply queue recommendation" : "Override queue recommendation",
+    text: `${action} ${decision} for ${symbol}`,
+    danger: action === "apply" && decision === "close",
+  });
+  if (!ok) return;
+  queueButton.disabled = true;
+  try {
+    const result = await postJson(`/trading/queue/${encodeURIComponent(eventId)}/${action}`, {
+      symbol,
+      position_id: queueButton.dataset.positionId,
+      decision,
+    });
+    queueButton.closest("tr")?.remove();
+    showToast(`Queue action recorded${result.broker_order_id ? ` · broker order ${result.broker_order_id}` : ""}`);
+  } catch (error) {
+    queueButton.disabled = false;
+    showToast(error.message, true);
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  const closeButton = event.target.closest("[data-close-position]");
+  if (!closeButton) return;
+  event.stopPropagation();
+  const symbol = closeButton.dataset.symbol;
+  const positionId = closeButton.dataset.positionId;
+  const qty = closeButton.dataset.qty || "";
+  const marketValue = closeButton.dataset.marketValue || "";
+  const ok = await confirmAction({
+    title: "Close paper position",
+    text: `close ${qty} ${symbol} shares, estimated value ${marketValue}, broker position ${positionId}`,
+    danger: true,
+  });
+  if (!ok) return;
+  closeButton.disabled = true;
+  try {
+    const result = await postJson(`/api/trading/positions/${encodeURIComponent(positionId)}/close`, { symbol });
+    showToast(`Close recorded${result.broker_order_id ? ` · broker order ${result.broker_order_id}` : ""}`);
+  } catch (error) {
+    closeButton.disabled = false;
+    showToast(error.message, true);
+  }
+});
+
+const lineageDialog = document.querySelector("[data-lineage-dialog]");
+const lineageContent = document.querySelector("[data-lineage-content]");
+document.querySelector("[data-dialog-close]")?.addEventListener("click", () => lineageDialog?.close());
+
+document.addEventListener("click", async (event) => {
+  const row = event.target.closest("[data-lineage-url]");
+  if (!row || event.target.closest("button, a, form")) return;
+  try {
+    const response = await fetch(row.dataset.lineageUrl);
+    if (!response.ok) throw new Error(`Lineage failed: ${response.status}`);
+    if (lineageContent) lineageContent.innerHTML = await response.text();
+    lineageDialog?.showModal();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+});
+
+const positionsBody = document.querySelector("[data-positions-body]");
+if (positionsBody) {
+  let failures = 0;
+  const banner = document.querySelector("[data-position-stale-banner]");
+  const refreshUrl = positionsBody.dataset.refreshUrl;
+  window.setInterval(async () => {
+    if (document.hidden) return;
+    try {
+      const response = await fetch(refreshUrl);
+      if (!response.ok) throw new Error(`Position refresh failed: ${response.status}`);
+      positionsBody.innerHTML = await response.text();
+      failures = 0;
+      if (banner) banner.hidden = true;
+    } catch (error) {
+      failures += 1;
+      if (banner && failures >= 2) {
+        banner.hidden = false;
+        banner.textContent = "Position prices may be stale.";
+      }
+      console.error(error);
+    }
+  }, 5000);
+}
