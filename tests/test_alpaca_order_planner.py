@@ -115,6 +115,63 @@ def test_build_order_plan_ignores_no_decision_rows_even_when_high_ranked():
     assert list(plan["symbol"]) == ["YES"]
 
 
+def trade_signal(ticker, action, score, **overrides):
+    values = {
+        "ticker": ticker,
+        "date": "2026-05-08",
+        "trade_action": action,
+        "side_probability": 0.8,
+        "probability_edge": 0.2 if action == "Long" else -0.2,
+        "expected_trade_return": 0.02,
+        "close": 20,
+        "open": 20,
+        "high": 21,
+        "low": 19,
+        "volume": 1_000_000,
+        "avg_dollar_volume_20d": 60_000_000,
+        "market_cap": 20_000_000_000,
+        "volatility_20d": 0.02,
+        "risk_adjusted_score": score,
+        "sector": "Technology" if action == "Long" else "Healthcare",
+    }
+    values.update(overrides)
+    return values
+
+
+def test_build_order_plan_balances_eligible_long_and_short_orders_when_shorting_enabled():
+    signals = pd.DataFrame(
+        [trade_signal(f"L{i}", "Long", 1.0 - (i * 0.01)) for i in range(4)]
+        + [trade_signal(f"S{i}", "Short", 0.8 - (i * 0.01)) for i in range(4)]
+    )
+    plan = build_order_plan(signals, config(max_orders=4, allow_short_selling=True))
+
+    assert plan["trade_action"].value_counts().to_dict() == {"Long": 2, "Short": 2}
+    assert set(plan.loc[plan["trade_action"].eq("Short"), "side"]) == {"sell"}
+    assert set(plan["trade_quality_status"]) == {"approved"}
+
+
+def test_build_order_plan_keeps_rejected_short_rows_visible_for_operator_review():
+    signals = pd.DataFrame(
+        [trade_signal(f"L{i}", "Long", 1.0 - (i * 0.01)) for i in range(4)]
+        + [
+            trade_signal(
+                f"S{i}",
+                "Short",
+                0.8 - (i * 0.01),
+                market_cap=100_000_000,
+            )
+            for i in range(4)
+        ]
+    )
+    plan = build_order_plan(signals, config(max_orders=4, allow_short_selling=True))
+
+    assert plan["trade_action"].value_counts().to_dict() == {"Long": 2, "Short": 2}
+    short_rows = plan[plan["trade_action"].eq("Short")]
+    assert set(short_rows["trade_quality_status"]) == {"rejected"}
+    assert short_rows["order_eligible"].eq(False).all()
+    assert short_rows["trade_quality_reason"].str.contains("market_cap_below_minimum").all()
+
+
 def test_build_order_plan_uses_notional_paper_orders():
     signals = pd.DataFrame(
         [{

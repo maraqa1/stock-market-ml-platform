@@ -51,6 +51,38 @@ def _numeric_column(frame: pd.DataFrame, column: str, default: float = 0.0) -> p
     return pd.to_numeric(frame[column], errors="coerce").fillna(default)
 
 
+def _eligible_order_mask(frame: pd.DataFrame) -> pd.Series:
+    if frame.empty:
+        return pd.Series(False, index=frame.index, dtype="bool")
+    return (
+        frame["trade_quality_status"].astype(str).str.lower().isin({"approved", "reduced"})
+        & frame["order_eligible"].astype(bool)
+        & (pd.to_numeric(frame["suggested_quantity"], errors="coerce").fillna(0) >= 1)
+    )
+
+
+def _add_final_selection_sort(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy()
+    out["_sort_score"] = pd.to_numeric(out.get("risk_adjusted_score", 0), errors="coerce").abs().fillna(0)
+    out["_eligible_sort"] = _eligible_order_mask(out).astype(int)
+    if "candidate_rank" in out.columns:
+        out["_candidate_rank_sort"] = pd.to_numeric(out["candidate_rank"], errors="coerce").fillna(999_999)
+    else:
+        out["_candidate_rank_sort"] = range(1, len(out) + 1)
+    return out
+
+
+def _drop_selection_sort(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.drop(columns=["_sort_score", "_eligible_sort", "_candidate_rank_sort"], errors="ignore")
+
+
+def _sort_final_candidates(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.sort_values(
+        ["_eligible_sort", "_sort_score", "_candidate_rank_sort"],
+        ascending=[False, False, True],
+    )
+
+
 def _balanced_side_selection(frame: pd.DataFrame, config: AlpacaConfig, limit: int) -> pd.DataFrame:
     if frame.empty or not config.allow_short_selling:
         return frame.head(limit)
@@ -145,16 +177,33 @@ def build_candidate_pool(
 def _select_final_orders(candidate_pool: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
     if candidate_pool.empty:
         return candidate_pool
-    eligible = candidate_pool[
-        candidate_pool["trade_quality_status"].astype(str).str.lower().isin({"approved", "reduced"})
-        & candidate_pool["order_eligible"].astype(bool)
-        & (pd.to_numeric(candidate_pool["suggested_quantity"], errors="coerce").fillna(0) >= 1)
-    ].copy()
-    if eligible.empty:
-        return candidate_pool.head(config.max_orders).copy()
-    eligible["_sort_score"] = pd.to_numeric(eligible.get("risk_adjusted_score", 0), errors="coerce").abs().fillna(0)
-    eligible = eligible.sort_values("_sort_score", ascending=False)
-    selected = _balanced_side_selection(eligible, config, config.max_orders).drop(columns=["_sort_score"], errors="ignore")
+    sortable = _add_final_selection_sort(candidate_pool)
+    if not config.allow_short_selling:
+        eligible = sortable[sortable["_eligible_sort"].eq(1)].copy()
+        selected = _sort_final_candidates(eligible if not eligible.empty else sortable).head(config.max_orders)
+        selected = _drop_selection_sort(selected)
+        selected = _limit_sector_concentration(selected, config, config.max_orders)
+        return selected.head(config.max_orders).copy()
+
+    actions = sortable["trade_action"].astype(str).str.strip().str.lower()
+    longs = _sort_final_candidates(sortable[actions.eq("long")].copy())
+    shorts = _sort_final_candidates(sortable[actions.eq("short")].copy())
+    if longs.empty or shorts.empty:
+        selected = _sort_final_candidates(sortable).head(config.max_orders)
+        selected = _drop_selection_sort(selected)
+        selected = _limit_sector_concentration(selected, config, config.max_orders)
+        return selected.head(config.max_orders).copy()
+
+    long_slots = (config.max_orders + 1) // 2
+    short_slots = config.max_orders // 2
+    selected = pd.concat([longs.head(long_slots), shorts.head(short_slots)], ignore_index=False)
+    if len(selected) < config.max_orders:
+        remaining = sortable.drop(index=selected.index, errors="ignore")
+        selected = pd.concat(
+            [selected, _sort_final_candidates(remaining).head(config.max_orders - len(selected))],
+            ignore_index=False,
+        )
+    selected = _drop_selection_sort(selected)
     selected = _limit_sector_concentration(selected, config, config.max_orders)
     return selected.head(config.max_orders).copy()
 
