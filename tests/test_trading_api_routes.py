@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from portal.app import create_app
+
+
+def _write_csv(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+@pytest.fixture()
+def api_client():
+    root = Path("_tmp_trading_api_routes")
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    _write_csv(
+        root / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
+        [
+            {
+                "symbol": "AAA",
+                "side": "buy",
+                "approved_notional": 500,
+                "trade_quality_status": "approved",
+                "client_order_id": "stockml-AAA-buy",
+            },
+            {
+                "symbol": "BBB",
+                "side": "sell",
+                "approved_notional": 0,
+                "trade_quality_status": "rejected",
+                "trade_quality_reason": "shorting_disabled",
+            },
+        ],
+    )
+    _write_csv(
+        root / "data" / "portal_outputs" / "08_alpaca_paper_order_results_1.csv",
+        [
+            {
+                "symbol": "AAA",
+                "side": "buy",
+                "status": "submitted",
+                "notional": 500,
+                "order_id": "order-aaa",
+                "client_order_id": "stockml-AAA-buy",
+                "message": "",
+            },
+            {
+                "symbol": "BBB",
+                "side": "sell",
+                "status": "rejected",
+                "notional": 0,
+                "client_order_id": "stockml-BBB-sell",
+                "message": "shorting_disabled",
+            },
+        ],
+    )
+    _write_csv(
+        root / "data" / "portal_outputs" / "08_alpaca_paper_order_tracking_1.csv",
+        [
+            {
+                "symbol": "AAA",
+                "side": "buy",
+                "status": "submitted",
+                "alpaca_status": "filled",
+                "notional": 500,
+                "filled_qty": 2,
+                "filled_avg_price": 250,
+                "order_id": "order-aaa",
+                "client_order_id": "stockml-AAA-buy",
+            }
+        ],
+    )
+    _write_csv(
+        root / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "AAA", "qty": 2, "market_value": 520, "cost_basis": 500, "unrealized_pl": 20}],
+    )
+    _write_csv(
+        root / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [
+            {
+                "symbol": "AAA",
+                "decision": "close",
+                "recommended_action": "close_position",
+                "decision_reason": "take_profit_hit",
+                "unrealized_plpc": 0.04,
+            },
+            {
+                "symbol": "CCC",
+                "decision": "hold",
+                "recommended_action": "keep_position",
+                "decision_reason": "position_within_rules",
+                "unrealized_plpc": 0.01,
+            },
+        ],
+    )
+    app = create_app(root)
+    app.config.update(TESTING=True)
+    return app.test_client()
+
+
+def _json(client, path: str) -> dict:
+    response = client.get(path)
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert isinstance(payload, dict)
+    return payload
+
+
+def test_pipeline_current_contract(api_client):
+    payload = _json(api_client, "/api/trading/pipeline/current")
+    assert set(payload) == {"source", "run", "stage_names", "stages"}
+    assert isinstance(payload["stage_names"], list)
+    assert isinstance(payload["stages"], list)
+    assert len(payload["stages"]) == 6
+    assert {"stage_name", "status", "output_count"}.issubset(payload["stages"][0])
+
+
+def test_pipeline_history_contract(api_client):
+    payload = _json(api_client, "/api/trading/pipeline/history?days=14")
+    assert set(payload) == {"source", "days", "runs"}
+    assert payload["days"] == 14
+    assert isinstance(payload["runs"], list)
+
+
+def test_positions_contract(api_client):
+    payload = _json(api_client, "/api/trading/positions")
+    assert set(payload) == {"source", "refreshed_at", "summary", "positions"}
+    assert isinstance(payload["positions"], list)
+    assert payload["summary"]["position_count"] == 1
+    assert payload["positions"][0]["position_id"] == "paper:AAA"
+
+
+def test_position_lineage_contract(api_client):
+    payload = _json(api_client, "/api/trading/positions/paper:AAA/lineage")
+    assert set(payload) == {"source", "position_id", "events", "summary"}
+    assert payload["position_id"] == "paper:AAA"
+    assert isinstance(payload["events"], list)
+    assert {"event_count", "state_change_count"}.issubset(payload["summary"])
+
+
+def test_basket_today_contract(api_client):
+    payload = _json(api_client, "/api/trading/basket/today")
+    assert set(payload) == {"source", "run_id", "generated_at", "rows", "counts"}
+    assert payload["counts"]["planned"] == 2
+    assert payload["counts"]["submitted"] == 1
+    assert payload["counts"]["filled"] == 1
+    assert isinstance(payload["rows"], list)
+    assert {"symbol", "status", "reason", "position_id"}.issubset(payload["rows"][0])
+
+
+def test_basket_integrity_contract(api_client):
+    payload = _json(api_client, "/api/trading/basket/integrity")
+    assert set(payload) == {"source", "run_id", "selected", "submitted", "filled", "closed_since", "monitor_changes_since", "diffs"}
+    assert payload["selected"] == 2
+    assert payload["submitted"] == 1
+    assert payload["filled"] == 1
+    assert isinstance(payload["diffs"], list)
+
+
+def test_monitor_today_contract(api_client):
+    payload = _json(api_client, "/api/trading/monitor/today")
+    assert set(payload) == {"source", "checks", "state_changes", "counts"}
+    assert isinstance(payload["checks"], list)
+    assert {"monitor_checks", "state_changes"}.issubset(payload["counts"])
+
+
+def test_queue_contract(api_client):
+    payload = _json(api_client, "/api/trading/queue")
+    assert set(payload) == {"source", "generated_at", "items", "counts"}
+    assert payload["counts"]["total"] == 1
+    assert payload["counts"]["close"] == 1
+    assert payload["items"][0]["position_id"] == "paper:AAA"

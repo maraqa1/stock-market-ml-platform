@@ -14,6 +14,16 @@ from portal.services.latest_file_reader import count_rows, file_status, latest_f
 from portal.services.model_validation_service import model_validation_context
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.stock_detail_service import stock_detail_context
+from portal.services.trading_api_service import (
+    action_queue_context,
+    basket_integrity_context,
+    basket_today_context,
+    monitor_today_context,
+    pipeline_current_context,
+    pipeline_history_context,
+    position_lineage_context,
+    positions_context,
+)
 from portal.services.trading_service import lifecycle_context, position_action, refresh_trading_artifacts, trading_context
 from portal.services.universe_service import universe_context
 
@@ -178,6 +188,42 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/trading/lifecycle")
     def trading_lifecycle():
         return render_template("trading_lifecycle.html", title="Trade Lifecycle", **lifecycle_context(root_path()))
+
+    @app.route("/api/trading/pipeline/current")
+    def api_trading_pipeline_current():
+        return jsonify(pipeline_current_context(root_path()))
+
+    @app.route("/api/trading/pipeline/history")
+    def api_trading_pipeline_history():
+        try:
+            days = int(request.args.get("days", "14"))
+        except ValueError:
+            days = 14
+        return jsonify(pipeline_history_context(root_path(), days=days))
+
+    @app.route("/api/trading/positions")
+    def api_trading_positions():
+        return jsonify(positions_context(root_path()))
+
+    @app.route("/api/trading/positions/<path:position_id>/lineage")
+    def api_trading_position_lineage(position_id: str):
+        return jsonify(position_lineage_context(root_path(), position_id))
+
+    @app.route("/api/trading/basket/today")
+    def api_trading_basket_today():
+        return jsonify(basket_today_context(root_path()))
+
+    @app.route("/api/trading/basket/integrity")
+    def api_trading_basket_integrity():
+        return jsonify(basket_integrity_context(root_path()))
+
+    @app.route("/api/trading/monitor/today")
+    def api_trading_monitor_today():
+        return jsonify(monitor_today_context(root_path()))
+
+    @app.route("/api/trading/queue")
+    def api_trading_queue():
+        return jsonify(action_queue_context(root_path()))
 
     @app.route("/model-validation")
     def model_validation():
