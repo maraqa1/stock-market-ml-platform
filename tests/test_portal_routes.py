@@ -14,7 +14,7 @@ def client():
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/journal", "/model-validation", "/no-decision", "/dev/styleguide"]:
+    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/journal", "/shortlist", "/model-validation", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
 
@@ -31,6 +31,42 @@ def test_base_loads_spec00_theme(client):
     assert response.status_code == 200
     assert b'data-theme="dark"' in response.data
     assert b"css/theme.css" in response.data
+
+
+def test_base_renders_spec25_top_nav_and_search(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    markers = [
+        b"Trading Console",
+        b"Activity Journal",
+        b"Model Shortlist",
+        b"Validation",
+        b"Data Estate",
+        b"Diagnostics",
+    ]
+    cursor = -1
+    for marker in markers:
+        position = response.data.find(marker)
+        assert position > cursor
+        cursor = position
+    assert b'id="global-search"' in response.data
+    assert b"js/nav_search.js" in response.data
+    assert b"js/keyboard.js" in response.data
+
+
+def test_search_api_returns_symbol_payload(client):
+    response = client.get("/api/search?q=tsl&limit=5")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "groups" in payload
+    assert any(item.get("symbol") == "TSLA" for group in payload["groups"] for item in group["items"])
+
+
+def test_search_api_run_id_returns_runs_only(client):
+    response = client.get("/api/search?q=2026-05-09-A&limit=5")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert [group["key"] for group in payload["groups"]] == ["runs"]
 
 
 def test_styleguide_supports_light_theme(client):

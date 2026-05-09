@@ -13,6 +13,7 @@ from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.model_validation_service import model_validation_context
+from portal.services.search import search
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.stock_detail_service import stock_detail_context
 from portal.services.trading_api_service import (
@@ -89,6 +90,18 @@ def create_app(root: Path | None = None) -> Flask:
 
         return {"table": table}
 
+    @app.context_processor
+    def nav_context():
+        root = root_path()
+        queue = action_queue_context(root)
+        pipeline = pipeline_current_context(root)
+        diagnostics_alert = "alert" if any(str(stage.get("status") or "").lower() in {"failed", "error"} for stage in pipeline.get("stages", [])) else None
+        return {
+            "pending_count": int((queue.get("counts") or {}).get("total") or 0),
+            "diagnostics_alert": diagnostics_alert,
+            "account_label": "PA-12345 · operator@stockml",
+        }
+
     @app.route("/health")
     def health():
         signal_file = latest_file(root_path(), "model_outputs", "advanced_model_signal_table_*.csv", fallback_keys=["portal_outputs"])
@@ -104,6 +117,14 @@ def create_app(root: Path | None = None) -> Flask:
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
             }
         )
+
+    @app.route("/api/search")
+    def api_search():
+        try:
+            limit = int(request.args.get("limit", "5"))
+        except ValueError:
+            limit = 5
+        return jsonify(search(request.args.get("q", ""), limit=limit, root=root_path(), scope=request.args.get("scope", "all")))
 
     @app.route("/dev/styleguide")
     def dev_styleguide():
@@ -247,6 +268,22 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/journal")
     def journal():
         return render_template("trading_lifecycle.html", title="Activity Journal", **lifecycle_context(root_path()))
+
+    @app.route("/shortlist")
+    def shortlist():
+        root = root_path()
+        context = trading_context(root)
+        context.update(
+            {
+                "trading_header": trading_header_context(root),
+                "trading_cadence": trading_cadence_context(root),
+            }
+        )
+        return render_template("shortlist.html", title="Model Shortlist", **context)
+
+    @app.route("/diagnostics")
+    def diagnostics():
+        return redirect(url_for("trading", _anchor="diagnostics"))
 
     @app.route("/api/trading/pipeline/current")
     def api_trading_pipeline_current():

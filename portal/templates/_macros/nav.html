@@ -1,0 +1,24 @@
+<nav class="top-nav" role="navigation" aria-label="Primary">
+  {% set tabs = [
+    ('/trading', 'Trading Console', pending_count),
+    ('/journal', 'Activity Journal', none),
+    ('/shortlist', 'Model Shortlist', none),
+    ('/model-validation', 'Validation', none),
+    ('/gold', 'Data Estate', none),
+    ('/diagnostics', 'Diagnostics', diagnostics_alert),
+  ] %}
+  {% for path, label, badge in tabs %}
+    <a
+      href="{{ path }}"
+      class="top-nav__tab{% if request.path == path or (path != '/' and request.path.startswith(path)) %} is-active{% endif %}"
+      {% if loop.index == 4 %}data-divider{% endif %}
+    >
+      {{ label }}
+      {% if badge is number and badge > 0 %}
+        <span class="top-nav__badge">{{ badge }}</span>
+      {% elif badge == 'alert' %}
+        <span class="top-nav__dot" aria-label="Diagnostics alert"></span>
+      {% endif %}
+    </a>
+  {% endfor %}
+</nav>
