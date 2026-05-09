@@ -182,6 +182,14 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest("[data-open-basket-lineage]");
+  if (!trigger) return;
+  const template = document.querySelector("[data-basket-lineage-template]");
+  if (lineageContent && template) lineageContent.innerHTML = template.innerHTML;
+  lineageDialog?.showModal();
+});
+
 const positionsBody = document.querySelector("[data-positions-body]");
 if (positionsBody) {
   let failures = 0;

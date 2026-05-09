@@ -116,6 +116,16 @@ def test_trading_page_renders_spec08_09_10_top_of_page(client):
     assert b"Submitted" in response.data
 
 
+def test_trading_page_renders_basket_integrity_counts(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Basket Integrity" in response.data
+    assert b"Closed Since" in response.data
+    assert b"Monitor Changes" in response.data
+    assert b"Open full basket lineage" in response.data
+    assert b"data-basket-lineage-template" in response.data
+
+
 def test_trading_page_renders_todays_basket_table(client):
     response = client.get("/trading")
     assert response.status_code == 200

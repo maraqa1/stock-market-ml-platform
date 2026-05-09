@@ -171,6 +171,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "trading_cadence": trading_cadence_context(root),
                 "trading_kpis": trading_kpi_context(root),
                 "pipeline_current": pipeline_current_context(root),
+                "basket_integrity": basket_integrity_context(root),
                 "action_queue": action_queue_context(root),
                 "positions_api": positions_context(root),
             }

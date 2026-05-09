@@ -1,9 +1,75 @@
-<section class="zone trading-zone" data-zone="basket-integrity">
+{% from "_macros/format.html" import number, time_utc %}
+<section class="zone trading-zone" data-zone="basket-integrity" id="basket-integrity">
   <div class="zone__header">
     <span>Basket Integrity</span>
-    <span class="zone__header-meta">SPEC 15</span>
+    <span class="zone__header-meta">from run {{ basket_integrity.run_id or "not available" }}</span>
   </div>
-  <div class="zone__body zone__body--stub">
-    <p>Stub: selected, submitted, filled, closed-since, and monitor-change counts will appear here.</p>
+  <div class="zone__body">
+    <div class="basket-integrity">
+      <div class="bi-stat">
+        <span class="kpi-card__label">Selected</span>
+        <strong class="bi-stat__value num">{{ basket_integrity.selected }}</strong>
+      </div>
+      <div class="bi-stat">
+        <span class="kpi-card__label">Submitted</span>
+        <strong class="bi-stat__value num">{{ basket_integrity.submitted }}</strong>
+      </div>
+      <div class="bi-stat">
+        <span class="kpi-card__label">Filled</span>
+        <strong class="bi-stat__value num">{{ basket_integrity.filled }}</strong>
+      </div>
+      <div class="bi-stat">
+        <span class="kpi-card__label">Closed Since</span>
+        <strong class="bi-stat__value num">{{ basket_integrity.closed_since }}</strong>
+      </div>
+      <div class="bi-stat">
+        <span class="kpi-card__label">Monitor Changes</span>
+        <strong class="bi-stat__value num">{{ basket_integrity.monitor_changes_since }}</strong>
+      </div>
+    </div>
+    <div class="bi-changes">
+      <div class="text-tertiary">Changes since selection</div>
+      {% if basket_integrity.diffs %}
+        <ul>
+          {% for diff in basket_integrity.diffs[:8] %}
+            {% set details = diff.details or {} %}
+            <li>
+              {{ details.symbol or diff.position_id }}:
+              {{ diff.event_type|replace('_', ' ')|title }}
+              {% if details.decision_reason or details.reason %}- {{ (details.decision_reason or details.reason)|reason }}{% endif %}
+              {% if diff.event_at %}({{ time_utc(diff.event_at) }}){% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty small">No state changes recorded for the current basket.</div>
+      {% endif %}
+      <button class="button button-ghost button-small" type="button" data-open-basket-lineage>
+        Open full basket lineage
+      </button>
+      <div hidden data-basket-lineage-template>
+        <section class="lineage-panel">
+          <h3>Basket Lineage</h3>
+          <p class="muted">Run {{ basket_integrity.run_id or "not available" }} - {{ basket_integrity.selected }} selected, {{ basket_integrity.monitor_changes_since }} monitor changes.</p>
+          {% if basket_integrity.diffs %}
+            <ol class="lineage-list">
+              {% for diff in basket_integrity.diffs %}
+                {% set details = diff.details or {} %}
+                <li class="lineage-event">
+                  <div class="lineage-event-body">
+                    <strong>{{ details.symbol or diff.position_id }}</strong>
+                    <span>{{ diff.event_type|replace('_', ' ')|title }}</span>
+                    <span class="muted">{{ (details.decision_reason or details.reason or "")|reason }}</span>
+                    {% if diff.event_at %}<time>{{ time_utc(diff.event_at) }}</time>{% endif %}
+                  </div>
+                </li>
+              {% endfor %}
+            </ol>
+          {% else %}
+            <div class="empty small">No basket lineage state changes recorded yet.</div>
+          {% endif %}
+        </section>
+      </div>
+    </div>
   </div>
 </section>
