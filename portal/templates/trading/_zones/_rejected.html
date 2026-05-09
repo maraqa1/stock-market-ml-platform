@@ -1,5 +1,6 @@
 {% from "_macros/pill.html" import pill %}
 {% from "_macros/format.html" import number, side, time_utc %}
+{% from "_macros/table.html" import table_toolbar %}
 <section class="zone trading-zone" data-zone="rejected-trimmed" id="rejected-trimmed">
   <div class="zone__header">
     <span>Rejected &amp; Trimmed</span>
@@ -8,12 +9,14 @@
   <div class="zone__body">
     <details data-key="rejected-trimmed" {% if rejected_trimmed_rows %}open{% endif %}>
       <summary class="details-summary">Show guardrail and broker decisions</summary>
-      <table class="data rejected-trimmed-table">
+      {{ table_toolbar("Filter rejected and trimmed") }}
+      <div class="table-scroll">
+      <table class="data rejected-trimmed-table" data-table="rejected-trimmed">
         <thead>
           <tr>
-            <th>Sym</th>
+            <th class="col-pinned" data-sortable data-sort-key="symbol">Sym</th>
             <th>Side</th>
-            <th class="num">Planned</th>
+            <th class="num" data-sortable data-sort-key="planned" data-sort-type="number">Planned</th>
             <th>Status</th>
             <th>Source</th>
             <th>Reason</th>
@@ -28,9 +31,9 @@
           {% else %}
             {% for row in rejected_trimmed_rows %}
               <tr class="row-clickable" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
-                <td class="num-l"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                <td class="num-l col-pinned" data-sort-value="{{ row.symbol }}"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
                 <td>{{ side(row.trade_action or row.side) }}</td>
-                <td>{{ number(row.planned_quantity or 0, 0) }}</td>
+                <td data-sort-value="{{ row.planned_quantity or 0 }}">{{ number(row.planned_quantity or 0, 0) }}</td>
                 <td>{{ pill(row.status) }}</td>
                 <td>{{ row.source }}</td>
                 <td>{{ row.reason or "-" }}</td>
@@ -40,6 +43,7 @@
           {% endif %}
         </tbody>
       </table>
+      </div>
     </details>
   </div>
 </section>

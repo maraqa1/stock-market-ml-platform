@@ -78,6 +78,26 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b'id="global-search"' in response.data
     assert b"js/nav_search.js" in response.data
     assert b"js/keyboard.js" in response.data
+    assert b"js/table_sort.js" in response.data
+
+
+def test_trading_tables_render_spec27_table_controls(symbol_client):
+    response = symbol_client.get("/trading?sort=pnl_pct&dir=desc&q=tsl")
+    assert response.status_code == 200
+    assert b'data-table="open-positions"' in response.data
+    assert b'data-table-filter' in response.data
+    assert b'data-sort-key="pnl_pct"' in response.data
+    assert b'data-sort-type="number"' in response.data
+    assert b"class=\"num-l col-pinned\"" in response.data
+    assert b'value="tsl"' in response.data
+
+
+def test_theme_renders_spec27_table_control_styles(client):
+    response = client.get("/static/css/theme.css")
+    assert response.status_code == 200
+    assert b".table-toolbar" in response.data
+    assert b".col-pinned" in response.data
+    assert b".sort-indicator" in response.data
 
 
 def test_theme_overrides_legacy_sidebar_grid_layout(client):

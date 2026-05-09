@@ -1,20 +1,23 @@
 {% from "_macros/pill.html" import pill %}
 {% from "_macros/format.html" import number, side %}
+{% from "_macros/table.html" import table_toolbar %}
 <section class="zone trading-zone" data-zone="todays-basket" id="todays-basket">
   <div class="zone__header">
     <span>Today's Basket</span>
     <span class="zone__header-meta">{{ orders_planned }} planned · {{ orders_submitted }} submitted · {{ filled_orders }} filled</span>
   </div>
   <div class="zone__body">
-    <table class="data basket-table">
+    {{ table_toolbar("Filter today's basket") }}
+    <div class="table-scroll">
+    <table class="data basket-table" data-table="todays-basket">
       <thead>
         <tr>
-          <th>Sym</th>
+          <th class="col-pinned" data-sortable data-sort-key="symbol">Sym</th>
           <th>Side</th>
-          <th class="num">Planned</th>
-          <th class="num">Sent</th>
-          <th class="num">Filled</th>
-          <th class="num">Avg Fill</th>
+          <th class="num" data-sortable data-sort-key="planned" data-sort-type="number">Planned</th>
+          <th class="num" data-sortable data-sort-key="sent" data-sort-type="number">Sent</th>
+          <th class="num" data-sortable data-sort-key="filled" data-sort-type="number">Filled</th>
+          <th class="num" data-sortable data-sort-key="avg_fill" data-sort-type="number">Avg Fill</th>
           <th>Status</th>
           <th>Reason / Note</th>
           <th>Order ID</th>
@@ -28,12 +31,12 @@
         {% else %}
           {% for row in basket_rows %}
             <tr class="row-clickable" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
-              <td class="num-l"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+              <td class="num-l col-pinned" data-sort-value="{{ row.symbol }}"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
               <td>{{ side(row.trade_action or row.side) }}</td>
-              <td>{{ number(row.planned_quantity or 0, 0) }}</td>
-              <td>{{ number(row.sent_quantity, 0) if row.sent_quantity != "" else "-" }}</td>
-              <td>{{ number(row.filled_quantity, 2) if row.filled_quantity != "" else "-" }}</td>
-              <td>{{ number(row.avg_fill, 2) if row.avg_fill != "" else "-" }}</td>
+              <td data-sort-value="{{ row.planned_quantity or 0 }}">{{ number(row.planned_quantity or 0, 0) }}</td>
+              <td data-sort-value="{{ row.sent_quantity or 0 }}">{{ number(row.sent_quantity, 0) if row.sent_quantity != "" else "-" }}</td>
+              <td data-sort-value="{{ row.filled_quantity or 0 }}">{{ number(row.filled_quantity, 2) if row.filled_quantity != "" else "-" }}</td>
+              <td data-sort-value="{{ row.avg_fill or 0 }}">{{ number(row.avg_fill, 2) if row.avg_fill != "" else "-" }}</td>
               <td>{{ pill(row.basket_status) }}</td>
               <td>{{ row.reason_note or "-" }}</td>
               <td class="num-l">{{ row.order_id or "-" }}</td>
@@ -42,5 +45,6 @@
         {% endif %}
       </tbody>
     </table>
+    </div>
   </div>
 </section>

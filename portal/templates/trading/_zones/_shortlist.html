@@ -1,4 +1,5 @@
 {% from "_macros/format.html" import number, side %}
+{% from "_macros/table.html" import table_toolbar %}
 <section class="zone trading-zone" data-zone="model-shortlist" id="model-shortlist">
   <div class="zone__header">
     <span>Model Shortlist</span>
@@ -27,14 +28,16 @@
           </select>
         </label>
       </div>
-      <table class="data shortlist-table">
+      {{ table_toolbar("Filter model shortlist") }}
+      <div class="table-scroll">
+      <table class="data shortlist-table" data-table="model-shortlist">
         <thead>
           <tr>
-            <th class="num">Rank</th>
-            <th>Symbol</th>
+            <th class="num" data-sortable data-sort-key="rank" data-sort-type="number">Rank</th>
+            <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
             <th>Bias</th>
-            <th class="num">Score</th>
-            <th class="num">Expected edge</th>
+            <th class="num" data-sortable data-sort-key="score" data-sort-type="number">Score</th>
+            <th class="num" data-sortable data-sort-key="edge" data-sort-type="number">Expected edge</th>
             <th>Sector</th>
             <th>In basket?</th>
             <th>Excluded reason</th>
@@ -49,11 +52,11 @@
             {% for row in candidate_pool_rows %}
               {% set bias = (row.trade_action or row.side or "Neutral")|lower %}
               <tr data-shortlist-row data-side="{{ 'short' if bias in ['short', 'sell'] else 'long' if bias in ['long', 'buy'] else 'neutral' }}" data-sector="{{ (row.sector or '')|lower }}">
-                <td>{{ number(row.candidate_rank or loop.index, 0) }}</td>
-                <td class="num-l"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                <td data-sort-value="{{ row.candidate_rank or loop.index }}">{{ number(row.candidate_rank or loop.index, 0) }}</td>
+                <td class="num-l col-pinned" data-sort-value="{{ row.symbol }}"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
                 <td>{{ side(row.trade_action or row.side) }}</td>
-                <td>{{ number(row.risk_adjusted_score or 0, 4) }}</td>
-                <td>{{ number(row.expected_trade_return or 0, 4) }}</td>
+                <td data-sort-value="{{ row.risk_adjusted_score or 0 }}">{{ number(row.risk_adjusted_score or 0, 4) }}</td>
+                <td data-sort-value="{{ row.expected_trade_return or 0 }}">{{ number(row.expected_trade_return or 0, 4) }}</td>
                 <td>{{ row.sector or "Not available" }}</td>
                 <td>{{ "Yes" if row.symbol in basket_symbols else "-" }}</td>
                 <td>{{ row.trade_quality_reason or row.no_decision_reason or "-" }}</td>
@@ -62,6 +65,7 @@
           {% endif %}
         </tbody>
       </table>
+      </div>
     </details>
   </div>
 </section>

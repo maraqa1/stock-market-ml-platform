@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros/format.html" import money, number, pct, qty, side, signed_money, signed_pct, time_utc %}
 {% from "_macros/pill.html" import pill, dot %}
+{% from "_macros/table.html" import table_toolbar %}
 {% block content %}
 <section class="symbol-detail">
   <div class="symbol-heading">
@@ -23,15 +24,17 @@
     </div>
     <div class="zone__body">
       {% if detail.position %}
-        <table class="data">
+        {{ table_toolbar("Filter position") }}
+        <div class="table-scroll">
+        <table class="data" data-table="symbol-position">
           <thead>
             <tr>
               <th>Side</th>
-              <th class="num">Qty</th>
-              <th class="num">Entry</th>
-              <th class="num">P&amp;L $</th>
-              <th class="num">P&amp;L %</th>
-              <th class="num">Age</th>
+              <th class="num" data-sortable data-sort-key="qty" data-sort-type="number">Qty</th>
+              <th class="num" data-sortable data-sort-key="entry" data-sort-type="number">Entry</th>
+              <th class="num" data-sortable data-sort-key="pnl_dollars" data-sort-type="number">P&amp;L $</th>
+              <th class="num" data-sortable data-sort-key="pnl_pct" data-sort-type="number">P&amp;L %</th>
+              <th class="num" data-sortable data-sort-key="age" data-sort-type="number">Age</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
@@ -39,11 +42,11 @@
           <tbody>
             <tr data-lineage-url="/trading/positions/{{ detail.position.id }}/lineage">
               <td>{{ side(detail.position.side) }}</td>
-              <td>{{ qty(detail.position.qty) }}</td>
-              <td>{{ money(detail.position.entry) }}</td>
-              <td>{{ signed_money(detail.position.pnl_dollars) }}</td>
-              <td>{{ signed_pct(detail.position.pnl_pct) }}</td>
-              <td class="num">{{ detail.position.age_days or "Open" }}</td>
+              <td data-sort-value="{{ detail.position.qty }}">{{ qty(detail.position.qty) }}</td>
+              <td data-sort-value="{{ detail.position.entry }}">{{ money(detail.position.entry) }}</td>
+              <td data-sort-value="{{ detail.position.pnl_dollars }}">{{ signed_money(detail.position.pnl_dollars) }}</td>
+              <td data-sort-value="{{ detail.position.pnl_pct }}">{{ signed_pct(detail.position.pnl_pct) }}</td>
+              <td class="num" data-sort-value="{{ detail.position.age_days or 0 }}">{{ detail.position.age_days or "Open" }}</td>
               <td>{{ pill(detail.position.status) }}</td>
               <td>
                 <button class="btn btn-danger btn-sm" type="button" data-close-position data-position-id="{{ detail.position.id }}" data-symbol="{{ detail.symbol }}" data-qty="{{ detail.position.qty }}" data-market-value="{{ detail.position.market_value or 0 }}">Close</button>
@@ -52,6 +55,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
       {% else %}
         <div class="empty small">Not currently held.</div>
       {% endif %}

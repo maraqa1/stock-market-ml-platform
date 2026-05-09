@@ -1,3 +1,4 @@
+{% from "_macros/table.html" import table_toolbar %}
 <section class="zone trading-zone" data-zone="open-positions" id="open-positions">
   <div class="zone__header">
     <span>Open Positions</span>
@@ -5,17 +6,19 @@
   </div>
   <div class="zone__body">
     <div class="stale-banner" data-position-stale-banner hidden>Position prices may be stale.</div>
-    <table class="data positions-table">
+    {{ table_toolbar("Filter open positions") }}
+    <div class="table-scroll">
+    <table class="data positions-table" data-table="open-positions">
       <thead>
         <tr>
-          <th>Sym</th>
+          <th class="col-pinned" data-sortable data-sort-key="symbol">Sym</th>
           <th>L/S</th>
-          <th class="num">Qty</th>
-          <th class="num">Entry</th>
-          <th class="num">Last</th>
-          <th class="num">P&amp;L $</th>
-          <th class="num">P&amp;L %</th>
-          <th class="num">Age</th>
+          <th class="num" data-sortable data-sort-key="qty" data-sort-type="number">Qty</th>
+          <th class="num" data-sortable data-sort-key="entry" data-sort-type="number">Entry</th>
+          <th class="num" data-sortable data-sort-key="last" data-sort-type="number">Last</th>
+          <th class="num" data-sortable data-sort-key="pnl_dollars" data-sort-type="number">P&amp;L $</th>
+          <th class="num" data-sortable data-sort-key="pnl_pct" data-sort-type="number">P&amp;L %</th>
+          <th class="num" data-sortable data-sort-key="age" data-sort-type="number">Age</th>
           <th>Status</th>
           <th>Action</th>
         </tr>
@@ -24,5 +27,6 @@
         {% include "trading/_partials/positions_body.html" %}
       </tbody>
     </table>
+    </div>
   </div>
 </section>

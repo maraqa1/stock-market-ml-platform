@@ -1,0 +1,8 @@
+{% macro table_toolbar(placeholder="Filter table", mode="client") -%}
+  <form class="table-toolbar" data-table-toolbar data-mode="{{ mode }}" method="get">
+    <label>
+      <span>Filter</span>
+      <input type="search" name="q" value="{{ request.args.get('q', '') }}" placeholder="{{ placeholder }}" data-table-filter>
+    </label>
+  </form>
+{%- endmacro %}
