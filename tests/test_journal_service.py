@@ -1,5 +1,9 @@
 from datetime import date, datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+import shutil
 
+import pandas as pd
 from sqlalchemy import create_engine
 
 from portal.services.journal import JournalFilters, iter_csv, query
@@ -77,3 +81,18 @@ def test_journal_filters_by_symbol_and_csv_count_matches():
     assert payload["total_in_range"] == 2
     assert csv_text.count("\n") == 3
     assert "ord-1" in csv_text
+
+
+def test_journal_falls_back_to_artifacts_when_event_table_missing():
+    root = Path(".pytest_workspace") / f"journal_{uuid4().hex}"
+    try:
+        path = root / "data" / "trading" / "paper_trade_journal" / "paper_trade_journal_1.csv"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{"symbol": "AAA", "lifecycle_state": "submitted", "order_id": "ord-1"}]).to_csv(path, index=False)
+        payload = query(filters(from_date=date.today().replace(year=2026), to_date=date.today().replace(year=2026)), root=root)
+        # Use a wide date range because the artifact timestamp is the local test runtime.
+        payload = query(filters(from_date=date(2000, 1, 1), to_date=date(2100, 1, 1)), root=root)
+        assert payload["total_in_range"] == 1
+        assert payload["events"][0]["symbol"] == "AAA"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)

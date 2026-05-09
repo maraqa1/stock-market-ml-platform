@@ -277,7 +277,7 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/journal")
     def journal():
         filters = filters_from_args(request.args)
-        payload = journal_query(filters, cursor=request.args.get("cursor"), limit=request.args.get("limit", 200))
+        payload = journal_query(filters, cursor=request.args.get("cursor"), limit=request.args.get("limit", 200), root=root_path())
         return render_template(
             "journal/index.html",
             title="Activity Journal",
@@ -305,13 +305,13 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/api/journal/events")
     def api_journal_events():
         filters = filters_from_args(request.args)
-        return jsonify(journal_query(filters, cursor=request.args.get("cursor"), limit=request.args.get("limit", 200)))
+        return jsonify(journal_query(filters, cursor=request.args.get("cursor"), limit=request.args.get("limit", 200), root=root_path()))
 
     @app.route("/api/journal/events.csv")
     def api_journal_events_csv():
         filters = filters_from_args(request.args)
         return Response(
-            journal_iter_csv(filters),
+            journal_iter_csv(filters, root=root_path()),
             mimetype="text/csv",
             headers={"Content-Disposition": "attachment; filename=activity_journal.csv"},
         )

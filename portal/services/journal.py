@@ -5,11 +5,13 @@ import csv
 import io
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
 from typing import Any, Iterable
 
 from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.engine import Engine
 
+from portal.services.latest_file_reader import latest_file, safe_read_csv
 from stockml.db.connection import get_engine
 from stockml.db.schema import position_events
 
@@ -154,11 +156,99 @@ def _conditions(filters: JournalFilters, cursor: str | None = None) -> list[Any]
     return conditions
 
 
-def query(filters: JournalFilters, cursor: str | None = None, limit: int = DEFAULT_LIMIT, *, target: Engine | None = None) -> dict[str, Any]:
+def _artifact_events(root: Path, filters: JournalFilters) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    sources = [
+        ("paper_trade_journal", "paper_trade_journal_*.csv", "trade_journal", "submitted"),
+        ("paper_pnl", "paper_pnl_*.csv", "pnl", "monitor_safe"),
+        ("agent_decisions", "position_decisions_*.csv", "monitor", "monitor_watch"),
+        ("operator_actions", "operator_position_actions_*.csv", "operator", "operator_keep"),
+        ("portal_outputs", "08_alpaca_paper_order_results_*.csv", "broker", "submitted"),
+        ("portal_outputs", "08_alpaca_paper_order_plan_*.csv", "guardrail", "selected"),
+    ]
+    event_id = 1
+    for key, pattern, source, default_type in sources:
+        path = latest_file(root, key, pattern)
+        frame = safe_read_csv(path, nrows=1000)
+        if frame.empty:
+            continue
+        event_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc) if path and path.exists() else datetime.now(timezone.utc)
+        for row in frame.fillna("").to_dict("records"):
+            symbol = str(row.get("symbol") or row.get("ticker") or "").upper()
+            if filters.symbol and symbol != filters.symbol:
+                continue
+            event_type = str(row.get("event_type") or row.get("lifecycle_state") or row.get("decision") or default_type).lower()
+            if event_type not in {
+                "scored",
+                "ranked",
+                "selected",
+                "submitted",
+                "filled",
+                "partial",
+                "monitor_safe",
+                "monitor_watch",
+                "monitor_close",
+                "monitor_rotate",
+                "operator_keep",
+                "operator_close",
+                "operator_override",
+                "broker_rejected",
+                "guardrail_blocked",
+            }:
+                if source == "monitor" and event_type in {"watch", "close", "rotate"}:
+                    event_type = f"monitor_{event_type}"
+                elif source == "operator" and event_type in {"keep", "close", "override"}:
+                    event_type = f"operator_{event_type}"
+                elif source == "broker" and str(row.get("status") or "").lower() in {"rejected", "error"}:
+                    event_type = "broker_rejected"
+                else:
+                    event_type = default_type
+            if filters.event_types and event_type not in filters.event_types:
+                continue
+            if filters.sources and source not in filters.sources:
+                continue
+            if not (datetime.combine(filters.from_date, time.min, tzinfo=timezone.utc) <= event_at < datetime.combine(filters.to_date + timedelta(days=1), time.min, tzinfo=timezone.utc)):
+                continue
+            details = {key: value for key, value in row.items() if value != ""}
+            event = _event_record(
+                {
+                    "id": event_id,
+                    "position_id": f"paper:{symbol}" if symbol else "",
+                    "event_at": event_at,
+                    "event_type": event_type,
+                    "source": source,
+                    "details": details,
+                }
+            )
+            events.append(event)
+            event_id += 1
+    events.sort(key=lambda item: (item["event_at"], item["id"]), reverse=True)
+    return events
+
+
+def _artifact_query(root: Path | None, filters: JournalFilters, cursor: str | None, limit: int) -> dict[str, Any]:
+    if root is None:
+        return {"events": [], "next_cursor": None, "total_in_range": 0}
+    events = _artifact_events(root, filters)
+    decoded = decode_cursor(cursor)
+    if decoded:
+        cursor_time, cursor_id = decoded
+        events = [
+            event
+            for event in events
+            if datetime.fromisoformat(event["event_at"].replace("Z", "+00:00")) < cursor_time or (datetime.fromisoformat(event["event_at"].replace("Z", "+00:00")) == cursor_time and event["id"] < cursor_id)
+        ]
+    cap = _limit(limit)
+    page = events[:cap]
+    next_cursor = encode_cursor(page[-1]["event_at"], page[-1]["id"]) if len(events) > cap and page else None
+    return {"events": page, "next_cursor": next_cursor, "total_in_range": len(events)}
+
+
+def query(filters: JournalFilters, cursor: str | None = None, limit: int = DEFAULT_LIMIT, *, target: Engine | None = None, root: Path | None = None) -> dict[str, Any]:
     engine = target or _engine()
     cap = _limit(limit)
     if engine is None:
-        return {"events": [], "next_cursor": None, "total_in_range": 0}
+        return _artifact_query(root, filters, cursor, cap)
     try:
         conditions = _conditions(filters, cursor)
         base = select(position_events).where(*conditions)
@@ -175,11 +265,11 @@ def query(filters: JournalFilters, cursor: str | None = None, limit: int = DEFAU
             next_cursor = encode_cursor(last["event_at"], last["id"])
         return {"events": events, "next_cursor": next_cursor, "total_in_range": len(all_rows)}
     except Exception:
-        return {"events": [], "next_cursor": None, "total_in_range": 0}
+        return _artifact_query(root, filters, cursor, cap)
 
 
-def iter_csv(filters: JournalFilters, *, target: Engine | None = None) -> Iterable[str]:
-    payload = query(filters, cursor=None, limit=CSV_LIMIT, target=target)
+def iter_csv(filters: JournalFilters, *, target: Engine | None = None, root: Path | None = None) -> Iterable[str]:
+    payload = query(filters, cursor=None, limit=CSV_LIMIT, target=target, root=root)
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["id", "event_at", "symbol", "event_type", "source", "details_summary", "position_id"])
     writer.writeheader()
