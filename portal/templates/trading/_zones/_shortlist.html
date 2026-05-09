@@ -1,9 +1,49 @@
-<section class="zone trading-zone" data-zone="model-shortlist">
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import number, side %}
+<section class="zone trading-zone" data-zone="model-shortlist" id="model-shortlist">
   <div class="zone__header">
     <span>Model Shortlist</span>
-    <span class="zone__header-meta">SPEC 19</span>
+    <span class="zone__header-meta">{{ candidate_pool_count }} candidates · L/S {{ candidate_pool_action_counts.get("Long", 0) }}/{{ candidate_pool_action_counts.get("Short", 0) }}</span>
   </div>
-  <div class="zone__body zone__body--stub">
-    <p>Stub: top model-ranked candidates with side and sector filters will appear here.</p>
+  <div class="zone__body">
+    <details data-key="model-shortlist" open>
+      <summary class="details-summary">Show ranked candidate pool</summary>
+      <table class="data shortlist-table">
+        <thead>
+          <tr>
+            <th class="num">Rank</th>
+            <th>Symbol</th>
+            <th>Bias</th>
+            <th class="num">Score</th>
+            <th class="num">Expected edge</th>
+            <th>Sector</th>
+            <th>In basket?</th>
+            <th>Status</th>
+            <th>Excluded reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not candidate_pool_rows %}
+            <tr>
+              <td colspan="9" class="empty small">No model shortlist artifact found. Run the paper trader to generate the 50-row candidate pool.</td>
+            </tr>
+          {% else %}
+            {% for row in candidate_pool_rows %}
+              <tr>
+                <td>{{ number(row.candidate_rank or loop.index, 0) }}</td>
+                <td class="num-l">{{ row.symbol }}</td>
+                <td>{{ side(row.trade_action or row.side) }}</td>
+                <td>{{ number(row.risk_adjusted_score or 0, 4) }}</td>
+                <td>{{ number(row.expected_trade_return or 0, 4) }}</td>
+                <td>{{ row.sector or "Not available" }}</td>
+                <td>{{ "Yes" if row.symbol in basket_symbols else "-" }}</td>
+                <td>{{ pill(row.trade_quality_status or "pending") }}</td>
+                <td>{{ row.trade_quality_reason or row.no_decision_reason or "-" }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </details>
   </div>
 </section>

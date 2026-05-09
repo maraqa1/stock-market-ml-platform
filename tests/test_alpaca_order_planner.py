@@ -1,7 +1,7 @@
 import pandas as pd
 
 from stockml.trading.config import AlpacaConfig
-from stockml.trading.order_planner import build_order_plan, filter_tradeable_signals
+from stockml.trading.order_planner import build_candidate_pool, build_order_plan, filter_tradeable_signals
 
 
 def config(**overrides):
@@ -170,6 +170,49 @@ def test_build_order_plan_keeps_rejected_short_rows_visible_for_operator_review(
     assert set(short_rows["trade_quality_status"]) == {"rejected"}
     assert short_rows["order_eligible"].eq(False).all()
     assert short_rows["trade_quality_reason"].str.contains("market_cap_below_minimum").all()
+
+
+def test_candidate_pool_uses_ranked_long_and_short_shortlist_when_shorting_enabled():
+    signals = pd.DataFrame(
+        [
+            trade_signal(
+                f"T{i:02d}",
+                "No Decision",
+                score=0.1,
+                rank_overall=i + 1,
+                side_probability=0.7,
+                probability_edge=0.2,
+                expected_trade_return=0.02,
+            )
+            for i in range(12)
+        ]
+    )
+    pool = build_candidate_pool(signals, config(candidate_pool_size=10, max_orders=4, allow_short_selling=True))
+
+    assert len(pool) == 10
+    assert pool["trade_action"].value_counts().to_dict() == {"Long": 5, "Short": 5}
+    assert set(pool.loc[pool["trade_action"].eq("Short"), "side"]) == {"sell"}
+
+
+def test_candidate_pool_uses_top_ranked_long_shortlist_when_shorting_disabled():
+    signals = pd.DataFrame(
+        [
+            trade_signal(
+                f"T{i:02d}",
+                "No Decision",
+                score=0.1,
+                rank_overall=i + 1,
+                side_probability=0.7,
+                probability_edge=0.2,
+                expected_trade_return=0.02,
+            )
+            for i in range(12)
+        ]
+    )
+    pool = build_candidate_pool(signals, config(candidate_pool_size=10, max_orders=4, allow_short_selling=False))
+
+    assert len(pool) == 10
+    assert pool["trade_action"].value_counts().to_dict() == {"Long": 10}
 
 
 def test_build_order_plan_uses_notional_paper_orders():

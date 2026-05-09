@@ -194,6 +194,9 @@ def trading_context(root: Path) -> dict:
     tracking_status_counts = _status_counts(tracking, "alpaca_status")
     dry_run = not config.submit_orders or bool(status_counts.get("dry_run", 0))
     position_summary = _position_summary(positions)
+    basket_symbols = []
+    if not plan.empty and "symbol" in plan.columns:
+        basket_symbols = sorted({str(symbol).upper() for symbol in plan["symbol"].dropna()})
 
     guardrails = [
         {"label": "Submit orders", "value": "Disabled" if not config.submit_orders else "Enabled", "status": "safe" if not config.submit_orders else "warning"},
@@ -213,6 +216,7 @@ def trading_context(root: Path) -> dict:
         "candidate_pool_count": len(candidate_pool),
         "candidate_pool_status_counts": _status_counts(candidate_pool, "trade_quality_status"),
         "candidate_pool_action_counts": _action_counts(candidate_pool),
+        "basket_symbols": basket_symbols,
         "orders_submitted": int(status_counts.get("submitted", 0)),
         "orders_rejected": int(status_counts.get("error", 0) + status_counts.get("rejected", 0)),
         "orders_tracked": len(tracking),

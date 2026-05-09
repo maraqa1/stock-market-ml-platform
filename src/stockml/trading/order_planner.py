@@ -133,6 +133,39 @@ def filter_tradeable_signals(signals: pd.DataFrame, config: AlpacaConfig, limit:
     return frame.head(limit).drop(columns=["_sort_score"])
 
 
+def _ranked_shortlist(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
+    if signals.empty or "ticker" not in signals.columns:
+        return pd.DataFrame()
+    if "rank_overall" not in signals.columns:
+        return filter_tradeable_signals(signals, config, limit=max(config.candidate_pool_size, config.max_orders))
+
+    frame = signals.copy()
+    frame["rank_overall"] = pd.to_numeric(frame["rank_overall"], errors="coerce")
+    frame = frame[frame["rank_overall"].notna()].copy()
+    if frame.empty:
+        return filter_tradeable_signals(signals, config, limit=max(config.candidate_pool_size, config.max_orders))
+
+    size = max(config.candidate_pool_size, config.max_orders)
+    if config.allow_short_selling:
+        long_slots = (size + 1) // 2
+        short_slots = size // 2
+        longs = frame.sort_values("rank_overall", ascending=True).head(long_slots).copy()
+        shorts = frame.sort_values("rank_overall", ascending=False).head(short_slots).copy()
+        longs["trade_action"] = "Long"
+        shorts["trade_action"] = "Short"
+        shortlist = pd.concat([longs, shorts], ignore_index=False)
+    else:
+        shortlist = frame.sort_values("rank_overall", ascending=True).head(size).copy()
+        shortlist["trade_action"] = "Long"
+
+    shortlist["side_probability"] = _numeric_column(shortlist, "side_probability")
+    shortlist["probability_edge"] = _numeric_column(shortlist, "probability_edge")
+    shortlist["risk_adjusted_score"] = _numeric_column(shortlist, "risk_adjusted_score")
+    shortlist["_sort_score"] = shortlist["risk_adjusted_score"].abs()
+    shortlist = shortlist.sort_values(["trade_action", "rank_overall"], ascending=[True, True])
+    return shortlist.drop(columns=["_sort_score"], errors="ignore").head(size)
+
+
 def _limit_sector_concentration(frame: pd.DataFrame, config: AlpacaConfig, limit: int | None = None) -> pd.DataFrame:
     if "sector" not in frame.columns or frame.empty:
         return frame
@@ -162,7 +195,7 @@ def build_candidate_pool(
     price_snapshot: Optional[pd.DataFrame] = None,
     metadata: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    filtered = filter_tradeable_signals(signals, config, limit=max(config.candidate_pool_size, config.max_orders))
+    filtered = _ranked_shortlist(signals, config)
     if filtered.empty:
         return pd.DataFrame()
     gated = apply_trade_quality_gate(filtered, config, price_snapshot=price_snapshot, metadata=metadata)
