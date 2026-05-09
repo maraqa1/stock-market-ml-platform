@@ -52,6 +52,25 @@ def test_lifecycle_routes_redirect_to_journal(client):
         assert response.headers["Location"].endswith("/journal")
 
 
+def test_activity_journal_page_and_api_contract(client):
+    response = client.get("/journal")
+    assert response.status_code == 200
+    assert b"Activity Journal" in response.data
+    assert b"data-journal-table" in response.data
+    assert b"No events match the current filters." in response.data
+    assert b"trading/_partials/lineage.html" not in response.data
+
+    payload_response = client.get("/api/journal/events")
+    assert payload_response.status_code == 200
+    payload = payload_response.get_json()
+    assert {"events", "next_cursor", "total_in_range"}.issubset(payload)
+
+    csv_response = client.get("/api/journal/events.csv")
+    assert csv_response.status_code == 200
+    assert csv_response.mimetype == "text/csv"
+    assert b"id,event_at,symbol,event_type,source,details_summary,position_id" in csv_response.data
+
+
 def test_base_loads_spec00_theme(client):
     response = client.get("/dev/styleguide")
     assert response.status_code == 200

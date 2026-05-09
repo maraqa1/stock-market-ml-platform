@@ -1,0 +1,24 @@
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import time_utc %}
+{% if not journal.events %}
+  <tr>
+    <td colspan="5" class="empty small">No events match the current filters.</td>
+  </tr>
+{% else %}
+  {% for event in journal.events %}
+    <tr data-event-id="{{ event.id }}">
+      <td class="num-l" title="{{ event.event_at }}">{{ time_utc(event.event_at) }}</td>
+      <td class="num-l col-pinned" data-sort-value="{{ event.symbol }}"><a href="/symbols/{{ event.symbol }}">{{ event.symbol }}</a></td>
+      <td>{{ event.event_type }}</td>
+      <td>{{ pill(event.source or "info") }}</td>
+      <td>{{ event.details_summary }}</td>
+    </tr>
+  {% endfor %}
+  {% if journal.next_cursor %}
+    <tr id="js-load-more" data-next-cursor="{{ journal.next_cursor }}">
+      <td colspan="5"><a class="btn btn-ghost btn-sm" href="{{ request.path }}?{{ request.query_string.decode() }}&cursor={{ journal.next_cursor }}">Load older</a></td>
+    </tr>
+  {% else %}
+    <tr id="js-load-more"><td colspan="5" class="empty small">End of results.</td></tr>
+  {% endif %}
+{% endif %}

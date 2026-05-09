@@ -584,6 +584,41 @@ th.numeric {
   overflow-x: auto;
 }
 
+.journal-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: end;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.journal-filters label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.journal-filters input,
+.journal-filters select {
+  min-width: 140px;
+  min-height: 28px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+table.data.dense tbody td {
+  height: var(--row-height-dense);
+}
+
 .zone-header,
 thead th {
   background: var(--bg-surface-raised);

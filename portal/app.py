@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
 from markupsafe import Markup, escape
 
 from portal.services.database_reader import db_available
@@ -12,6 +12,7 @@ from portal.services.data_quality_service import data_quality_context
 from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
+from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
 from portal.services.model_validation_service import model_validation_context
 from portal.services.search import search
 from portal.services.signal_service import no_decision_context, signal_context
@@ -275,7 +276,45 @@ def create_app(root: Path | None = None) -> Flask:
 
     @app.route("/journal")
     def journal():
-        return render_template("trading_lifecycle.html", title="Activity Journal", **lifecycle_context(root_path()))
+        filters = filters_from_args(request.args)
+        payload = journal_query(filters, cursor=request.args.get("cursor"), limit=request.args.get("limit", 200))
+        return render_template(
+            "journal/index.html",
+            title="Activity Journal",
+            filters=filters,
+            journal=payload,
+            event_types=[
+                "scored",
+                "ranked",
+                "selected",
+                "submitted",
+                "filled",
+                "partial",
+                "monitor_safe",
+                "monitor_watch",
+                "monitor_close",
+                "monitor_rotate",
+                "operator_keep",
+                "operator_close",
+                "operator_override",
+                "broker_rejected",
+                "guardrail_blocked",
+            ],
+        )
+
+    @app.route("/api/journal/events")
+    def api_journal_events():
+        filters = filters_from_args(request.args)
+        return jsonify(journal_query(filters, cursor=request.args.get("cursor"), limit=request.args.get("limit", 200)))
+
+    @app.route("/api/journal/events.csv")
+    def api_journal_events_csv():
+        filters = filters_from_args(request.args)
+        return Response(
+            journal_iter_csv(filters),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=activity_journal.csv"},
+        )
 
     @app.route("/shortlist")
     def shortlist():

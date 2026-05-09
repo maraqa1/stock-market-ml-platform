@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import time_utc %}
+{% from "_macros/table.html" import table_toolbar %}
+{% block content %}
+<section class="zone journal-zone">
+  <div class="zone__header">
+    <span>Activity Journal</span>
+    <span class="zone__header-meta">{{ journal.total_in_range }} events in selected range</span>
+  </div>
+  <div class="zone__body">
+    <form class="journal-filters" method="get">
+      <label><span>From</span><input type="date" name="from" value="{{ filters.from_date }}"></label>
+      <label><span>To</span><input type="date" name="to" value="{{ filters.to_date }}"></label>
+      <label><span>Symbol</span><input type="search" name="symbol" value="{{ filters.symbol }}" placeholder="Symbol"></label>
+      <label><span>Source</span>
+        <select name="source" multiple>
+          {% for source in ["pipeline", "monitor", "broker", "operator", "guardrail", "paper_trader", "alpaca_tracking"] %}
+            <option value="{{ source }}" {% if source in filters.sources %}selected{% endif %}>{{ source }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label><span>Event</span>
+        <select name="event_type" multiple>
+          {% for event_type in event_types %}
+            <option value="{{ event_type }}" {% if event_type in filters.event_types %}selected{% endif %}>{{ event_type }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn-primary btn-sm" type="submit">Apply</button>
+      <a class="btn btn-ghost btn-sm" href="/journal">Reset</a>
+      <a class="btn btn-ghost btn-sm" href="/api/journal/events.csv?{{ request.query_string.decode() }}">Export CSV</a>
+    </form>
+    {{ table_toolbar("Filter activity journal", mode="server") }}
+    <div class="table-scroll">
+      <table class="data dense journal-table" data-journal-table data-table="activity-journal">
+        <thead>
+          <tr>
+            <th class="num-l" data-sortable data-sort-key="event_at">Time</th>
+            <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
+            <th data-sortable data-sort-key="event_type">Event</th>
+            <th>Source</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody data-journal-body>
+          {% include "journal/rows.html" %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}
