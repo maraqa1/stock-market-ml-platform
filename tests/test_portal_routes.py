@@ -80,6 +80,15 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b"js/keyboard.js" in response.data
 
 
+def test_theme_overrides_legacy_sidebar_grid_layout(client):
+    response = client.get("/static/css/theme.css")
+    assert response.status_code == 200
+    assert b".app-layout" in response.data
+    assert b"display: block;" in response.data
+    assert b".global-header-strip" in response.data
+    assert b"width: 100%;" in response.data
+
+
 def test_search_api_returns_symbol_payload(client):
     response = client.get("/api/search?q=tsl&limit=5")
     assert response.status_code == 200
