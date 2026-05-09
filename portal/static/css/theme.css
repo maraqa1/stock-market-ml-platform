@@ -573,6 +573,10 @@ tbody tr:hover {
 .pill-approved,
 .pill-filled,
 .pill-success,
+.dot-safe,
+.dot-approved,
+.dot-filled,
+.dot-success,
 .badge.Long,
 .badge.decision_grade {
   border-color: var(--status-success-border);
@@ -584,6 +588,10 @@ tbody tr:hover {
 .pill-trimmed,
 .pill-partial,
 .pill-warning,
+.dot-watch,
+.dot-trimmed,
+.dot-partial,
+.dot-warning,
 .badge.reduced {
   border-color: var(--status-warning-border);
   background: var(--status-warning-bg);
@@ -594,6 +602,10 @@ tbody tr:hover {
 .pill-rejected,
 .pill-failed,
 .pill-error,
+.dot-close,
+.dot-rejected,
+.dot-failed,
+.dot-error,
 .badge.rejected,
 .badge.diagnostic_only {
   border-color: var(--status-danger-border);
@@ -603,7 +615,10 @@ tbody tr:hover {
 
 .pill-rotate,
 .pill-submitted,
-.pill-info {
+.pill-info,
+.dot-rotate,
+.dot-submitted,
+.dot-info {
   border-color: var(--status-info-border);
   background: var(--status-info-bg);
   color: var(--status-info);
@@ -611,6 +626,7 @@ tbody tr:hover {
 
 .pill-short,
 .side-short,
+.dot-short,
 .badge.Short {
   border-color: var(--status-violet-border);
   background: var(--status-violet-bg);

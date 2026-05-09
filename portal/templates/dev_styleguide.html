@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros/pill.html" import pill, dot %}
 {% block content %}
 <section class="spec00-styleguide">
   <div class="header-strip">
@@ -85,17 +86,30 @@
     </div>
     <div class="zone__body" style="padding: var(--space-4);">
       <div class="pill-row">
-        <span class="pill pill-safe">Safe</span>
-        <span class="pill pill-watch">Watch</span>
-        <span class="pill pill-close">Close</span>
-        <span class="pill pill-rotate">Rotate</span>
-        <span class="pill pill-approved">Approved</span>
-        <span class="pill pill-trimmed">Trimmed</span>
-        <span class="pill pill-rejected">Rejected</span>
-        <span class="pill pill-submitted">Submitted</span>
-        <span class="pill pill-filled">Filled</span>
-        <span class="pill pill-failed">Failed</span>
-        <span class="pill pill-short">Short</span>
+        {{ pill('safe') }}
+        {{ pill('watch') }}
+        {{ pill('close') }}
+        {{ pill('rotate') }}
+        {{ pill('approved') }}
+        {{ pill('trimmed') }}
+        {{ pill('rejected') }}
+        {{ pill('submitted') }}
+        {{ pill('filled') }}
+        {{ pill('failed') }}
+        {{ pill('short') }}
+      </div>
+      <div class="pill-row" style="margin-top: var(--space-3);">
+        {{ dot('safe') }}
+        {{ dot('watch') }}
+        {{ dot('close') }}
+        {{ dot('rotate') }}
+        {{ dot('approved') }}
+        {{ dot('trimmed') }}
+        {{ dot('rejected') }}
+        {{ dot('submitted') }}
+        {{ dot('filled') }}
+        {{ dot('failed') }}
+        {{ dot('short') }}
       </div>
     </div>
   </div>
@@ -142,7 +156,7 @@
             <td class="num">142.00</td>
             <td class="num">143.18</td>
             <td class="num text-up">+5.90</td>
-            <td><span class="pill pill-safe">Safe</span></td>
+            <td>{{ pill('safe') }}</td>
           </tr>
           <tr class="row-clickable row-selected">
             <td class="num-l">GOOG</td>
@@ -151,7 +165,7 @@
             <td class="num">171.25</td>
             <td class="num">173.40</td>
             <td class="num text-down">−4.30</td>
-            <td><span class="pill pill-watch">Watch</span></td>
+            <td>{{ pill('watch') }}</td>
           </tr>
           <tr class="row-clickable">
             <td class="num-l">AKAN</td>
@@ -160,7 +174,7 @@
             <td class="num">29.10</td>
             <td class="num">28.40</td>
             <td class="num">0.00</td>
-            <td><span class="pill pill-rejected">Rejected</span></td>
+            <td>{{ pill('rejected') }}</td>
           </tr>
         </tbody>
       </table>

@@ -33,6 +33,15 @@ def test_styleguide_supports_light_theme(client):
     assert b"Theme System" in response.data
 
 
+def test_styleguide_renders_shared_status_pill_and_dot_macros(client):
+    response = client.get("/dev/styleguide")
+    assert response.status_code == 200
+    assert b"pill pill-safe" in response.data
+    assert b"pill pill-rejected" in response.data
+    assert b"dot dot-safe" in response.data
+    assert b"dot dot-rejected" in response.data
+
+
 def test_health_returns_json(client):
     response = client.get("/health")
     assert response.status_code == 200

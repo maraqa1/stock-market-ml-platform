@@ -1,0 +1,65 @@
+{% macro pill(value, label=None) -%}
+  {%- set raw = (value|string)|trim -%}
+  {%- set key = raw|lower|replace(' ', '_')|replace('-', '_') -%}
+  {%- set classes = {
+    'safe': 'pill-safe',
+    'monitor_safe': 'pill-safe',
+    'approved': 'pill-approved',
+    'success': 'pill-success',
+    'filled': 'pill-filled',
+    'watch': 'pill-watch',
+    'monitor_watch': 'pill-watch',
+    'trimmed': 'pill-trimmed',
+    'reduced': 'pill-trimmed',
+    'partial': 'pill-partial',
+    'pending': 'pill-warning',
+    'warning': 'pill-warning',
+    'close': 'pill-close',
+    'monitor_close': 'pill-close',
+    'rejected': 'pill-rejected',
+    'risk_rejected': 'pill-rejected',
+    'failed': 'pill-failed',
+    'error': 'pill-error',
+    'rotate': 'pill-rotate',
+    'monitor_rotate': 'pill-rotate',
+    'replacement': 'pill-rotate',
+    'submitted': 'pill-submitted',
+    'order_submitted': 'pill-submitted',
+    'info': 'pill-info',
+    'short': 'pill-short'
+  } -%}
+  <span class="pill {{ classes.get(key, 'pill-info') }}">{{ label or raw|replace('_', ' ')|title }}</span>
+{%- endmacro %}
+
+{% macro dot(value, label=None) -%}
+  {%- set raw = (value|string)|trim -%}
+  {%- set key = raw|lower|replace(' ', '_')|replace('-', '_') -%}
+  {%- set classes = {
+    'safe': 'dot-safe',
+    'monitor_safe': 'dot-safe',
+    'approved': 'dot-approved',
+    'success': 'dot-success',
+    'filled': 'dot-filled',
+    'watch': 'dot-watch',
+    'monitor_watch': 'dot-watch',
+    'trimmed': 'dot-trimmed',
+    'reduced': 'dot-trimmed',
+    'partial': 'dot-partial',
+    'pending': 'dot-warning',
+    'warning': 'dot-warning',
+    'close': 'dot-close',
+    'monitor_close': 'dot-close',
+    'rejected': 'dot-rejected',
+    'risk_rejected': 'dot-rejected',
+    'failed': 'dot-failed',
+    'error': 'dot-error',
+    'rotate': 'dot-rotate',
+    'monitor_rotate': 'dot-rotate',
+    'replacement': 'dot-rotate',
+    'submitted': 'dot-submitted',
+    'order_submitted': 'dot-submitted',
+    'info': 'dot-info',
+    'short': 'dot-short'
+  } -%}
+  <span class="dot {{ classes.get(key, 'dot-info') }}" aria-hidden="true"></span><span>{{ label or raw|replace('_', ' ')|title }}</span>
+{%- endmacro %}
