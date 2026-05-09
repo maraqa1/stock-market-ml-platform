@@ -435,6 +435,8 @@ table {
 table.data {
   width: 100%;
   border-collapse: collapse;
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-size: var(--fs-13);
 }
 
@@ -452,10 +454,15 @@ table.data thead th {
   white-space: nowrap;
 }
 
+table.data tbody tr {
+  background: var(--bg-surface);
+}
+
 table.data tbody td {
   height: var(--row-height);
   padding: 0 var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
   color: var(--text-primary);
   vertical-align: middle;
   white-space: nowrap;
@@ -473,8 +480,23 @@ table.data tbody tr.row-clickable:hover {
   background: var(--bg-row-hover);
 }
 
+table.data tbody tr.row-clickable:hover td {
+  background: var(--bg-row-hover);
+}
+
 table.data tbody tr.row-selected {
   background: var(--bg-row-selected);
+}
+
+table.data tbody tr.row-selected td {
+  background: var(--bg-row-selected);
+}
+
+.zone__body table.data,
+.zone__body table.data tbody,
+.zone__body table.data tr,
+.zone__body table.data td {
+  color: var(--text-primary);
 }
 
 table.data .num,
