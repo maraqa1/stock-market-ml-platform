@@ -82,6 +82,21 @@ def api_client():
         [{"symbol": "AAA", "qty": 2, "market_value": 520, "cost_basis": 500, "unrealized_pl": 20}],
     )
     _write_csv(
+        root / "data" / "trading" / "operator_actions" / "operator_position_actions_1.csv",
+        [
+            {
+                "timestamp": "2026-05-10T14:02:39",
+                "symbol": "AAA",
+                "operator_action": "close",
+                "status": "submitted",
+                "message": "manual_close_submitted",
+                "order_id": "close-aaa",
+                "client_order_id": "client-close-aaa",
+                "alpaca_status": "accepted",
+            }
+        ],
+    )
+    _write_csv(
         root / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
         [
             {
@@ -132,10 +147,12 @@ def test_pipeline_history_contract(api_client):
 
 def test_positions_contract(api_client):
     payload = _json(api_client, "/api/trading/positions")
-    assert set(payload) == {"source", "refreshed_at", "summary", "positions"}
+    assert set(payload) == {"source", "refreshed_at", "summary", "pending_close_order_count", "positions"}
     assert isinstance(payload["positions"], list)
     assert payload["summary"]["position_count"] == 1
     assert payload["positions"][0]["position_id"] == "paper:AAA"
+    assert payload["pending_close_order_count"] == 1
+    assert payload["positions"][0]["broker_order"]["label"] == "Close order accepted"
 
 
 def test_position_lineage_contract(api_client):
@@ -184,7 +201,9 @@ def test_positions_body_partial_contract(api_client):
     response = api_client.get("/trading/_partials/positions-body")
     assert response.status_code == 200
     assert b"data-position-id=\"paper:AAA\"" in response.data
-    assert b"data-close-position" in response.data
+    assert b"Close order accepted" in response.data
+    assert b"Waiting for broker fill." in response.data
+    assert b"close-aaa" in response.data
 
 
 def test_position_lineage_fragment_contract(api_client):

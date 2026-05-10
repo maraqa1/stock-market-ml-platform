@@ -250,8 +250,11 @@ def _pipeline_history_summary(run: dict[str, Any], stages: list[dict[str, Any]])
 
 def positions_context(root: Path) -> dict[str, Any]:
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
+    actions_file = latest_file(root, "operator_actions", "operator_position_actions_*.csv")
     positions = safe_read_csv(positions_file, nrows=1000)
+    actions = safe_read_csv(actions_file, nrows=1000)
     rows = _records(positions)
+    pending_close_orders = _latest_close_orders_by_symbol(actions)
     position_ids: list[str] = []
     for row in rows:
         symbol = str(row.get("symbol") or "").upper()
@@ -259,6 +262,9 @@ def positions_context(root: Path) -> dict[str, Any]:
         if row["position_id"]:
             position_ids.append(row["position_id"])
         row["status"] = "open"
+        row["broker_order"] = pending_close_orders.get(symbol)
+        if row["broker_order"]:
+            row["status"] = row["broker_order"]["status_key"]
         qty = _float(row.get("qty"))
         cost_basis = _float(row.get("cost_basis"))
         row["entry_price"] = _float(row.get("avg_entry_price")) or (cost_basis / qty if qty else None)
@@ -269,8 +275,61 @@ def positions_context(root: Path) -> dict[str, Any]:
         "source": "csv_artifacts",
         "refreshed_at": _csv_timestamp(positions_file),
         "summary": _position_summary(positions),
+        "pending_close_order_count": len(pending_close_orders),
         "positions": rows,
     }
+
+
+def _latest_close_orders_by_symbol(actions: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    if actions.empty or "symbol" not in actions.columns:
+        return {}
+    frame = actions.copy()
+    action_col = frame.get("operator_action", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+    frame = frame[action_col == "close"].copy()
+    if frame.empty:
+        return {}
+    if "timestamp" in frame.columns:
+        frame = frame.sort_values("timestamp")
+
+    pending_statuses = {"accepted", "new", "pending_new", "pending_replace", "submitted"}
+    partial_statuses = {"partially_filled", "partial"}
+    out: dict[str, dict[str, Any]] = {}
+    for row in _records(frame):
+        symbol = str(row.get("symbol") or "").upper()
+        if not symbol:
+            continue
+        alpaca_status = str(row.get("alpaca_status") or "").strip().lower()
+        status = str(row.get("status") or "").strip().lower()
+        effective_status = alpaca_status or status
+        order_id = str(row.get("order_id") or "").strip()
+        if effective_status in partial_statuses:
+            out[symbol] = {
+                "status_key": "partial",
+                "label": "Close partially filled",
+                "detail": "Broker received the close order; partial fill reported.",
+                "order_id": order_id,
+                "client_order_id": row.get("client_order_id") or "",
+                "submitted_at": row.get("timestamp") or "",
+            }
+        elif effective_status in pending_statuses and order_id:
+            out[symbol] = {
+                "status_key": "submitted",
+                "label": "Close order accepted",
+                "detail": "Waiting for broker fill.",
+                "order_id": order_id,
+                "client_order_id": row.get("client_order_id") or "",
+                "submitted_at": row.get("timestamp") or "",
+            }
+        elif effective_status == "filled":
+            out[symbol] = {
+                "status_key": "filled",
+                "label": "Close fill received",
+                "detail": "Broker reported the close order filled; waiting for positions sync.",
+                "order_id": order_id,
+                "client_order_id": row.get("client_order_id") or "",
+                "submitted_at": row.get("timestamp") or "",
+            }
+    return out
 
 
 def _float(value: Any) -> float | None:

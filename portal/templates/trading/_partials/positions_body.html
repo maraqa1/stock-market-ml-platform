@@ -15,9 +15,25 @@
       <td data-sort-value="{{ row.unrealized_pl or 0 }}">{{ signed_money(row.unrealized_pl or 0) }}</td>
       <td data-sort-value="{{ row.unrealized_plpc or 0 }}">{{ signed_pct(row.unrealized_plpc or 0) }}</td>
       <td class="num" data-sort-value="0">Open</td>
-      <td>{{ pill(row.status or "safe") }}</td>
       <td>
-        <button class="btn btn-danger btn-sm" type="button" data-close-position data-position-id="{{ row.position_id }}" data-symbol="{{ row.symbol }}" data-qty="{{ row.qty }}" data-market-value="{{ row.market_value }}">Close</button>
+        {% if row.broker_order %}
+          {{ pill(row.broker_order.status_key, row.broker_order.label) }}
+          <div class="order-state text-secondary">
+            {{ row.broker_order.detail }}
+            {% if row.broker_order.order_id %}
+              <span class="num-l">ID {{ row.broker_order.order_id }}</span>
+            {% endif %}
+          </div>
+        {% else %}
+          {{ pill(row.status or "safe") }}
+        {% endif %}
+      </td>
+      <td>
+        {% if row.broker_order and row.broker_order.status_key in ["submitted", "partial"] %}
+          <button class="btn btn-ghost btn-sm" type="button" disabled title="{{ row.broker_order.detail }}">Waiting</button>
+        {% else %}
+          <button class="btn btn-danger btn-sm" type="button" data-close-position data-position-id="{{ row.position_id }}" data-symbol="{{ row.symbol }}" data-qty="{{ row.qty }}" data-market-value="{{ row.market_value }}">Close</button>
+        {% endif %}
       </td>
     </tr>
   {% endfor %}
