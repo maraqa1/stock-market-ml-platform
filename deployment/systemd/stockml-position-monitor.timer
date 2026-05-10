@@ -1,8 +1,8 @@
 [Unit]
-Description=Review StockML paper positions every 10 minutes during market hours
+Description=Review StockML paper positions every 30 seconds during market hours
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 14..21:0/10:00 UTC
+OnCalendar=Mon..Fri *-*-* 14..21:*:0/30 UTC
 Persistent=true
 Unit=stockml-position-monitor.service
 

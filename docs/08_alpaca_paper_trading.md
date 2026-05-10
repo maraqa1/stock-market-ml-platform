@@ -84,7 +84,7 @@ Default behavior is safe:
 - `STOCKML_ALPACA_SUBMIT_ORDERS=false` prevents Alpaca order submission even if the auto-trader timer runs.
 - The auto-trader timer runs Monday to Friday at `14:45 UTC`.
 - The tracking timer refreshes order and position status hourly during the US market session window.
-- The position monitor timer reviews open paper positions every 10 minutes during the market window and writes hold/watch/close decisions.
+- The position monitor timer reviews open paper positions every 30 seconds during the market window and writes hold/watch/close decisions.
 
 To allow automated paper-order submission, both flags must be explicitly enabled in the VM `.env`:
 

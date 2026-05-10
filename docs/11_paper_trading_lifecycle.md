@@ -48,7 +48,7 @@ cd /home/massa/stock-market-ml-platform
 sudo bash deployment/vm/install_alpaca_auto_trader.sh
 ```
 
-This installs `stockml-position-monitor.timer`, which runs every 10 minutes during the market window. Each run refreshes Alpaca paper order/position tracking and writes:
+This installs `stockml-position-monitor.timer`, which runs every 30 seconds during the market window. Each run refreshes Alpaca paper order/position tracking and writes:
 
 - latest tracking snapshot
 - latest paper positions snapshot

@@ -22,6 +22,14 @@ def _next_interval(minutes: int = 10) -> datetime:
     return base.replace(minute=minute)
 
 
+def _next_seconds_interval(seconds: int) -> datetime:
+    now = datetime.now(timezone.utc)
+    base = now.replace(microsecond=0)
+    remainder = base.second % seconds
+    delta = seconds - remainder if remainder else seconds
+    return base + timedelta(seconds=delta)
+
+
 def _signed_class(value: float) -> str:
     if value > 0:
         return "text-up"
@@ -45,13 +53,13 @@ def trading_header_context(root: Path) -> dict[str, Any]:
 def trading_cadence_context(root: Path) -> dict[str, Any]:
     pipeline = pipeline_current_context(root)
     run = pipeline.get("run") or {}
-    next_monitor = _next_interval(10)
+    next_monitor = _next_seconds_interval(30)
     last_run = run.get("started_at") or run.get("run_id") or "No recorded run"
     return {
         "positions_label": "live (5s)",
-        "monitor_label": "every 10m",
+        "monitor_label": "every 30s",
         "next_monitor_at": next_monitor.isoformat(),
-        "next_monitor_label": next_monitor.strftime("%H:%M UTC"),
+        "next_monitor_label": next_monitor.strftime("%H:%M:%S UTC"),
         "pipeline_label": "nightly",
         "last_run_label": str(last_run),
     }

@@ -252,6 +252,7 @@ def test_trading_page_renders_spec08_09_10_top_of_page(client):
     assert b"Paper Only" in response.data
     assert b"Live Trading Disabled" in response.data
     assert b"data-next-monitor" in response.data
+    assert b"every 30s" in response.data
     assert b"Account Equity" in response.data
     assert b"Today" in response.data
     assert b"Net Exposure" in response.data
