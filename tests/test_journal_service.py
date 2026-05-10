@@ -83,9 +83,10 @@ def test_journal_filters_by_symbol_and_csv_count_matches():
     assert "ord-1" in csv_text
 
 
-def test_journal_falls_back_to_artifacts_when_event_table_missing():
+def test_journal_falls_back_to_artifacts_when_event_table_missing(monkeypatch):
     root = Path(".pytest_workspace") / f"journal_{uuid4().hex}"
     try:
+        monkeypatch.setattr("portal.services.journal._engine", lambda: None)
         path = root / "data" / "trading" / "paper_trade_journal" / "paper_trade_journal_1.csv"
         path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame([{"symbol": "AAA", "lifecycle_state": "submitted", "order_id": "ord-1"}]).to_csv(path, index=False)
