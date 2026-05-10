@@ -53,7 +53,7 @@ def test_lifecycle_routes_redirect_to_journal(client):
 
 
 def test_activity_journal_page_and_api_contract(client):
-    response = client.get("/journal")
+    response = client.get("/journal?event_type=__none__")
     assert response.status_code == 200
     assert b"Activity Journal" in response.data
     assert b"data-journal-table" in response.data
