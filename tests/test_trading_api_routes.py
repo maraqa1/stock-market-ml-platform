@@ -150,7 +150,7 @@ def test_pipeline_artifact_fallback_groups_trading_stages_by_candidate_stamp(api
     payload = _json(api_client, "/api/trading/pipeline/current")
     stages = {stage["stage_name"]: stage for stage in payload["stages"]}
 
-    assert payload["run"]["display_label"] == "Latest Artifacts"
+    assert payload["run"].get("display_label") == "Latest Artifacts"
     assert stages["candidates"]["artifact"] == "08_alpaca_paper_candidate_pool_20260510_134011.csv"
     assert stages["selection"]["status"] == "missing"
     assert stages["submitted"]["status"] == "missing"

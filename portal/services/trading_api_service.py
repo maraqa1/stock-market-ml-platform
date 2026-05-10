@@ -237,6 +237,8 @@ def pipeline_current_context(root: Path) -> dict[str, Any]:
             }
         stages.append(stage)
     source = "database" if all(stage["stage_name"] in by_name for stage in stages) else "database+csv_artifacts"
+    if source != "database" and not run.get("display_label"):
+        run = {**run, "display_label": "Latest Artifacts"}
     return {"source": source, "run": run, "stage_names": list(PIPELINE_STAGE_NAMES), "stages": stages}
 
 
