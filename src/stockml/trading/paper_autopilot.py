@@ -8,6 +8,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
+from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
 from stockml.trading.paper_trader import refresh_order_tracking
 
@@ -40,6 +41,8 @@ def _default_state() -> dict[str, Any]:
         "last_tick_at": "",
         "last_error": "",
         "open_orders": 0,
+        "broker_open_orders": 0,
+        "tracked_open_orders": 0,
         "open_positions": 0,
         "orders_tracked": 0,
         "tracking_path": "",
@@ -145,10 +148,18 @@ def _count_open_orders(tracking: pd.DataFrame) -> int:
     return int(effective.isin(OPEN_ORDER_STATES).sum())
 
 
+def _count_broker_open_orders(cfg: Any) -> int:
+    if not cfg.api_key or not cfg.secret_key:
+        return 0
+    orders = AlpacaPaperClient(cfg).list_orders(status="open")
+    return len(orders)
+
+
 def tick(
     root: Path | None = None,
     *,
     refresh_func: Callable[[], dict[str, Any]] = refresh_order_tracking,
+    broker_open_orders_func: Callable[[Any], int] | None = None,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -169,7 +180,9 @@ def tick(
         refreshed = refresh_func()
         tracking = _read_csv(refreshed.get("tracking_path"))
         positions = _read_csv(refreshed.get("positions_path"))
-        open_orders = _count_open_orders(tracking)
+        tracked_open_orders = _count_open_orders(tracking)
+        broker_open_orders = (broker_open_orders_func or _count_broker_open_orders)(cfg)
+        open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
         if open_orders > 0:
             phase = "waiting_for_fills"
@@ -192,6 +205,8 @@ def tick(
                 "last_error": "",
                 "termination_reason": termination_reason,
                 "open_orders": open_orders,
+                "broker_open_orders": broker_open_orders,
+                "tracked_open_orders": tracked_open_orders,
                 "open_positions": open_positions,
                 "orders_tracked": int(refreshed.get("orders_tracked") or 0),
                 "tracking_path": str(refreshed.get("tracking_path") or ""),

@@ -61,11 +61,14 @@ def test_paper_autopilot_tick_waits_for_fills(monkeypatch, tmp_path):
     state = paper_autopilot.tick(
         tmp_path,
         refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
     )
 
     assert state["status"] == "running"
     assert state["phase"] == "waiting_for_fills"
     assert state["open_orders"] == 1
+    assert state["tracked_open_orders"] == 1
+    assert state["broker_open_orders"] == 0
     assert state["open_positions"] == 1
 
 
@@ -80,8 +83,30 @@ def test_paper_autopilot_tick_terminates_when_flat(monkeypatch, tmp_path):
     state = paper_autopilot.tick(
         tmp_path,
         refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
     )
 
     assert state["status"] == "complete"
     assert state["phase"] == "cycle_complete"
     assert state["termination_reason"] == "no_open_orders_or_positions"
+
+
+def test_paper_autopilot_tick_counts_direct_broker_orders(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1}]).to_csv(positions, index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 5,
+    )
+
+    assert state["status"] == "running"
+    assert state["phase"] == "waiting_for_fills"
+    assert state["open_orders"] == 5
+    assert state["tracked_open_orders"] == 0
+    assert state["broker_open_orders"] == 5
