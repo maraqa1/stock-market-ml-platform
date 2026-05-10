@@ -252,6 +252,7 @@ if (positionsBody) {
   let inFlight = false;
   const banner = document.querySelector("[data-position-stale-banner]");
   const refreshUrl = positionsBody.dataset.refreshUrl;
+  const refreshMs = Number(positionsBody.dataset.refreshMs || 5000);
   window.setInterval(async () => {
     if (document.hidden || inFlight) return;
     inFlight = true;
@@ -271,5 +272,5 @@ if (positionsBody) {
     } finally {
       inFlight = false;
     }
-  }, 5000);
+  }, refreshMs);
 }

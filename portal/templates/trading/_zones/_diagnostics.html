@@ -92,6 +92,28 @@
         {% endfor %}
       </div>
     </details>
+    <details data-key="diagnostics-cadence-settings" open>
+      <summary class="details-summary">Cadence Settings</summary>
+      <form class="settings-grid" method="post" action="/trading/timer-settings" aria-label="Portal cadence settings">
+        <label>
+          <span>Open Positions UI refresh</span>
+          <input class="num-l" type="number" min="5" max="300" step="1" name="positions_refresh_seconds" value="{{ timer_settings.positions_refresh_seconds }}">
+        </label>
+        <label>
+          <span>Candidate monitor interval</span>
+          <input class="num-l" type="number" min="30" max="3600" step="1" name="monitor_interval_seconds" value="{{ timer_settings.monitor_interval_seconds }}">
+        </label>
+        <label>
+          <span>Pipeline strip refresh</span>
+          <input class="num-l" type="number" min="30" max="3600" step="1" name="pipeline_refresh_seconds" value="{{ timer_settings.pipeline_refresh_seconds }}">
+        </label>
+        <button class="btn btn-primary btn-sm" type="submit">Save cadence</button>
+      </form>
+      <div class="empty small">
+        Current: positions {{ timer_settings.positions_label }}, monitor {{ timer_settings.monitor_label }}, pipeline {{ timer_settings.pipeline_label }}.
+        {{ timer_settings.systemd_timer_note }}
+      </div>
+    </details>
     <a class="button button-ghost button-small" href="/journal">Open Activity Journal</a>
   </div>
 </section>

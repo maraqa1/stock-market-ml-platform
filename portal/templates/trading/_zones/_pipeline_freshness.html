@@ -1,7 +1,7 @@
-<section class="zone trading-zone pipeline-zone" data-zone="pipeline-freshness" data-pipeline-refresh-url="/trading/_partials/pipeline-strip" data-pipeline-refresh-ms="60000">
+<section class="zone trading-zone pipeline-zone" data-zone="pipeline-freshness" data-pipeline-refresh-url="/trading/_partials/pipeline-strip" data-pipeline-refresh-ms="{{ trading_cadence.pipeline_refresh_ms or 60000 }}">
   <div class="zone__header">
     <span>Pipeline Freshness</span>
-    <span class="zone__header-meta">refreshes every 60s</span>
+    <span class="zone__header-meta">refreshes {{ trading_cadence.pipeline_refresh_label or "every 60s" }}</span>
   </div>
   <div class="zone__body" data-pipeline-strip>
     <div class="stale-banner" data-pipeline-stale-banner hidden>Pipeline freshness may be stale.</div>

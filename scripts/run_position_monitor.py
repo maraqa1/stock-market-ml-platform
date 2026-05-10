@@ -16,6 +16,7 @@ from stockml.agents.position_decision_engine import build_position_decisions, wr
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
+from stockml.trading.timer_settings import monitor_should_run
 from stockml.trading.trade_journal import build_trade_journal, write_trade_journal
 
 
@@ -29,6 +30,10 @@ def _latest_portal(pattern: str) -> Path | None:
 
 def main() -> int:
     ensure_data_dirs()
+    should_run, cadence_reason = monitor_should_run()
+    if not should_run:
+        print(f"monitor_skipped: {cadence_reason}")
+        return 0
     stamp = timestamp()
     refreshed = refresh_order_tracking()
     plan_path = _latest_portal("08_alpaca_paper_order_plan_*.csv")
@@ -70,6 +75,7 @@ def main() -> int:
     print(f"journal_path: {journal_path}")
     print(f"pnl_path: {pnl_path}")
     print(f"decision_path: {decision_path}")
+    print(f"cadence_reason: {cadence_reason}")
     if not decisions.empty:
         print(f"decision_counts: {decisions['decision'].value_counts().to_dict()}")
     return 0

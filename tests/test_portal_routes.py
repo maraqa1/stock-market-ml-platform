@@ -1,6 +1,7 @@
 import pytest
 import pandas as pd
 import shutil
+import json
 from pathlib import Path
 
 from portal.app import create_app
@@ -9,6 +10,8 @@ from portal.app import create_app
 @pytest.fixture()
 def client():
     root = Path("_tmp_portal_routes")
+    if root.exists():
+        shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
     app = create_app(root)
     app.config.update(TESTING=True)
@@ -296,6 +299,29 @@ def test_trading_page_renders_spec20_diagnostics_sections(client):
     assert b"Execution Quality" in response.data
     assert b"Fill ratio" in response.data
     assert b"Slippage" in response.data
+    assert b"Cadence Settings" in response.data
+    assert b"monitor_interval_seconds" in response.data
+
+
+def test_trading_timer_settings_post_persists_config(client):
+    response = client.post(
+        "/trading/timer-settings",
+        data={
+            "positions_refresh_seconds": "7",
+            "monitor_interval_seconds": "45",
+            "pipeline_refresh_seconds": "90",
+        },
+    )
+    assert response.status_code == 302
+    config_path = Path("_tmp_portal_routes") / "data" / "portal_outputs" / "portal_timer_settings.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    assert payload["positions_refresh_seconds"] == 7
+    assert payload["monitor_interval_seconds"] == 45
+    assert payload["pipeline_refresh_seconds"] == 90
+
+    page = client.get("/trading")
+    assert b"every 45s" in page.data
+    assert b'data-refresh-ms="7000"' in page.data
 
 
 def test_trading_page_renders_todays_basket_table(client):

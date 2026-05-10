@@ -23,7 +23,7 @@
           <th>Action</th>
         </tr>
       </thead>
-      <tbody data-positions-body data-refresh-url="/trading/_partials/positions-body">
+      <tbody data-positions-body data-refresh-url="/trading/_partials/positions-body" data-refresh-ms="{{ trading_cadence.positions_refresh_ms or 5000 }}">
         {% include "trading/_partials/positions_body.html" %}
       </tbody>
     </table>

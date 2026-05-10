@@ -11,6 +11,7 @@ from portal.services.trading_api_service import (
     positions_context,
 )
 from stockml.trading.config import alpaca_config
+from stockml.trading.timer_settings import load_timer_settings, seconds_label
 
 
 def _next_interval(minutes: int = 10) -> datetime:
@@ -51,16 +52,20 @@ def trading_header_context(root: Path) -> dict[str, Any]:
 
 
 def trading_cadence_context(root: Path) -> dict[str, Any]:
+    timers = load_timer_settings(root)
     pipeline = pipeline_current_context(root)
     run = pipeline.get("run") or {}
-    next_monitor = _next_seconds_interval(30)
+    next_monitor = _next_seconds_interval(timers["monitor_interval_seconds"])
     last_run = run.get("started_at") or run.get("run_id") or "No recorded run"
     return {
-        "positions_label": "live (5s)",
-        "monitor_label": "every 30s",
+        "positions_label": f"live ({timers['positions_refresh_seconds']}s)",
+        "positions_refresh_ms": int(timers["positions_refresh_seconds"]) * 1000,
+        "monitor_label": seconds_label(timers["monitor_interval_seconds"]),
         "next_monitor_at": next_monitor.isoformat(),
         "next_monitor_label": next_monitor.strftime("%H:%M:%S UTC"),
         "pipeline_label": "nightly",
+        "pipeline_refresh_label": seconds_label(timers["pipeline_refresh_seconds"]),
+        "pipeline_refresh_ms": int(timers["pipeline_refresh_seconds"]) * 1000,
         "last_run_label": str(last_run),
     }
 

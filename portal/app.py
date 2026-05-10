@@ -31,6 +31,7 @@ from portal.services.trading_api_service import (
 from portal.services.trading_service import lifecycle_context, position_action, refresh_trading_artifacts, trading_context
 from portal.services.universe_service import universe_context
 from stockml.services.events import record_event_safely
+from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
 
 
 def create_app(root: Path | None = None) -> Flask:
@@ -206,9 +207,15 @@ def create_app(root: Path | None = None) -> Flask:
                 "monitor_activity": monitor_today_context(root),
                 "action_queue": action_queue_context(root),
                 "positions_api": positions_context(root),
+                "timer_settings": timer_settings_context(root),
             }
         )
         return render_template("trading.html", title="Paper Trading", **context)
+
+    @app.route("/trading/timer-settings", methods=["POST"])
+    def trading_timer_settings():
+        save_timer_settings(dict(request.form), root_path())
+        return redirect(url_for("trading", _anchor="diagnostics"))
 
     @app.route("/trading/_partials/pipeline-strip")
     def trading_pipeline_strip_partial():
