@@ -1,0 +1,63 @@
+{% from "_macros/pill.html" import pill %}
+<section class="zone trading-zone" data-zone="paper-autopilot" id="paper-autopilot">
+  <div class="zone__header">
+    <span>Paper Autopilot</span>
+    <span class="zone__header-meta">{{ paper_autopilot.status_label }} · {{ paper_autopilot.phase_label }}</span>
+  </div>
+  <div class="zone__body autopilot-panel">
+    <div class="autopilot-panel__state">
+      <div>
+        <span class="label">Status</span>
+        {{ pill(paper_autopilot.status if paper_autopilot.status != "running" else "submitted", paper_autopilot.status_label) }}
+      </div>
+      <div>
+        <span class="label">Current step</span>
+        <strong>{{ paper_autopilot.phase_label }}</strong>
+      </div>
+      <div>
+        <span class="label">Broker orders</span>
+        <strong class="num-l">{{ paper_autopilot.open_orders }}</strong>
+      </div>
+      <div>
+        <span class="label">Open positions</span>
+        <strong class="num-l">{{ paper_autopilot.open_positions }}</strong>
+      </div>
+      <div>
+        <span class="label">Last tick</span>
+        <strong class="num-l">{{ paper_autopilot.last_tick_at or "Not run" }}</strong>
+      </div>
+    </div>
+    {% if paper_autopilot.termination_reason %}
+      <div class="stale-banner">Termination: {{ paper_autopilot.termination_reason|replace("_", " ") }}</div>
+    {% endif %}
+    {% if paper_autopilot.last_error %}
+      <div class="stale-banner">Autopilot note: {{ paper_autopilot.last_error }}</div>
+    {% endif %}
+    <div class="autopilot-panel__actions">
+      {% if paper_autopilot.status in ["idle", "stopped", "complete"] %}
+        <form method="post" action="/trading/autopilot/start">
+          <button class="btn btn-primary" type="submit">Start Paper Autopilot</button>
+        </form>
+      {% elif paper_autopilot.status == "paused" %}
+        <form method="post" action="/trading/autopilot/resume">
+          <button class="btn btn-primary" type="submit">Resume Autopilot</button>
+        </form>
+      {% else %}
+        <form method="post" action="/trading/autopilot/pause">
+          <button class="btn btn-ghost" type="submit">Pause Autopilot</button>
+        </form>
+      {% endif %}
+      <form method="post" action="/trading/autopilot/tick">
+        <button class="btn btn-ghost" type="submit">Run Tracking Tick</button>
+      </form>
+      {% if paper_autopilot.status in ["running", "paused"] %}
+        <form method="post" action="/trading/autopilot/stop">
+          <button class="btn btn-danger" type="submit">Stop Autopilot</button>
+        </form>
+      {% endif %}
+    </div>
+    <p class="text-secondary">
+      Paper-only control loop. This first state-machine slice tracks orders, waits for fills, and terminates when no open orders or positions remain.
+    </p>
+  </div>
+</section>

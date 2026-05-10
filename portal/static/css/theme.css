@@ -1025,6 +1025,24 @@ dialog {
   color: var(--text-tertiary);
 }
 
+.autopilot-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.autopilot-panel__state,
+.autopilot-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.autopilot-panel__state > div {
+  min-width: 140px;
+}
+
 .basket-integrity {
   display: flex;
   align-items: center;

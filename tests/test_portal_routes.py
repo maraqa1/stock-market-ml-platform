@@ -103,6 +103,19 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b"js/table_sort.js" in response.data
 
 
+def test_trading_paper_autopilot_controls(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Paper Autopilot" in response.data
+    assert b"Start Paper Autopilot" in response.data
+
+    post = client.post("/trading/autopilot/start")
+    assert post.status_code == 302
+    followup = client.get("/trading")
+    assert b"Autopilot Running" in followup.data
+    assert b"Pause Autopilot" in followup.data
+
+
 def test_data_estate_renders_new_style_and_key_datasets(symbol_client):
     response = symbol_client.get("/data")
     assert response.status_code == 200
