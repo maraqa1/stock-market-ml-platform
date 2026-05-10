@@ -249,10 +249,12 @@ if (shortlistFilters) {
 const positionsBody = document.querySelector("[data-positions-body]");
 if (positionsBody) {
   let failures = 0;
+  let inFlight = false;
   const banner = document.querySelector("[data-position-stale-banner]");
   const refreshUrl = positionsBody.dataset.refreshUrl;
   window.setInterval(async () => {
-    if (document.hidden) return;
+    if (document.hidden || inFlight) return;
+    inFlight = true;
     try {
       const response = await fetch(refreshUrl);
       if (!response.ok) throw new Error(`Position refresh failed: ${response.status}`);
@@ -266,6 +268,8 @@ if (positionsBody) {
         banner.textContent = "Position prices may be stale.";
       }
       console.error(error);
+    } finally {
+      inFlight = false;
     }
   }, 5000);
 }
