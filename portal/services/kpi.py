@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from portal.services.account import account_snapshot
 from portal.services.trading_api_service import (
     action_queue_context,
     basket_today_context,
@@ -72,6 +73,7 @@ def trading_cadence_context(root: Path) -> dict[str, Any]:
 
 def trading_kpi_context(root: Path) -> dict[str, Any]:
     config = alpaca_config()
+    account = account_snapshot(config)
     positions = positions_context(root)
     basket = basket_today_context(root)
     queue = action_queue_context(root)
@@ -83,6 +85,8 @@ def trading_kpi_context(root: Path) -> dict[str, Any]:
     pending = int(queue["counts"].get("total") or 0)
     submitted = int(basket["counts"].get("submitted") or 0)
     filled = int(basket["counts"].get("filled") or 0)
+    account_equity = float(account.get("equity") or config.account_equity or 0.0)
+    account_detail = "Alpaca paper account" if account.get("source") == "alpaca" else "configured fallback"
     return {
         "cards": [
             {
@@ -93,8 +97,8 @@ def trading_kpi_context(root: Path) -> dict[str, Any]:
             },
             {
                 "label": "Account Equity",
-                "value": f"${config.account_equity:,.0f}",
-                "detail": "configured paper account base",
+                "value": f"${account_equity:,.0f}",
+                "detail": account_detail,
             },
             {
                 "label": "Unrealized P&L",
@@ -111,7 +115,7 @@ def trading_kpi_context(root: Path) -> dict[str, Any]:
             {
                 "label": "Net Exposure",
                 "value": f"${market_value:,.0f}",
-                "detail": f"{(market_value / config.account_equity):.2%} of equity" if config.account_equity else "equity unavailable",
+                "detail": f"{(market_value / account_equity):.2%} of equity" if account_equity else "equity unavailable",
             },
             {
                 "label": "Pending Decisions",
