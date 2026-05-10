@@ -13,7 +13,15 @@
   {% endfor %}
 </div>
 <div class="pipeline-banner">
-  {% if pipeline_current.run.status in ["success", "completed"] %}
+  {% set ns = namespace(missing=0) %}
+  {% for stage in pipeline_current.stages %}
+    {% if (stage.output_metadata or {}).get("recorder_status") == "missing_stage_row" %}
+      {% set ns.missing = ns.missing + 1 %}
+    {% endif %}
+  {% endfor %}
+  {% if ns.missing %}
+    Recorder is missing {{ ns.missing }} stage row{{ "s" if ns.missing != 1 else "" }}. Showing latest artifact freshness where available.
+  {% elif pipeline_current.run.status in ["success", "completed"] %}
     All available stages green. Last update {{ pipeline_current.run.completed_at or pipeline_current.run.started_at }}.
   {% elif pipeline_current.run.status == "missing" %}
     No pipeline recorder run found yet. Showing latest artifact freshness where available.

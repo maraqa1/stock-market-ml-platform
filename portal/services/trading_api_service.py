@@ -160,6 +160,8 @@ def pipeline_current_context(root: Path) -> dict[str, Any]:
     run = _latest_pipeline_run()
     if not run:
         return _artifact_pipeline_context(root)
+    artifact_fallback = _artifact_pipeline_context(root)
+    artifact_by_name = {stage["stage_name"]: stage for stage in artifact_fallback["stages"]}
     rows = _rows_from_db(
         pipeline_stages.select()
         .where(pipeline_stages.c.run_id == run["run_id"])
@@ -171,8 +173,20 @@ def pipeline_current_context(root: Path) -> dict[str, Any]:
         stage = {**_empty_stage(name), **by_name.get(name, {})}
         stage["output_metadata"] = stage.get("output_metadata") or {}
         stage["output_count"] = int(stage.get("output_count") or 0)
+        fallback = artifact_by_name.get(name) or {}
+        if stage.get("status") == "missing" and fallback.get("status") == "success":
+            stage = {
+                **stage,
+                **fallback,
+                "output_metadata": {
+                    **(fallback.get("output_metadata") or {}),
+                    "recorder_status": "missing_stage_row",
+                },
+                "detail": f"{fallback.get('detail')}; recorder stage row missing",
+            }
         stages.append(stage)
-    return {"source": "database", "run": run, "stage_names": list(PIPELINE_STAGE_NAMES), "stages": stages}
+    source = "database" if all(stage["stage_name"] in by_name for stage in stages) else "database+csv_artifacts"
+    return {"source": source, "run": run, "stage_names": list(PIPELINE_STAGE_NAMES), "stages": stages}
 
 
 def pipeline_history_context(root: Path, days: int = 14) -> dict[str, Any]:
