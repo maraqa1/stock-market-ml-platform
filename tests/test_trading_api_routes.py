@@ -14,6 +14,10 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
     pd.DataFrame(rows).to_csv(path, index=False)
 
 
+def _fixture_root(client) -> Path:
+    return Path(client.application.config["PROJECT_ROOT"])
+
+
 @pytest.fixture()
 def api_client():
     root = Path("_tmp_trading_api_routes")
@@ -135,6 +139,22 @@ def test_pipeline_current_contract(api_client):
     assert isinstance(payload["stages"], list)
     assert len(payload["stages"]) == 6
     assert {"stage_name", "status", "output_count"}.issubset(payload["stages"][0])
+
+
+def test_pipeline_artifact_fallback_groups_trading_stages_by_candidate_stamp(api_client):
+    root = _fixture_root(api_client)
+    _write_csv(root / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_20260510_134011.csv", [{"symbol": "NEW"}])
+    _write_csv(root / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_20260509_182906.csv", [{"symbol": "OLD"}])
+    _write_csv(root / "data" / "portal_outputs" / "08_alpaca_paper_order_results_20260509_182906.csv", [{"symbol": "OLD"}])
+
+    payload = _json(api_client, "/api/trading/pipeline/current")
+    stages = {stage["stage_name"]: stage for stage in payload["stages"]}
+
+    assert payload["run"]["display_label"] == "Latest Artifacts"
+    assert stages["candidates"]["artifact"] == "08_alpaca_paper_candidate_pool_20260510_134011.csv"
+    assert stages["selection"]["status"] == "missing"
+    assert stages["submitted"]["status"] == "missing"
+    assert "20260509_182906" not in str(stages["selection"])
 
 
 def test_pipeline_history_contract(api_client):

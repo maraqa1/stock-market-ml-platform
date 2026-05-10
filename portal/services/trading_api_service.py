@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,12 @@ STATE_CHANGE_EVENT_TYPES = {
     "operator_override",
     "broker_rejected",
     "guardrail_blocked",
+}
+
+TRADING_STAGE_ARTIFACTS = {
+    "candidates": ("portal_outputs", "08_alpaca_paper_candidate_pool_*.csv", "08_alpaca_paper_candidate_pool_{stamp}.csv", "candidate pool"),
+    "selection": ("portal_outputs", "08_alpaca_paper_order_plan_*.csv", "08_alpaca_paper_order_plan_{stamp}.csv", "order plan"),
+    "submitted": ("portal_outputs", "08_alpaca_paper_order_results_*.csv", "08_alpaca_paper_order_results_{stamp}.csv", "order results"),
 }
 
 
@@ -127,19 +134,63 @@ def _artifact_stage(root: Path, stage_name: str, key: str, pattern: str, detail:
     }
 
 
+def _stamp_from_artifact(path: Path | None) -> str:
+    if path is None:
+        return ""
+    match = re.search(r"_(\d{8}_\d{6})$", path.stem)
+    return match.group(1) if match else ""
+
+
+def _artifact_stage_for_path(stage_name: str, path: Path | None, detail: str) -> dict[str, Any]:
+    if path is None:
+        return {**_empty_stage(stage_name), "detail": f"{detail} missing for selected trading run", "artifact": ""}
+    timestamp = _csv_timestamp(path)
+    return {
+        "stage_name": stage_name,
+        "status": "success",
+        "started_at": None,
+        "completed_at": timestamp,
+        "output_count": count_rows(path),
+        "output_metadata": {"artifact": path.name, "detail": detail, "artifact_stamp": _stamp_from_artifact(path)},
+        "error": "",
+        "detail": detail,
+        "artifact": path.name,
+    }
+
+
+def _trading_artifact_stages(root: Path) -> tuple[list[dict[str, Any]], str]:
+    candidate_path = latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
+    stamp = _stamp_from_artifact(candidate_path)
+    stages: list[dict[str, Any]] = []
+    for stage_name, (key, latest_pattern, stamp_pattern, detail) in TRADING_STAGE_ARTIFACTS.items():
+        path = None
+        if stamp:
+            exact = root / "data" / "portal_outputs" / stamp_pattern.format(stamp=stamp)
+            path = exact if exact.exists() else None
+        if stage_name == "candidates":
+            path = path or candidate_path
+        elif not stamp:
+            path = latest_file(root, key, latest_pattern)
+        stages.append(_artifact_stage_for_path(stage_name, path, detail))
+    return stages, stamp
+
+
 def _artifact_pipeline_context(root: Path) -> dict[str, Any]:
+    trading_stages, trading_stamp = _trading_artifact_stages(root)
+    trading_by_name = {stage["stage_name"]: stage for stage in trading_stages}
     stages = [
         _artifact_stage(root, "yahoo", "raw", "03_us_price_history_store*.csv", "price history store"),
         _artifact_stage(root, "gold", "gold", "06_us_gold_ml_dataset_*.csv", "gold dataset"),
         _artifact_stage(root, "model", "model_outputs", "advanced_model_signal_table_*.csv", "signal table"),
-        _artifact_stage(root, "candidates", "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv", "candidate pool"),
-        _artifact_stage(root, "selection", "portal_outputs", "08_alpaca_paper_order_plan_*.csv", "order plan"),
-        _artifact_stage(root, "submitted", "portal_outputs", "08_alpaca_paper_order_results_*.csv", "order results"),
+        trading_by_name["candidates"],
+        trading_by_name["selection"],
+        trading_by_name["submitted"],
     ]
     completed = [stage.get("completed_at") for stage in stages if stage.get("completed_at")]
     last_update = max(completed) if completed else None
     run = {
-        "run_id": "artifact-latest" if last_update else "",
+        "run_id": f"latest-artifacts-{trading_stamp}" if trading_stamp else ("latest-artifacts" if last_update else ""),
+        "display_label": "Latest Artifacts",
         "started_at": last_update,
         "completed_at": last_update,
         "status": "success" if last_update else "missing",
