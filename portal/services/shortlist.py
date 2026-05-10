@@ -11,6 +11,9 @@ from portal.services.latest_file_reader import latest_file, safe_read_csv
 from stockml.db.connection import get_engine
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
 def _float(value: Any) -> float:
     try:
         parsed = float(value)
@@ -205,6 +208,13 @@ def _db_payload(selected: date | None) -> dict[str, Any] | None:
         return None
 
 
+def _should_use_database(root: Path) -> bool:
+    try:
+        return Path(root).resolve() == PROJECT_ROOT.resolve()
+    except Exception:
+        return False
+
+
 def _apply_filters(rows: list[dict[str, Any]], filters: dict[str, str]) -> list[dict[str, Any]]:
     bias = str(filters.get("bias") or "all").lower()
     sector = str(filters.get("sector") or "all")
@@ -228,7 +238,7 @@ def get_for_date(root: Path, date_value: str | None = None, filters: dict[str, s
             selected = datetime.fromisoformat(date_value).date()
         except Exception:
             selected = None
-    payload = _db_payload(selected) or _artifact_payload(root, selected)
+    payload = (_db_payload(selected) if _should_use_database(root) else None) or _artifact_payload(root, selected)
     payload["filters"] = {
         "bias": str((filters or {}).get("bias") or "all"),
         "sector": str((filters or {}).get("sector") or "all"),
