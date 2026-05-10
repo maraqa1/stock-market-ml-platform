@@ -43,7 +43,7 @@ def symbol_client():
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/journal", "/shortlist", "/model-validation", "/no-decision", "/dev/styleguide"]:
+    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/journal", "/shortlist", "/validation", "/model-validation", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
 
@@ -101,6 +101,18 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b"js/nav_search.js" in response.data
     assert b"js/keyboard.js" in response.data
     assert b"js/table_sort.js" in response.data
+
+
+def test_validation_page_renders_spec30_sections(client):
+    response = client.get("/validation")
+    assert response.status_code == 200
+    assert b"Model Validation" in response.data
+    assert b"Headline Metrics" in response.data
+    assert b"Walk-Forward Folds" in response.data
+    assert b"Confidence Buckets" in response.data
+    assert b"Top Features" in response.data
+    assert b"Leaderboard" in response.data
+    assert b"Export CSV" in response.data
 
 
 def test_trading_tables_render_spec27_table_controls(symbol_client):

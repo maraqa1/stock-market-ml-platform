@@ -13,7 +13,6 @@ from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
-from portal.services.model_validation_service import model_validation_context
 from portal.services.search import search
 from portal.services.shortlist import get_for_date as shortlist_get_for_date
 from portal.services.signal_service import no_decision_context, signal_context
@@ -31,6 +30,7 @@ from portal.services.trading_api_service import (
 )
 from portal.services.trading_service import lifecycle_context, position_action, refresh_trading_artifacts, trading_context
 from portal.services.universe_service import universe_context
+from portal.services.validation import table_csv as validation_table_csv, validation_context
 from stockml.services.events import record_event_safely
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
 
@@ -391,9 +391,31 @@ def create_app(root: Path | None = None) -> Flask:
     def api_trading_queue():
         return jsonify(action_queue_context(root_path()))
 
+    @app.route("/validation")
     @app.route("/model-validation")
     def model_validation():
-        return render_template("model_validation.html", title="Model Validation", **model_validation_context(root_path()))
+        context = validation_context(
+            root_path(),
+            model_version=request.args.get("model_version"),
+            from_value=request.args.get("from"),
+            to_value=request.args.get("to"),
+        )
+        return render_template("validation/index.html", title="Model Validation", validation=context)
+
+    @app.route("/validation/export/<section>.csv")
+    def validation_export(section: str):
+        context = validation_context(
+            root_path(),
+            model_version=request.args.get("model_version"),
+            from_value=request.args.get("from"),
+            to_value=request.args.get("to"),
+        )
+        csv_text = validation_table_csv(section, context)
+        return Response(
+            csv_text,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=validation_{section}.csv"},
+        )
 
     @app.route("/no-decision")
     def no_decision():

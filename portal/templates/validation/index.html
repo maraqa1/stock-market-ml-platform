@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% from "_macros/format.html" import number, pct, signed_pct, time_utc, qty %}
+{% block content %}
+<section class="trading-console">
+  <section class="zone" data-zone="validation-header">
+    <div class="zone__header">
+      <div>
+        <span>Model Validation</span>
+        <small>model {{ validation.model_version or "not available" }} · computed {{ time_utc(validation.last_computed) }}</small>
+      </div>
+      <form class="filter-bar" method="get">
+        <label>
+          <span>Model</span>
+          <select name="model_version">
+            {% for model in validation.model_versions %}
+              <option value="{{ model }}" {% if model == validation.model_version %}selected{% endif %}>{{ model }}{% if model == validation.latest_pipeline_model %} ✓{% endif %}</option>
+            {% endfor %}
+            {% if not validation.model_versions %}
+              <option value="">No models</option>
+            {% endif %}
+          </select>
+        </label>
+        <button class="btn btn-primary btn-sm" type="submit">Load</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="headline-metrics">
+    <div class="zone__header">
+      <span>Headline Metrics</span>
+      <form class="filter-bar" method="get">
+        <input type="hidden" name="model_version" value="{{ validation.model_version }}">
+        <label><span>From</span><input type="date" name="from" value="{{ validation.from_date }}"></label>
+        <label><span>To</span><input type="date" name="to" value="{{ validation.to_date }}"></label>
+        <button class="btn btn-primary btn-sm" type="submit">Apply</button>
+      </form>
+      <span class="zone__header-meta">last computed {{ time_utc(validation.headline.last_computed) }}</span>
+    </div>
+    <div class="zone__body">
+      <div class="kpi-row">
+        <article class="kpi-card">
+          <span class="kpi-card__label">Hit Rate (90d)</span>
+          <strong class="kpi-card__value">{{ pct(validation.headline.hit_rate) }}</strong>
+          <small class="kpi-card__detail">{{ validation.headline.prediction_count }} outcomes</small>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-card__label">Excess Return</span>
+          <strong class="kpi-card__value">{{ signed_pct(validation.headline.excess_ret) }}</strong>
+          <small class="kpi-card__detail">mean actual excess</small>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-card__label">Calibration Error</span>
+          <strong class="kpi-card__value">{{ pct(validation.headline.calib_err) }}</strong>
+          <small class="kpi-card__detail">absolute prediction error</small>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-card__label">Sharpe</span>
+          <strong class="kpi-card__value">{{ number(validation.headline.sharpe, 2) }}</strong>
+          <small class="kpi-card__detail">daily excess annualized</small>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="walk-forward-folds">
+    <div class="zone__header">
+      <span>Walk-Forward Folds</span>
+      <a class="btn btn-ghost btn-sm" href="/validation/export/folds.csv?{{ request.query_string.decode() }}">Export CSV</a>
+      <span class="zone__header-meta">last computed {{ time_utc(validation.last_computed) }}</span>
+    </div>
+    <div class="zone__body table-wrap">
+      <table class="data dense" data-table="validation-folds">
+        <thead>
+          <tr>
+            <th data-sortable data-sort-key="period">Period <span class="sort-indicator"></span></th>
+            <th class="num" data-sortable data-sort-key="train_rows" data-sort-type="number">Train rows <span class="sort-indicator"></span></th>
+            <th class="num" data-sortable data-sort-key="test_rows" data-sort-type="number">Test rows <span class="sort-indicator"></span></th>
+            <th class="num" data-sortable data-sort-key="hit_pct" data-sort-type="number">Hit % <span class="sort-indicator"></span></th>
+            <th class="num" data-sortable data-sort-key="excess_pct" data-sort-type="number">Excess % <span class="sort-indicator"></span></th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in validation.folds %}
+            <tr>
+              <td data-sort-value="{{ row.period }}">{{ row.period }}</td>
+              <td class="num" data-sort-value="{{ row.train_rows }}">{{ qty(row.train_rows) }}</td>
+              <td class="num" data-sort-value="{{ row.test_rows }}">{{ qty(row.test_rows) }}</td>
+              <td class="num" data-sort-value="{{ row.hit_pct }}">{{ pct(row.hit_pct) }}</td>
+              <td class="num" data-sort-value="{{ row.excess_pct }}">{{ signed_pct(row.excess_pct) }}</td>
+              <td>{{ row.notes or "" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6">No walk-forward folds available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="confidence-buckets">
+    <div class="zone__header">
+      <span>Confidence Buckets</span>
+      <a class="btn btn-ghost btn-sm" href="/validation/export/buckets.csv?{{ request.query_string.decode() }}">Export CSV</a>
+      <span class="zone__header-meta">last computed {{ time_utc(validation.last_computed) }}</span>
+    </div>
+    <div class="zone__body table-wrap">
+      <table class="data dense" data-table="validation-buckets">
+        <thead>
+          <tr>
+            <th>Bucket</th>
+            <th class="num" data-sortable data-sort-key="predictions" data-sort-type="number">Predictions <span class="sort-indicator"></span></th>
+            <th class="num" data-sortable data-sort-key="realized_hit" data-sort-type="number">Realized hit <span class="sort-indicator"></span></th>
+            <th class="num" data-sortable data-sort-key="expected_hit" data-sort-type="number">Expected hit <span class="sort-indicator"></span></th>
+            <th class="num" data-sortable data-sort-key="delta" data-sort-type="number">Delta <span class="sort-indicator"></span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in validation.buckets %}
+            <tr>
+              <td>{{ row.bucket }}</td>
+              <td class="num" data-sort-value="{{ row.predictions }}">{{ qty(row.predictions) }}</td>
+              <td class="num" data-sort-value="{{ row.realized_hit }}">{{ pct(row.realized_hit) }}</td>
+              <td class="num" data-sort-value="{{ row.expected_hit }}">{{ pct(row.expected_hit) }}</td>
+              <td class="num" data-sort-value="{{ row.delta }}">{{ signed_pct(row.delta) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">No confidence bucket data available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="top-features">
+    <div class="zone__header">
+      <span>Top Features</span>
+      <a class="btn btn-ghost btn-sm" href="/validation/export/features.csv?{{ request.query_string.decode() }}">Export CSV</a>
+      <span class="zone__header-meta">last computed {{ time_utc(validation.last_computed) }}</span>
+    </div>
+    <div class="zone__body table-wrap">
+      <table class="data dense" data-table="validation-features">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th class="num" data-sortable data-sort-key="importance" data-sort-type="number">Importance <span class="sort-indicator"></span></th>
+            <th>Bar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in validation.features %}
+            <tr>
+              <td>{{ row.feature_name }}</td>
+              <td class="num" data-sort-value="{{ row.importance }}">{{ number(row.importance, 4) }}</td>
+              <td><div class="feature-bar"><span style="width: {{ row.bar_pct }}%"></span></div></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3">No feature importance data available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="leaderboard">
+    <div class="zone__header">
+      <span>Leaderboard</span>
+      <a class="btn btn-ghost btn-sm" href="/validation/export/leaderboard.csv?{{ request.query_string.decode() }}">Export CSV</a>
+      <span class="zone__header-meta">last computed {{ time_utc(validation.last_computed) }}</span>
+    </div>
+    <div class="zone__body table-wrap">
+      <table class="data dense" data-table="validation-leaderboard">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Trained on</th>
+            <th class="num" data-sortable data-sort-key="oos_hit_pct" data-sort-type="number">OOS Hit <span class="sort-indicator"></span></th>
+            <th class="num" data-sortable data-sort-key="oos_excess_pct" data-sort-type="number">OOS Excess <span class="sort-indicator"></span></th>
+            <th>Promoted</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in validation.leaderboard %}
+            <tr>
+              <td>{{ row.model_version }}</td>
+              <td>{{ time_utc(row.trained_at) }}</td>
+              <td class="num" data-sort-value="{{ row.oos_hit_pct }}">{{ pct(row.oos_hit_pct) }}</td>
+              <td class="num" data-sort-value="{{ row.oos_excess_pct }}">{{ signed_pct(row.oos_excess_pct) }}</td>
+              <td>
+                {% if row.promoted and row.model_version == validation.model_version %}
+                  <span class="pill pill-success"><span class="dot dot-success"></span>yes (current)</span>
+                {% else %}
+                  no
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">No model runs available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>
+{% endblock %}

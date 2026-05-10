@@ -204,6 +204,62 @@ shortlist_snapshots = Table(
     Index("ix_shortlist_run_rank", "run_id", "rank"),
 )
 
+output_prediction = Table(
+    "output_prediction",
+    metadata,
+    Column("symbol", String(50), primary_key=True),
+    Column("prediction_date", Date, primary_key=True),
+    Column("horizon_days", Integer, primary_key=True),
+    Column("outperform_probability", Float),
+    Column("expected_excess_return", Float),
+    Column("confidence", Float),
+    Column("model_version", String(100), nullable=False),
+    Column("run_timestamp", DateTime(timezone=True)),
+)
+
+output_outcome = Table(
+    "output_outcome",
+    metadata,
+    Column("symbol", String(50), primary_key=True),
+    Column("prediction_date", Date, primary_key=True),
+    Column("evaluation_date", Date, nullable=False),
+    Column("predicted_excess_return", Float),
+    Column("actual_excess_return", Float),
+    Column("outperformed", Boolean),
+    Column("model_version", String(100), nullable=False),
+)
+
+model_runs = Table(
+    "model_runs",
+    metadata,
+    Column("model_version", String(100), primary_key=True),
+    Column("trained_at", DateTime(timezone=True), nullable=False),
+    Column("oos_hit_pct", Float),
+    Column("oos_excess_pct", Float),
+    Column("promoted", Boolean, nullable=False, default=False),
+    Column("notes", Text),
+)
+
+model_folds = Table(
+    "model_folds",
+    metadata,
+    Column("model_version", String(100), ForeignKey("model_runs.model_version"), primary_key=True),
+    Column("period", String(100), primary_key=True),
+    Column("train_rows", BigInteger, nullable=False),
+    Column("test_rows", BigInteger, nullable=False),
+    Column("hit_pct", Float),
+    Column("excess_pct", Float),
+    Column("notes", Text),
+)
+
+model_feature_importance = Table(
+    "model_feature_importance",
+    metadata,
+    Column("model_version", String(100), ForeignKey("model_runs.model_version"), primary_key=True),
+    Column("feature_name", String(200), primary_key=True),
+    Column("importance", Float, nullable=False),
+)
+
 
 def create_all(engine) -> None:
     metadata.create_all(engine)

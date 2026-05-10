@@ -1001,6 +1001,22 @@ dialog {
   color: var(--pnl-negative);
 }
 
+.feature-bar {
+  width: 100%;
+  max-width: 180px;
+  height: 8px;
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.feature-bar span {
+  display: block;
+  height: 100%;
+  background: var(--status-info);
+}
+
 .text-secondary {
   color: var(--text-secondary);
 }
