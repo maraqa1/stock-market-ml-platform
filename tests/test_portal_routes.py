@@ -43,7 +43,7 @@ def symbol_client():
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/signals", "/trading", "/journal", "/shortlist", "/validation", "/model-validation", "/no-decision", "/dev/styleguide"]:
+    for route in ["/", "/universe", "/data-quality", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/validation", "/model-validation", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
 
@@ -101,6 +101,19 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b"js/nav_search.js" in response.data
     assert b"js/keyboard.js" in response.data
     assert b"js/table_sort.js" in response.data
+
+
+def test_data_estate_renders_new_style_and_key_datasets(symbol_client):
+    response = symbol_client.get("/data")
+    assert response.status_code == 200
+    assert b"Data Estate" in response.data
+    assert b'data-zone="dataset-inventory"' in response.data
+    assert b"Gold Dataset" in response.data
+    assert b"Feature Panel" in response.data
+    assert b"Sentiment Panel" in response.data
+    assert b"Paper Candidate Pool" in response.data
+    assert b"data-table=\"data-estate-sample\"" in response.data
+    assert b"class=\"panel\"" not in response.data
 
 
 def test_validation_page_renders_spec30_sections(client):

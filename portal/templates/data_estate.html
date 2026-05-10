@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% from "_macros/format.html" import number, time_utc %}
+{% from "_macros/table.html" import table_toolbar %}
+{% block content %}
+<section class="trading-console">
+  <section class="zone" data-zone="data-estate-header">
+    <div class="zone__header">
+      <div>
+        <span>Data Estate</span>
+        <small>{{ data_source }} · {{ datasets|length }} tracked datasets</small>
+      </div>
+      <form class="filter-bar" method="get">
+        <label>
+          <span>Sample</span>
+          <select name="dataset">
+            {% for dataset in datasets %}
+              <option value="{{ dataset.key }}" {% if dataset.key == selected_dataset %}selected{% endif %}>{{ dataset.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="btn btn-primary btn-sm" type="submit">Load</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="kpi-row" data-zone="data-estate-kpis">
+    <article class="kpi-card">
+      <span class="kpi-card__label">Gold Rows</span>
+      <strong class="kpi-card__value">{{ number(gold.rows or 0, 0) }}</strong>
+      <small class="kpi-card__detail">{{ gold.source or "not available" }}</small>
+    </article>
+    <article class="kpi-card">
+      <span class="kpi-card__label">Gold Tickers</span>
+      <strong class="kpi-card__value">{{ number(gold.tickers or 0, 0) }}</strong>
+      <small class="kpi-card__detail">{{ gold.date_min or "start n/a" }} to {{ gold.date_max or "end n/a" }}</small>
+    </article>
+    <article class="kpi-card">
+      <span class="kpi-card__label">Latest Gold File</span>
+      <strong class="kpi-card__value">{{ gold.file_name or "Missing" }}</strong>
+      <small class="kpi-card__detail">{{ gold.freshness or "not available" }}</small>
+    </article>
+  </section>
+
+  <section class="zone" data-zone="dataset-inventory">
+    <div class="zone__header">
+      <span>Dataset Inventory</span>
+      <span class="zone__header-meta">files + DB row counts where available</span>
+    </div>
+    <div class="zone__body">
+      {{ table_toolbar("Filter datasets") }}
+      <div class="table-wrap">
+        <table class="data dense" data-table="data-estate-inventory">
+          <thead>
+            <tr>
+              <th class="col-pinned" data-sortable data-sort-key="label">Dataset <span class="sort-indicator"></span></th>
+              <th data-sortable data-sort-key="kind">Kind <span class="sort-indicator"></span></th>
+              <th data-sortable data-sort-key="source">Source <span class="sort-indicator"></span></th>
+              <th class="num" data-sortable data-sort-key="rows" data-sort-type="number">Rows <span class="sort-indicator"></span></th>
+              <th class="num" data-sortable data-sort-key="tickers" data-sort-type="number">Tickers <span class="sort-indicator"></span></th>
+              <th>Date min</th>
+              <th>Date max</th>
+              <th>Freshness</th>
+              <th>File</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in datasets %}
+              <tr>
+                <td class="col-pinned" data-sort-value="{{ row.label }}"><a href="{{ url_for('data_estate', dataset=row.key) }}">{{ row.label }}</a></td>
+                <td data-sort-value="{{ row.kind }}">{{ row.kind }}</td>
+                <td data-sort-value="{{ row.source }}">{{ row.source }}</td>
+                <td class="num" data-sort-value="{{ row.rows }}">{{ number(row.rows, 0) }}</td>
+                <td class="num" data-sort-value="{{ row.tickers }}">{{ number(row.tickers, 0) }}</td>
+                <td>{{ row.date_min or "" }}</td>
+                <td>{{ row.date_max or "" }}</td>
+                <td>{{ row.freshness or "" }}</td>
+                <td>{{ row.file_name }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="gold-coverage">
+    <div class="zone__header">
+      <span>Gold Dataset Coverage</span>
+      <span class="zone__header-meta">feature groups and sector spread</span>
+    </div>
+    <div class="zone__body split-grid">
+      <div class="table-wrap">
+        <table class="data dense" data-table="gold-feature-coverage">
+          <thead><tr><th>Group</th><th class="num">Present</th><th class="num">Expected</th><th class="num">Missing</th></tr></thead>
+          <tbody>
+            {% for row in gold_feature_coverage %}
+              <tr>
+                <td>{{ row.group }}</td>
+                <td class="num">{{ number(row.present, 0) }}</td>
+                <td class="num">{{ number(row.expected, 0) }}</td>
+                <td class="num">{{ number(row.missing_ratio, 4) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table class="data dense" data-table="gold-sector-coverage">
+          <thead><tr><th>Sector</th><th class="num">Rows</th></tr></thead>
+          <tbody>
+            {% for row in gold_sector_coverage %}
+              <tr>
+                <td>{{ row.sector or row['index'] or "Unknown" }}</td>
+                <td class="num">{{ number(row.count or row.sector_count or 0, 0) }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="2">No sector coverage available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="dataset-sample">
+    <div class="zone__header">
+      <span>{{ selected_label }} Sample</span>
+      <span class="zone__header-meta">latest 50 rows · first 14 columns</span>
+    </div>
+    <div class="zone__body">
+      {{ table_toolbar("Filter sample rows") }}
+      <div class="table-wrap">
+        <table class="data dense" data-table="data-estate-sample">
+          <thead>
+            <tr>
+              {% for column in sample_columns %}
+                <th {% if loop.first %}class="col-pinned"{% endif %}>{{ column|replace("_", " ")|title }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in sample_rows %}
+              <tr>
+                {% for column in sample_columns %}
+                  <td {% if loop.first %}class="col-pinned"{% endif %}>{{ row.get(column, "") }}</td>
+                {% endfor %}
+              </tr>
+            {% else %}
+              <tr><td>No sample rows available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</section>
+{% endblock %}

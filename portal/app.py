@@ -8,6 +8,7 @@ from flask import Flask, Response, abort, jsonify, redirect, render_template, re
 from markupsafe import Markup, escape
 
 from portal.services.database_reader import db_available
+from portal.services.data_estate import data_estate_context
 from portal.services.data_quality_service import data_quality_context
 from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
@@ -185,9 +186,10 @@ def create_app(root: Path | None = None) -> Flask:
     def data_quality():
         return render_template("data_quality.html", title="Data Quality", **data_quality_context(root_path()))
 
+    @app.route("/data")
     @app.route("/gold")
-    def gold():
-        return render_template("gold_dataset.html", title="Gold Dataset", **gold_context(root_path()))
+    def data_estate():
+        return render_template("data_estate.html", title="Data Estate", **data_estate_context(root_path(), request.args.get("dataset")))
 
     @app.route("/signals")
     def signals():
