@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import func, select
 
 from portal.services.latest_file_reader import count_rows, latest_file, readable_reason, safe_read_csv
 from portal.services.trading_service import _position_summary, _status_counts
@@ -251,14 +252,19 @@ def positions_context(root: Path) -> dict[str, Any]:
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     positions = safe_read_csv(positions_file, nrows=1000)
     rows = _records(positions)
+    position_ids: list[str] = []
     for row in rows:
         symbol = str(row.get("symbol") or "").upper()
         row["position_id"] = position_id_for_symbol(symbol) if symbol else ""
+        if row["position_id"]:
+            position_ids.append(row["position_id"])
         row["status"] = "open"
         qty = _float(row.get("qty"))
         cost_basis = _float(row.get("cost_basis"))
         row["entry_price"] = _float(row.get("avg_entry_price")) or (cost_basis / qty if qty else None)
-        row["lineage_event_count"] = len(_position_events(row["position_id"])) if row["position_id"] else 0
+    lineage_counts = _position_event_counts(position_ids)
+    for row in rows:
+        row["lineage_event_count"] = lineage_counts.get(str(row.get("position_id") or ""), 0)
     return {
         "source": "csv_artifacts",
         "refreshed_at": _csv_timestamp(positions_file),
@@ -287,6 +293,23 @@ def _position_events(position_id: str) -> list[dict[str, Any]]:
         .where(position_events.c.position_id == position_id)
         .order_by(position_events.c.event_at.asc(), position_events.c.id.asc())
     )
+
+
+def _position_event_counts(position_ids: list[str]) -> dict[str, int]:
+    clean_ids = sorted({str(position_id) for position_id in position_ids if position_id})
+    if not clean_ids:
+        return {}
+    rows = _rows_from_db(
+        select(position_events.c.position_id, func.count(position_events.c.id).label("event_count"))
+        .where(position_events.c.position_id.in_(clean_ids))
+        .group_by(position_events.c.position_id)
+    )
+    counts: dict[str, int] = {}
+    for row in rows:
+        position_id = str(row.get("position_id") or "")
+        if position_id:
+            counts[position_id] = int(row.get("event_count") or 0)
+    return counts
 
 
 def position_lineage_context(root: Path, position_id: str) -> dict[str, Any]:

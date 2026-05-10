@@ -8,6 +8,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 
+_ENGINE_CACHE: dict[str, Engine] = {}
+
+
 def _env_files() -> list[Path]:
     project_root = Path(__file__).resolve().parents[3]
     return [project_root / ".env", Path("/etc/stockml/stockml.env")]
@@ -67,4 +70,6 @@ def get_engine(url: Optional[str] = None, required: bool = True) -> Optional[Eng
     resolved = url or database_url(required=required)
     if not resolved:
         return None
-    return create_engine(resolved, pool_pre_ping=True, future=True)
+    if resolved not in _ENGINE_CACHE:
+        _ENGINE_CACHE[resolved] = create_engine(resolved, pool_pre_ping=True, future=True)
+    return _ENGINE_CACHE[resolved]
