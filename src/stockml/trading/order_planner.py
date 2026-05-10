@@ -5,6 +5,8 @@ from typing import Optional
 
 import pandas as pd
 
+from stockml.decisions.meta_label_gate import MetaLabelGateConfig, apply_meta_label_gate
+from stockml.models.meta_labeling import load_meta_label_config
 from stockml.common.paths import MODEL_OUTPUTS_DIR, latest_file
 from stockml.trading.config import AlpacaConfig
 from stockml.trading.order_builder import order_row
@@ -195,6 +197,16 @@ def build_candidate_pool(
     if filtered.empty:
         return pd.DataFrame()
     gated = apply_trade_quality_gate(filtered, config, price_snapshot=price_snapshot, metadata=metadata)
+    if "meta_label_probability" in gated.columns:
+        meta_cfg = load_meta_label_config()
+        gated = apply_meta_label_gate(
+            gated,
+            MetaLabelGateConfig(
+                enabled=meta_cfg.enabled,
+                min_meta_label_probability=meta_cfg.min_meta_label_probability,
+                transaction_cost_bps=meta_cfg.transaction_cost_bps,
+            ),
+        )
     pool = pd.DataFrame([order_row(row, config) for _, row in gated.iterrows()])
     if pool.empty:
         return pool

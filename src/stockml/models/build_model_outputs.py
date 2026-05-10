@@ -7,6 +7,8 @@ from typing import Dict, Optional
 from stockml.common.logging_utils import log
 from stockml.common.paths import MODEL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.models.gold_loader import load_gold_dataset
+from stockml.models.meta_labeling import add_meta_label_predictions, load_meta_label_config, train_meta_label_model
+from stockml.models.meta_label_validation import walk_forward_validate_meta_labels
 from stockml.models.ranking_model import ModelArtifacts, model_config_json, train_predict_from_gold
 
 
@@ -52,13 +54,55 @@ def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
     return outputs
 
 
+def _add_meta_label_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
+    cfg = load_meta_label_config()
+    outputs = {
+        "meta_label_predictions": MODEL_OUTPUTS_DIR / f"meta_label_predictions_{stamp}.csv",
+        "meta_label_validation": MODEL_OUTPUTS_DIR / f"meta_label_validation_{stamp}.csv",
+        "meta_label_bucket_performance": MODEL_OUTPUTS_DIR / f"meta_label_bucket_performance_{stamp}.csv",
+    }
+    history = artifacts.walk_forward_predictions.copy()
+    if not history.empty and "trade_action" not in history.columns and "model_score" in history.columns:
+        history["rank_overall"] = history.groupby("date")["model_score"].rank(ascending=False, method="first")
+        history["trade_action"] = "No Decision"
+        history.loc[history["rank_overall"].le(10), "trade_action"] = "Long"
+        history.loc[history["rank_overall"].gt(history.groupby("date")["rank_overall"].transform("max") - 10), "trade_action"] = "Short"
+        history["confidence_score"] = history.get("confidence_score", history["rank_overall"].rank(pct=True))
+        history["side_probability"] = history.get("side_probability", 0.6)
+        history["probability_edge"] = history.get("probability_edge", 0.1)
+        history["expected_trade_return"] = history.get("expected_trade_return", history["model_score"])
+        history["risk_adjusted_score"] = history.get("risk_adjusted_score", history["model_score"])
+    fit = train_meta_label_model(history, cfg)
+    validation, predictions, buckets = walk_forward_validate_meta_labels(history, cfg)
+    artifacts.signal_table = add_meta_label_predictions(artifacts.signal_table, fit, cfg)
+    artifacts.predictions = add_meta_label_predictions(artifacts.predictions, fit, cfg)
+    artifacts.top_long = artifacts.signal_table[artifacts.signal_table["trade_action"].eq("Long")].sort_values("rank_overall").head(len(artifacts.top_long) or 50)
+    artifacts.top_short = artifacts.signal_table[artifacts.signal_table["trade_action"].eq("Short")].sort_values("rank_overall", ascending=False).head(len(artifacts.top_short) or 50)
+    predictions.to_csv(outputs["meta_label_predictions"], index=False)
+    validation.to_csv(outputs["meta_label_validation"], index=False)
+    buckets.to_csv(outputs["meta_label_bucket_performance"], index=False)
+    artifacts.model_config["meta_labeling"] = {
+        "enabled": cfg.enabled,
+        "min_meta_label_probability": cfg.min_meta_label_probability,
+        "transaction_cost_bps": cfg.transaction_cost_bps,
+        "embargo_days": cfg.embargo_days,
+        "min_training_signals": cfg.min_training_signals,
+        "fitted": fit.fitted,
+        "reason": fit.reason,
+        "validation_rows": len(validation),
+    }
+    return outputs
+
+
 def build_model_outputs(gold_file: Optional[Path] = None, limit_tickers: Optional[int] = None, top_n: int = 50) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     gold = load_gold_dataset(gold_file, limit_tickers=limit_tickers)
     log(f"Loaded Gold dataset for model: {len(gold):,} rows")
     artifacts = train_predict_from_gold(gold, top_n=top_n)
+    meta_paths = _add_meta_label_artifacts(artifacts, stamp)
     paths = _write_artifacts(artifacts, stamp)
+    paths.update(meta_paths)
     for name, path in paths.items():
         log(f"{name}: {path}")
     return paths

@@ -1,0 +1,6 @@
+enabled: true
+min_meta_label_probability: 0.60
+transaction_cost_bps: 10
+embargo_days: 5
+min_training_signals: 500
+model_type: hist_gradient_boosting
