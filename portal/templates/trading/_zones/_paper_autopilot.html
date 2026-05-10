@@ -67,5 +67,42 @@
     <p class="text-secondary">
       Paper-only control loop. This first state-machine slice tracks orders, waits for fills, and terminates when no open orders or positions remain.
     </p>
+    <details class="autopilot-log" data-key="autopilot-tick-log">
+      <summary>Recent Autopilot Ticks</summary>
+      <div class="table-scroll">
+        <table class="data dense">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Status</th>
+              <th>Phase</th>
+              <th class="num">Orders</th>
+              <th class="num">Broker</th>
+              <th class="num">Positions</th>
+              <th>Termination</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if not paper_autopilot.recent_ticks %}
+              <tr><td colspan="8" class="empty small">No autopilot tick logs yet.</td></tr>
+            {% else %}
+              {% for tick in paper_autopilot.recent_ticks %}
+                <tr>
+                  <td class="num-l">{{ tick.timestamp }}</td>
+                  <td>{{ tick.status }}</td>
+                  <td>{{ tick.phase }}</td>
+                  <td class="num">{{ tick.open_orders }}</td>
+                  <td class="num">{{ tick.broker_open_orders }}</td>
+                  <td class="num">{{ tick.open_positions }}</td>
+                  <td>{{ tick.termination_reason }}</td>
+                  <td>{{ tick.last_error }}</td>
+                </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </details>
   </div>
 </section>

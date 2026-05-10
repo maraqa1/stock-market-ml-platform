@@ -16,6 +16,20 @@ from stockml.trading.paper_trader import refresh_order_tracking
 STATE_VERSION = 1
 TERMINAL_ORDER_STATES = {"filled", "canceled", "cancelled", "expired", "rejected"}
 OPEN_ORDER_STATES = {"accepted", "new", "pending_new", "pending_replace", "submitted", "partially_filled", "partial"}
+TICK_LOG_COLUMNS = [
+    "timestamp",
+    "status",
+    "phase",
+    "open_orders",
+    "broker_open_orders",
+    "tracked_open_orders",
+    "open_positions",
+    "orders_tracked",
+    "termination_reason",
+    "last_error",
+    "tracking_path",
+    "positions_path",
+]
 
 
 def _now() -> str:
@@ -26,6 +40,17 @@ def _state_path(root: Path | None = None) -> Path:
     if root is None:
         return PORTAL_OUTPUTS_DIR / "paper_autopilot_state.json"
     return Path(root) / "data" / "portal_outputs" / "paper_autopilot_state.json"
+
+
+def _autopilot_dir(root: Path | None = None) -> Path:
+    if root is None:
+        return PORTAL_OUTPUTS_DIR.parent / "trading" / "autopilot"
+    return Path(root) / "data" / "trading" / "autopilot"
+
+
+def _tick_log_path(root: Path | None = None, now: datetime | None = None) -> Path:
+    day = (now or datetime.now(timezone.utc)).strftime("%Y%m%d")
+    return _autopilot_dir(root) / f"autopilot_ticks_{day}.csv"
 
 
 def _default_state() -> dict[str, Any]:
@@ -74,6 +99,33 @@ def save_state(state: dict[str, Any], root: Path | None = None) -> dict[str, Any
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return out
+
+
+def append_tick_log(state: dict[str, Any], root: Path | None = None) -> Path:
+    path = _tick_log_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = {column: state.get(column, "") for column in TICK_LOG_COLUMNS}
+    row["timestamp"] = state.get("last_tick_at") or state.get("updated_at") or _now()
+    frame = pd.DataFrame([row], columns=TICK_LOG_COLUMNS)
+    frame.to_csv(path, mode="a", index=False, header=not path.exists())
+    return path
+
+
+def recent_tick_logs(root: Path | None = None, limit: int = 10) -> list[dict[str, Any]]:
+    directory = _autopilot_dir(root)
+    if not directory.exists():
+        return []
+    files = sorted(directory.glob("autopilot_ticks_*.csv"), key=lambda path: path.stat().st_mtime, reverse=True)
+    frames = []
+    for path in files[:3]:
+        try:
+            frames.append(pd.read_csv(path, low_memory=False))
+        except Exception:
+            pass
+    if not frames:
+        return []
+    frame = pd.concat(frames, ignore_index=True)
+    return frame.tail(max(1, limit)).iloc[::-1].fillna("").to_dict("records")
 
 
 def start(root: Path | None = None) -> dict[str, Any]:
@@ -169,11 +221,15 @@ def tick(
     state = load_state(root)
     if state.get("status") != "running":
         state.update({"last_tick_at": _now(), "last_error": "autopilot_not_running"})
-        return save_state(state, root)
+        state = save_state(state, root)
+        append_tick_log(state, root)
+        return state
 
     cfg = alpaca_config()
     if cfg.live_trading_enabled:
-        return stop(root, reason="live_trading_enabled_guardrail")
+        state = stop(root, reason="live_trading_enabled_guardrail")
+        append_tick_log(state, root)
+        return state
 
     stamp = _now()
     try:
@@ -216,7 +272,9 @@ def tick(
         )
     except Exception as exc:
         state.update({"status": "stopped", "phase": "error", "updated_at": stamp, "stopped_at": stamp, "last_error": str(exc), "termination_reason": "autopilot_error"})
-    return save_state(state, root)
+    state = save_state(state, root)
+    append_tick_log(state, root)
+    return state
 
 
 def action(action_name: str, root: Path | None = None) -> dict[str, Any]:
@@ -263,4 +321,5 @@ def context(root: Path | None = None) -> dict[str, Any]:
         "status_label": labels.get(str(state.get("status") or ""), str(state.get("status") or "idle").replace("_", " ").title()),
         "phase_label": phase_labels.get(str(state.get("phase") or ""), str(state.get("phase") or "idle").replace("_", " ").title()),
         "state_path": str(_state_path(root)),
+        "recent_ticks": recent_tick_logs(root),
     }

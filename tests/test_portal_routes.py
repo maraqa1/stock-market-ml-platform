@@ -108,6 +108,7 @@ def test_trading_paper_autopilot_controls(client):
     assert response.status_code == 200
     assert b"Paper Autopilot" in response.data
     assert b"Start Paper Autopilot" in response.data
+    assert b"Recent Autopilot Ticks" in response.data
 
     post = client.post("/trading/autopilot/start")
     assert post.status_code == 302

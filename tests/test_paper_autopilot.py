@@ -70,6 +70,9 @@ def test_paper_autopilot_tick_waits_for_fills(monkeypatch, tmp_path):
     assert state["tracked_open_orders"] == 1
     assert state["broker_open_orders"] == 0
     assert state["open_positions"] == 1
+    logs = paper_autopilot.recent_tick_logs(tmp_path)
+    assert logs[0]["phase"] == "waiting_for_fills"
+    assert logs[0]["open_orders"] == 1
 
 
 def test_paper_autopilot_tick_terminates_when_flat(monkeypatch, tmp_path):
@@ -110,3 +113,16 @@ def test_paper_autopilot_tick_counts_direct_broker_orders(monkeypatch, tmp_path)
     assert state["open_orders"] == 5
     assert state["tracked_open_orders"] == 0
     assert state["broker_open_orders"] == 5
+
+
+def test_paper_autopilot_logs_not_running_ticks(tmp_path):
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": "", "positions_path": ""},
+        broker_open_orders_func=lambda cfg: 0,
+    )
+
+    assert state["last_error"] == "autopilot_not_running"
+    logs = paper_autopilot.recent_tick_logs(tmp_path)
+    assert len(logs) == 1
+    assert logs[0]["last_error"] == "autopilot_not_running"
