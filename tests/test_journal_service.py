@@ -96,3 +96,18 @@ def test_journal_falls_back_to_artifacts_when_event_table_missing():
         assert payload["events"][0]["symbol"] == "AAA"
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def test_journal_falls_back_to_artifacts_when_event_table_is_empty():
+    root = Path(".pytest_workspace") / f"journal_{uuid4().hex}"
+    engine = create_engine("sqlite:///:memory:", future=True)
+    create_all(engine)
+    try:
+        path = root / "data" / "trading" / "paper_trade_journal" / "paper_trade_journal_1.csv"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{"symbol": "AAA", "lifecycle_state": "submitted", "order_id": "ord-1"}]).to_csv(path, index=False)
+        payload = query(filters(from_date=date(2000, 1, 1), to_date=date(2100, 1, 1)), target=engine, root=root)
+        assert payload["total_in_range"] == 1
+        assert payload["events"][0]["source"] == "trade_journal"
+    finally:
+        shutil.rmtree(root, ignore_errors=True)

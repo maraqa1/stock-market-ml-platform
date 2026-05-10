@@ -259,6 +259,11 @@ def query(filters: JournalFilters, cursor: str | None = None, limit: int = DEFAU
             rows = conn.execute(base.order_by(order, id_order).limit(cap + 1)).mappings().all()
         page_rows = [dict(row) for row in rows[:cap]]
         events = [_event_record(row) for row in page_rows]
+        if not events and root is not None:
+            fallback = _artifact_query(root, filters, cursor, cap)
+            if fallback["events"]:
+                fallback["source"] = "csv_artifacts"
+                return fallback
         next_cursor = None
         if len(rows) > cap and page_rows:
             last = page_rows[-1]
