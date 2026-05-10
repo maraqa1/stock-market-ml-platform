@@ -15,6 +15,7 @@ from portal.services.kpi import trading_cadence_context, trading_header_context,
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
 from portal.services.model_validation_service import model_validation_context
 from portal.services.search import search
+from portal.services.shortlist import get_for_date as shortlist_get_for_date
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.symbol_detail import get as symbol_detail_get
 from portal.services.stock_detail_service import stock_detail_context
@@ -326,14 +327,22 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/shortlist")
     def shortlist():
         root = root_path()
-        context = trading_context(root)
-        context.update(
+        payload = shortlist_get_for_date(
+            root,
+            request.args.get("date"),
             {
-                "trading_header": trading_header_context(root),
-                "trading_cadence": trading_cadence_context(root),
-            }
+                "bias": request.args.get("bias", "all"),
+                "sector": request.args.get("sector", "all"),
+                "in_basket": request.args.get("in_basket", "any"),
+            },
         )
-        return render_template("shortlist.html", title="Model Shortlist", **context)
+        return render_template(
+            "shortlist.html",
+            title="Model Shortlist",
+            shortlist=payload,
+            trading_header=trading_header_context(root),
+            trading_cadence=trading_cadence_context(root),
+        )
 
     @app.route("/diagnostics")
     def diagnostics():

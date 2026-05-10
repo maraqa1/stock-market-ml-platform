@@ -12,6 +12,7 @@ from stockml.db.schema import (
     pipeline_runs,
     pipeline_stages,
     position_events,
+    shortlist_snapshots,
 )
 
 
@@ -24,22 +25,25 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert "pipeline_runs" in metadata.tables
     assert "pipeline_stages" in metadata.tables
     assert "position_events" in metadata.tables
+    assert "shortlist_snapshots" in metadata.tables
     assert pipeline_runs.primary_key.columns.keys() == ["run_id"]
     assert pipeline_stages.primary_key.columns.keys() == ["run_id", "stage_name"]
     assert position_events.primary_key.columns.keys() == ["id"]
+    assert shortlist_snapshots.primary_key.columns.keys() == ["run_id", "symbol"]
 
 
 def test_pipeline_and_position_tables_create_query_and_drop_self_contained():
     engine = create_engine("sqlite:///:memory:", future=True)
     create_all(engine)
     inspector = inspect(engine)
-    assert {"pipeline_runs", "pipeline_stages", "position_events"}.issubset(set(inspector.get_table_names()))
+    assert {"pipeline_runs", "pipeline_stages", "position_events", "shortlist_snapshots"}.issubset(set(inspector.get_table_names()))
     with engine.begin() as conn:
         assert conn.execute(select(pipeline_runs)).all() == []
         assert conn.execute(select(pipeline_stages)).all() == []
         assert conn.execute(select(position_events)).all() == []
+        assert conn.execute(select(shortlist_snapshots)).all() == []
     metadata.drop_all(engine)
-    assert not {"pipeline_runs", "pipeline_stages", "position_events"}.intersection(set(inspect(engine).get_table_names()))
+    assert not {"pipeline_runs", "pipeline_stages", "position_events", "shortlist_snapshots"}.intersection(set(inspect(engine).get_table_names()))
 
 
 def test_pipeline_run_and_stage_happy_path_insert_shape():

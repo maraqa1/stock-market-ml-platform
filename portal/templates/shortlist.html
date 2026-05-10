@@ -1,7 +1,109 @@
 {% extends "base.html" %}
+{% from "_macros/format.html" import number, signed_pct, side, time_utc %}
+{% from "_macros/table.html" import table_toolbar %}
 {% block content %}
 <section class="trading-console">
   {% include "trading/_zones/_cadence.html" %}
-  {% include "trading/_zones/_shortlist.html" %}
+
+  <section class="zone" data-zone="model-shortlist-page">
+    <div class="zone__header">
+      <div>
+        <span>Model Shortlist</span>
+        <small>
+          {% if shortlist.run_id %}
+            run {{ shortlist.run_id }} · ran {{ time_utc(shortlist.ran_at) }} · {{ shortlist.total_candidates }} candidates
+          {% else %}
+            No shortlist run selected
+          {% endif %}
+        </small>
+      </div>
+    </div>
+    <div class="zone__body">
+      <form class="filter-bar" method="get">
+        <label>
+          <span>Date</span>
+          <select name="date">
+            {% for available_date in shortlist.available_dates %}
+              <option value="{{ available_date }}" {% if available_date == shortlist.selected_date %}selected{% endif %}>
+                {% if loop.index == 1 %}Today{% elif loop.index == 2 %}Yesterday{% else %}{{ available_date }}{% endif %}
+              </option>
+            {% endfor %}
+            {% if not shortlist.available_dates %}
+              <option value="{{ shortlist.selected_date }}">{{ shortlist.selected_date }}</option>
+            {% endif %}
+          </select>
+        </label>
+        <label>
+          <span>Bias</span>
+          <select name="bias">
+            {% for value, label in [('all', 'All'), ('long', 'Long'), ('short', 'Short'), ('neutral', 'Neutral')] %}
+              <option value="{{ value }}" {% if shortlist.filters.bias == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Sector</span>
+          <select name="sector">
+            <option value="all" {% if shortlist.filters.sector == 'all' %}selected{% endif %}>All</option>
+            {% for sector in shortlist.sectors %}
+              <option value="{{ sector }}" {% if shortlist.filters.sector == sector %}selected{% endif %}>{{ sector }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Basket</span>
+          <select name="in_basket">
+            {% for value, label in [('any', 'Any'), ('yes', 'In basket'), ('no', 'Excluded')] %}
+              <option value="{{ value }}" {% if shortlist.filters.in_basket == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="btn-primary" type="submit">Apply</button>
+        <a class="btn-ghost" href="{{ url_for('shortlist') }}">Reset</a>
+      </form>
+
+      {{ table_toolbar("Filter model shortlist") }}
+      <div class="table-wrap">
+        <table class="data dense" data-table="model-shortlist">
+          <thead>
+            <tr>
+              <th class="col-pinned" data-sortable data-sort-key="rank" data-sort-type="number">Rank <span class="sort-indicator"></span></th>
+              <th data-sortable data-sort-key="symbol">Symbol <span class="sort-indicator"></span></th>
+              <th data-sortable data-sort-key="name">Name <span class="sort-indicator"></span></th>
+              <th data-sortable data-sort-key="bias">Bias <span class="sort-indicator"></span></th>
+              <th class="num" data-sortable data-sort-key="score" data-sort-type="number">Score <span class="sort-indicator"></span></th>
+              <th class="num" data-sortable data-sort-key="edge" data-sort-type="number">Edge <span class="sort-indicator"></span></th>
+              <th data-sortable data-sort-key="sector">Sector <span class="sort-indicator"></span></th>
+              <th data-sortable data-sort-key="basket">Basket <span class="sort-indicator"></span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in shortlist.rows %}
+              <tr>
+                <td class="num-l col-pinned" data-sort-value="{{ row.rank }}">{{ row.rank }}</td>
+                <td data-sort-value="{{ row.symbol }}"><a class="ticker-link" href="{{ url_for('symbol_detail', symbol=row.symbol) }}">{{ row.symbol }}</a></td>
+                <td data-sort-value="{{ row.name }}">{{ row.name }}</td>
+                <td data-sort-value="{{ row.bias }}">{{ side(row.bias) }}</td>
+                <td class="num" data-sort-value="{{ row.score }}">{{ number(row.score, 4) }}</td>
+                <td class="num" data-sort-value="{{ row.expected_edge_pct }}">{{ signed_pct(row.expected_edge_pct, 2) }}</td>
+                <td data-sort-value="{{ row.sector }}">{{ row.sector or "Not available" }}</td>
+                <td data-sort-value="{{ 1 if row.in_basket else 0 }}">
+                  {% if row.in_basket %}
+                    <span title="Selected for today's basket">&#10003;</span>
+                  {% else %}
+                    <span title="{{ row.excluded_reason or 'Not selected for basket' }}">&ndash;</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="8">No shortlist generated for {{ shortlist.selected_date }}.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 </section>
 {% endblock %}

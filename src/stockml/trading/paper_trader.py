@@ -12,6 +12,7 @@ from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, latest_signal_table
+from stockml.trading.shortlist_snapshots import write_shortlist_snapshot
 from stockml.trading.submission_guards import load_submission_context, validate_order
 
 
@@ -131,6 +132,7 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     plan_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_plan_{stamp}.csv"
     result_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_results_{stamp}.csv"
     candidate_pool.to_csv(candidate_pool_path, index=False)
+    write_shortlist_snapshot(candidate_pool_path.stem, candidate_pool)
     plan.to_csv(plan_path, index=False)
     for selected in plan.to_dict("records"):
         selected_eligible = bool(selected.get("order_eligible")) and int(selected.get("suggested_quantity", 0) or 0) >= 1

@@ -9,6 +9,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     MetaData,
@@ -185,6 +186,22 @@ model_artifacts = Table(
     Column("source_file", Text),
     Column("loaded_at", DateTime(timezone=True), server_default=func.now()),
     UniqueConstraint("artifact_type", "artifact_key", name="uq_model_artifacts_type_key"),
+)
+
+shortlist_snapshots = Table(
+    "shortlist_snapshots",
+    metadata,
+    Column("run_id", String(100), ForeignKey("pipeline_runs.run_id"), primary_key=True),
+    Column("rank", Integer, nullable=False),
+    Column("symbol", String(50), primary_key=True),
+    Column("bias", String(20), nullable=False),
+    Column("score", Float, nullable=False),
+    Column("expected_edge", Float),
+    Column("sector", Text),
+    Column("in_basket", Boolean, nullable=False, default=False),
+    Column("excluded_reason", Text),
+    CheckConstraint(_in_values("bias", ("long", "short", "neutral")), name="ck_shortlist_snapshots_bias"),
+    Index("ix_shortlist_run_rank", "run_id", "rank"),
 )
 
 

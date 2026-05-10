@@ -350,6 +350,18 @@ def test_trading_page_renders_model_shortlist_filters(client):
     assert b"Show ranked model shortlist" in response.data
 
 
+def test_shortlist_page_renders_historical_shortlist_filters(symbol_client):
+    response = symbol_client.get("/shortlist?bias=long")
+    assert response.status_code == 200
+    assert b"Model Shortlist" in response.data
+    assert b'name="date"' in response.data
+    assert b'name="bias"' in response.data
+    assert b'name="sector"' in response.data
+    assert b'name="in_basket"' in response.data
+    assert b'href="/symbols/TSLA"' in response.data
+    assert b'value="long" selected' in response.data
+
+
 def test_pipeline_strip_partial_route_returns_fragment(client):
     response = client.get("/trading/_partials/pipeline-strip")
     assert response.status_code == 200
