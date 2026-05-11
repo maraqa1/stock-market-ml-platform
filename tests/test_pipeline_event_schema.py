@@ -18,6 +18,7 @@ from stockml.db.schema import (
     model_runs,
     kill_switch_events,
     intraday_decisions,
+    shadow_outcomes,
     shadow_would_trades,
 )
 
@@ -38,6 +39,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert "kill_switch_events" in metadata.tables
     assert "intraday_decisions" in metadata.tables
     assert "shadow_would_trades" in metadata.tables
+    assert "shadow_outcomes" in metadata.tables
     assert pipeline_runs.primary_key.columns.keys() == ["run_id"]
     assert pipeline_stages.primary_key.columns.keys() == ["run_id", "stage_name"]
     assert position_events.primary_key.columns.keys() == ["id"]
@@ -48,6 +50,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert kill_switch_events.primary_key.columns.keys() == ["id"]
     assert intraday_decisions.primary_key.columns.keys() == ["id"]
     assert shadow_would_trades.primary_key.columns.keys() == ["id"]
+    assert shadow_outcomes.primary_key.columns.keys() == ["would_trade_id"]
 
 
 def test_pipeline_and_position_tables_create_query_and_drop_self_contained():

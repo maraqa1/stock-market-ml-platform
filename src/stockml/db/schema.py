@@ -318,6 +318,20 @@ shadow_would_trades = Table(
     Index("ix_shadow_wt_symbol_decided", "symbol", "decided_at"),
 )
 
+shadow_outcomes = Table(
+    "shadow_outcomes",
+    metadata,
+    Column("would_trade_id", Integer, ForeignKey("shadow_would_trades.id"), primary_key=True),
+    Column("evaluated_at", DateTime(timezone=True), nullable=False),
+    Column("exit_price", Float, nullable=False),
+    Column("raw_return_pct", Float, nullable=False),
+    Column("cost_bps", Float, nullable=False),
+    Column("net_return_pct", Float, nullable=False),
+    Column("spy_return_pct", Float, nullable=False),
+    Column("net_excess_pct", Float, nullable=False),
+    Column("outperformed", Boolean, nullable=False),
+)
+
 
 def create_all(engine) -> None:
     metadata.create_all(engine)

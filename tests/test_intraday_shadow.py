@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import create_engine, select
+import pytest
+from sqlalchemy import create_engine, insert, select
 
-from stockml.db.schema import create_all, intraday_decisions, shadow_would_trades
+from stockml.db.schema import create_all, intraday_decisions, price_history, shadow_outcomes, shadow_would_trades
 from stockml.intraday.features import IntradayFeatures, NightlySignal
 from stockml.intraday.gates import GATE_VERSION, GateDecision, next_five_minute_boundary
 from stockml.intraday.decisions import record_decision
-from stockml.intraday.shadow import add_trading_days, estimated_entry_slippage_bps, mark_superseded_for_position
+from stockml.intraday.shadow import add_trading_days, evaluate_pending_outcomes, estimated_entry_slippage_bps, mark_superseded_for_position
 
 
 NOW = datetime(2026, 5, 11, 15, 0, tzinfo=timezone.utc)
@@ -133,3 +134,82 @@ def test_mark_superseded_for_position_updates_pending_same_symbol_side(monkeypat
 def test_estimated_entry_cost_is_half_spread_plus_market_impact():
     assert estimated_entry_slippage_bps(features(spread_bps=20)) == 15.0
     assert estimated_entry_slippage_bps(features(spread_bps=None)) == 5.0
+
+
+def _seed_price(conn, selected_date: date, ticker: str, close: float):
+    conn.execute(
+        insert(price_history).values(
+            date=selected_date,
+            ticker=ticker,
+            open=close,
+            high=close,
+            low=close,
+            close=close,
+            adj_close=close,
+            volume=1_000_000,
+            source="pytest",
+        )
+    )
+
+
+def test_evaluate_pending_outcomes_writes_net_of_cost_result_idempotently(monkeypatch):
+    db = engine()
+    monkeypatch.setattr("stockml.intraday.shadow.kill_switch_gate", kill_allow)
+    row = record_decision("TSLA", features(mid_price=100, spread_bps=20), allow_verdict("allow_long"), NightlySignal("TSLA", "long"), engine=db, decided_at=NOW)
+    eval_date = add_trading_days(NOW.date(), 20)
+    with db.begin() as conn:
+        _seed_price(conn, NOW.date(), "SPY", 400)
+        _seed_price(conn, eval_date, "SPY", 404)
+        _seed_price(conn, eval_date, "TSLA", 112)
+
+    first = evaluate_pending_outcomes(as_of_date=eval_date, evaluated_at=NOW + timedelta(days=30), engine=db)
+    second = evaluate_pending_outcomes(as_of_date=eval_date, evaluated_at=NOW + timedelta(days=31), engine=db)
+
+    with db.connect() as conn:
+        outcomes = conn.execute(select(shadow_outcomes)).mappings().all()
+        trade_status = conn.execute(select(shadow_would_trades.c.status).where(shadow_would_trades.c.id == row["shadow_would_trade_id"])).scalar_one()
+
+    assert first == {"evaluated": 1, "skipped_missing_price": 0}
+    assert second == {"evaluated": 0, "skipped_missing_price": 0}
+    assert len(outcomes) == 1
+    outcome = outcomes[0]
+    assert outcome["raw_return_pct"] == pytest.approx(0.12)
+    assert outcome["cost_bps"] == pytest.approx(30.0)
+    assert outcome["net_return_pct"] == pytest.approx(0.117)
+    assert outcome["spy_return_pct"] == pytest.approx(0.01)
+    assert outcome["net_excess_pct"] == pytest.approx(0.107)
+    assert outcome["outperformed"] is True
+    assert trade_status == "evaluated"
+
+
+def test_evaluate_pending_outcomes_handles_short_return(monkeypatch):
+    db = engine()
+    monkeypatch.setattr("stockml.intraday.shadow.kill_switch_gate", kill_allow)
+    record_decision("TSLA", features(mid_price=100, spread_bps=10), allow_verdict("allow_short"), NightlySignal("TSLA", "short"), engine=db, decided_at=NOW)
+    eval_date = add_trading_days(NOW.date(), 20)
+    with db.begin() as conn:
+        _seed_price(conn, NOW.date(), "SPY", 400)
+        _seed_price(conn, eval_date, "SPY", 400)
+        _seed_price(conn, eval_date, "TSLA", 90)
+
+    result = evaluate_pending_outcomes(as_of_date=eval_date, engine=db)
+
+    with db.connect() as conn:
+        outcome = conn.execute(select(shadow_outcomes)).mappings().one()
+    assert result["evaluated"] == 1
+    assert outcome["raw_return_pct"] == pytest.approx(0.10)
+    assert outcome["cost_bps"] == pytest.approx(20.0)
+    assert outcome["net_return_pct"] == pytest.approx(0.098)
+
+
+def test_evaluate_pending_outcomes_skips_missing_prices(monkeypatch):
+    db = engine()
+    monkeypatch.setattr("stockml.intraday.shadow.kill_switch_gate", kill_allow)
+    record_decision("TSLA", features(), allow_verdict(), NightlySignal("TSLA", "long"), engine=db, decided_at=NOW)
+
+    result = evaluate_pending_outcomes(as_of_date=add_trading_days(NOW.date(), 20), engine=db)
+
+    with db.connect() as conn:
+        assert conn.execute(select(shadow_outcomes)).all() == []
+        assert conn.execute(select(shadow_would_trades.c.status)).scalar_one() == "pending"
+    assert result == {"evaluated": 0, "skipped_missing_price": 1}
