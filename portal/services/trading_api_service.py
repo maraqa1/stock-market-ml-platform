@@ -318,10 +318,13 @@ def _pipeline_history_summary(run: dict[str, Any], stages: list[dict[str, Any]])
 def positions_context(root: Path) -> dict[str, Any]:
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     actions_file = latest_file(root, "operator_actions", "operator_position_actions_*.csv")
+    tracking_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
     positions = safe_read_csv(positions_file, nrows=1000)
     actions = safe_read_csv(actions_file, nrows=1000)
+    tracking = safe_read_csv(tracking_file, nrows=1000)
     rows = _records(positions)
-    pending_close_orders = _latest_close_orders_by_symbol(actions)
+    open_position_symbols = {str(row.get("symbol") or "").upper() for row in rows if row.get("symbol")}
+    pending_close_orders = _latest_close_orders_by_symbol(actions, tracking, open_position_symbols)
     position_ids: list[str] = []
     for row in rows:
         symbol = str(row.get("symbol") or "").upper()
@@ -347,7 +350,11 @@ def positions_context(root: Path) -> dict[str, Any]:
     }
 
 
-def _latest_close_orders_by_symbol(actions: pd.DataFrame) -> dict[str, dict[str, Any]]:
+def _latest_close_orders_by_symbol(
+    actions: pd.DataFrame,
+    tracking: pd.DataFrame | None = None,
+    open_position_symbols: set[str] | None = None,
+) -> dict[str, dict[str, Any]]:
     if actions.empty or "symbol" not in actions.columns:
         return {}
     frame = actions.copy()
@@ -360,6 +367,10 @@ def _latest_close_orders_by_symbol(actions: pd.DataFrame) -> dict[str, dict[str,
 
     pending_statuses = {"accepted", "new", "pending_new", "pending_replace", "submitted"}
     partial_statuses = {"partially_filled", "partial"}
+    frame = _confirmed_close_order_rows(frame, tracking, open_position_symbols)
+    if frame.empty:
+        return {}
+
     out: dict[str, dict[str, Any]] = {}
     for row in _records(frame):
         symbol = str(row.get("symbol") or "").upper()
@@ -387,16 +398,47 @@ def _latest_close_orders_by_symbol(actions: pd.DataFrame) -> dict[str, dict[str,
                 "client_order_id": row.get("client_order_id") or "",
                 "submitted_at": row.get("timestamp") or "",
             }
-        elif effective_status == "filled":
-            out[symbol] = {
-                "status_key": "filled",
-                "label": "Close fill received",
-                "detail": "Broker reported the close order filled; waiting for positions sync.",
-                "order_id": order_id,
-                "client_order_id": row.get("client_order_id") or "",
-                "submitted_at": row.get("timestamp") or "",
-            }
     return out
+
+
+def _confirmed_close_order_rows(
+    actions: pd.DataFrame,
+    tracking: pd.DataFrame | None,
+    open_position_symbols: set[str] | None,
+) -> pd.DataFrame:
+    if tracking is None or tracking.empty or "symbol" not in tracking.columns:
+        return actions
+
+    symbols = set(open_position_symbols or set())
+    if not symbols:
+        return actions.iloc[0:0].copy()
+
+    close_actions = actions.copy()
+    close_actions["__symbol"] = close_actions["symbol"].fillna("").astype(str).str.upper()
+    close_actions = close_actions[close_actions["__symbol"].isin(symbols)].copy()
+    if close_actions.empty:
+        return close_actions.drop(columns=["__symbol"], errors="ignore")
+
+    action_order_ids = {str(value).strip() for value in close_actions.get("order_id", pd.Series(dtype=str)).dropna() if str(value).strip()}
+    action_client_ids = {str(value).strip() for value in close_actions.get("client_order_id", pd.Series(dtype=str)).dropna() if str(value).strip()}
+
+    tracked = tracking.copy()
+    tracked["__symbol"] = tracked["symbol"].fillna("").astype(str).str.upper()
+    tracked = tracked[tracked["__symbol"].isin(symbols)].copy()
+    if "side" in tracked.columns:
+        tracked = tracked[tracked["side"].fillna("").astype(str).str.lower() == "sell"].copy()
+    if action_order_ids and "order_id" in tracked.columns:
+        tracked = tracked[tracked["order_id"].fillna("").astype(str).isin(action_order_ids)].copy()
+    elif action_client_ids and "client_order_id" in tracked.columns:
+        tracked = tracked[tracked["client_order_id"].fillna("").astype(str).isin(action_client_ids)].copy()
+    else:
+        return actions.iloc[0:0].copy()
+    if tracked.empty:
+        return tracked.drop(columns=["__symbol"], errors="ignore")
+    sort_column = "updated_at" if "updated_at" in tracked.columns else "submitted_at" if "submitted_at" in tracked.columns else None
+    if sort_column:
+        tracked = tracked.sort_values(sort_column)
+    return tracked.drop(columns=["__symbol"], errors="ignore")
 
 
 def _float(value: Any) -> float | None:

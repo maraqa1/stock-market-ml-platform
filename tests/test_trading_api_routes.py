@@ -78,6 +78,16 @@ def api_client():
                 "filled_avg_price": 250,
                 "order_id": "order-aaa",
                 "client_order_id": "stockml-AAA-buy",
+            },
+            {
+                "symbol": "AAA",
+                "side": "sell",
+                "status": "submitted",
+                "alpaca_status": "accepted",
+                "notional": 520,
+                "filled_qty": 0,
+                "order_id": "close-aaa",
+                "client_order_id": "client-close-aaa",
             }
         ],
     )
@@ -173,6 +183,28 @@ def test_positions_contract(api_client):
     assert payload["positions"][0]["position_id"] == "paper:AAA"
     assert payload["pending_close_order_count"] == 1
     assert payload["positions"][0]["broker_order"]["label"] == "Close order accepted"
+
+
+def test_positions_ignores_stale_operator_close_when_broker_tracking_has_no_open_close(api_client):
+    root = _fixture_root(api_client)
+    _write_csv(
+        root / "data" / "portal_outputs" / "08_alpaca_paper_order_tracking_2.csv",
+        [
+            {
+                "symbol": "AAA",
+                "side": "sell",
+                "status": "submitted",
+                "alpaca_status": "filled",
+                "order_id": "close-aaa",
+                "client_order_id": "client-close-aaa",
+            }
+        ],
+    )
+
+    payload = _json(api_client, "/api/trading/positions")
+
+    assert payload["pending_close_order_count"] == 0
+    assert payload["positions"][0]["broker_order"] is None
 
 
 def test_position_lineage_contract(api_client):
