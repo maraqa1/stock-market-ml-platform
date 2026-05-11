@@ -1,0 +1,8 @@
+version: 1
+enabled: true
+shadow_only: true
+cadence_minutes: 5
+timeframe: 5Min
+bar_limit: 12
+provider: alpaca
+reference_provider_enabled: false
