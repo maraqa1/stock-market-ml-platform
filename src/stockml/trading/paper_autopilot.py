@@ -20,6 +20,7 @@ from stockml.trading.paper_trader import refresh_order_tracking
 STATE_VERSION = 1
 TERMINAL_ORDER_STATES = {"filled", "canceled", "cancelled", "expired", "rejected"}
 OPEN_ORDER_STATES = {"accepted", "new", "pending_new", "pending_replace", "submitted", "partially_filled", "partial"}
+DEFENSIVE_STALE_LOSS_THRESHOLD = -0.025
 AUTOPILOT_MODE_ORDER = ["observe", "paper_assist", "paper_autopilot", "ai_gated_paper"]
 AUTOPILOT_MODES: dict[str, dict[str, Any]] = {
     "observe": {
@@ -69,6 +70,7 @@ TICK_LOG_COLUMNS = [
     "monitor_watch",
     "autopilot_actions",
     "autopilot_close_submitted",
+    "autopilot_defensive_close_submitted",
     "autopilot_action_notes",
 ]
 
@@ -124,6 +126,7 @@ def _default_state() -> dict[str, Any]:
         "latest_monitor_at": "",
         "autopilot_actions": 0,
         "autopilot_close_submitted": 0,
+        "autopilot_defensive_close_submitted": 0,
         "autopilot_action_notes": "",
         "paper_only": True,
         "live_trading_enabled": False,
@@ -318,7 +321,18 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame) -> pd.Dat
     frame = decisions.copy()
     frame["__symbol"] = frame["symbol"].fillna("").astype(str).str.upper()
     frame["__decision"] = frame["decision"].fillna("").astype(str).str.lower()
-    return frame[(frame["__decision"] == "close") & frame["__symbol"].isin(open_symbols)].copy()
+    frame["__reason"] = frame.get("decision_reason", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+    frame["__plpc"] = pd.to_numeric(frame.get("unrealized_plpc", pd.Series(0, index=frame.index)), errors="coerce").fillna(0)
+    explicit_close = frame["__decision"] == "close"
+    defensive_stale_loss = (
+        (frame["__decision"] == "watch")
+        & frame["__reason"].str.contains("signal_stale", na=False)
+        & (frame["__plpc"] <= DEFENSIVE_STALE_LOSS_THRESHOLD)
+    )
+    out = frame[(explicit_close | defensive_stale_loss) & frame["__symbol"].isin(open_symbols)].copy()
+    out["__autopilot_close_reason"] = "monitor_close"
+    out.loc[defensive_stale_loss.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "defensive_stale_loss"
+    return out
 
 
 def apply_paper_autopilot_decisions(
@@ -330,15 +344,17 @@ def apply_paper_autopilot_decisions(
     """Apply the first narrow Paper Autopilot authority slice.
 
     Paper Autopilot may submit paper close orders for monitor decisions that
-    already say `close`. It deliberately does not auto-open or auto-rotate.
+    already say `close`, plus defensive stale-loss exits beyond the threshold.
+    It deliberately does not auto-open or auto-rotate.
     """
     candidates = _auto_close_candidates(root, positions)
     if candidates.empty:
-        return {"autopilot_actions": 0, "autopilot_close_submitted": 0, "autopilot_action_notes": ""}
+        return {"autopilot_actions": 0, "autopilot_close_submitted": 0, "autopilot_defensive_close_submitted": 0, "autopilot_action_notes": ""}
 
     apply_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
     notes: list[str] = []
     submitted = 0
+    defensive_submitted = 0
     actions = 0
     seen: set[str] = set()
     for row in candidates.fillna("").to_dict("records"):
@@ -352,10 +368,14 @@ def apply_paper_autopilot_decisions(
         message = str(result.get("message") or "")
         if status == "submitted":
             submitted += 1
-        notes.append(f"{symbol}:{status or 'unknown'}:{message or 'no_message'}")
+            if str(row.get("__autopilot_close_reason") or "") == "defensive_stale_loss":
+                defensive_submitted += 1
+        close_reason = str(row.get("__autopilot_close_reason") or "monitor_close")
+        notes.append(f"{symbol}:{close_reason}:{status or 'unknown'}:{message or 'no_message'}")
     return {
         "autopilot_actions": actions,
         "autopilot_close_submitted": submitted,
+        "autopilot_defensive_close_submitted": defensive_submitted,
         "autopilot_action_notes": "; ".join(notes[:10]),
     }
 
@@ -420,7 +440,12 @@ def tick(
         monitor_summary = monitor_decision_loader(root)
         open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
-        autopilot_result = {"autopilot_actions": 0, "autopilot_close_submitted": 0, "autopilot_action_notes": ""}
+        autopilot_result = {
+            "autopilot_actions": 0,
+            "autopilot_close_submitted": 0,
+            "autopilot_defensive_close_submitted": 0,
+            "autopilot_action_notes": "",
+        }
         if state.get("mode") == "paper_autopilot" and open_orders == 0 and open_positions > 0:
             autopilot_result = autopilot_decision_applier(root, positions)
             if int(autopilot_result.get("autopilot_close_submitted") or 0) > 0:
