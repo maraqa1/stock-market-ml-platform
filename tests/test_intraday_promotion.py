@@ -86,6 +86,20 @@ def test_promotion_evaluation_writes_one_row_and_reports_unmet_by_default():
     assert latest_evaluation(db)["criteria_met"] is False
 
 
+def test_latest_evaluation_falls_back_when_storage_missing(monkeypatch):
+    class BrokenConnection:
+        def execute(self, *args, **kwargs):
+            raise RuntimeError("relation promotion_evaluations does not exist")
+
+    monkeypatch.setattr("stockml.intraday.promotion._connect", lambda target=None: (BrokenConnection(), None))
+
+    payload = latest_evaluation()
+
+    assert payload["criteria_met"] is False
+    assert payload["criteria_results"][0]["name"] == "PROMOTION_STORAGE_READY"
+    assert "live trading remains disabled" in payload["notes"]
+
+
 def test_operator_dry_run_confirmation_requires_notes_and_counts():
     db = engine()
     with pytest.raises(ValueError):

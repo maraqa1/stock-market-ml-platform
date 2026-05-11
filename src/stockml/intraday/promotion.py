@@ -21,6 +21,18 @@ class CriterionResult(NamedTuple):
     note: str
 
 
+def _fallback_evaluation(note: str = "promotion tables are not available; live trading remains disabled") -> dict[str, Any]:
+    return {
+        "evaluated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "gate_version": GATE_VERSION,
+        "criteria_met": False,
+        "criteria_results": [
+            _as_dict(CriterionResult("PROMOTION_STORAGE_READY", False, "unavailable", "available", note)),
+        ],
+        "notes": note,
+    }
+
+
 def _connect(target: Engine | Connection | None = None):
     if isinstance(target, Connection):
         return target, None
@@ -116,6 +128,8 @@ def evaluate_criteria(
             CriterionResult("ABLATION_LIFT", mean_excess - expected_baseline_excess_pct > 0.003, mean_excess - expected_baseline_excess_pct, ">0.003", "Intraday confirmation must lift nightly-only excess by more than 0.3 pp."),
             CriterionResult("OPERATOR_DRY_RUN", dry_count >= 5 and dry_operator_ok, f"confirmations={dry_count}, operators={len(dry_ops)}", ">=5 confirmations", "Operator paper confirmations require notes and recent manual review."),
         ]
+    except Exception:
+        return []
     finally:
         if context is not None:
             context.__exit__(None, None, None)
@@ -148,6 +162,8 @@ def evaluate_promotion(
                     notes="live trading remains disabled",
                 )
             )
+        except Exception:
+            return {"evaluated_at": stamp.isoformat(timespec="seconds"), "gate_version": GATE_VERSION, "criteria_met": False, "criteria_results": payload, "notes": "promotion storage unavailable; live trading remains disabled"}
         finally:
             if context is not None:
                 context.__exit__(None, None, None)
@@ -162,6 +178,8 @@ def latest_evaluation(target: Engine | Connection | None = None) -> dict[str, An
         row = conn.execute(select(promotion_evaluations).order_by(promotion_evaluations.c.evaluated_at.desc()).limit(1)).mappings().first()
         if row:
             return {**dict(row), "evaluated_at": row["evaluated_at"].isoformat(timespec="seconds")}
+    except Exception:
+        return _fallback_evaluation()
     finally:
         if context is not None:
             context.__exit__(None, None, None)
