@@ -12,6 +12,7 @@ from stockml.db.schema import intraday_decisions
 from stockml.intraday.features import IntradayFeatures, NightlySignal
 from stockml.intraday.gates import GATE_VERSION, GateDecision, next_five_minute_boundary
 from stockml.intraday.logging import intraday_log
+from stockml.intraday.shadow import maybe_create_would_trade
 
 
 def _aware(value: datetime | None) -> datetime:
@@ -55,6 +56,7 @@ def record_decision(
     decided_at: datetime | None = None,
     bar_close_at: datetime | None = None,
     status: str | None = None,
+    create_shadow: bool = True,
 ) -> dict[str, Any]:
     stamp = _aware(decided_at or getattr(features, "decided_at", None))
     verdict = status or (decision.verdict if decision else "data_unavailable")
@@ -77,6 +79,10 @@ def record_decision(
             with db.begin() as conn:
                 result = conn.execute(insert(intraday_decisions).values(row))
                 row["id"] = result.inserted_primary_key[0] if result.inserted_primary_key else None
+                if create_shadow:
+                    shadow = maybe_create_would_trade(conn, row, features, nightly_signal)
+                    if shadow:
+                        row["shadow_would_trade_id"] = shadow.get("id")
                 return row
         except Exception:
             pass
@@ -90,4 +96,3 @@ def record_decision(
     )
     row["id"] = None
     return row
-

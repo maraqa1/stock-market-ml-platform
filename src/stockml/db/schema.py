@@ -42,6 +42,7 @@ POSITION_EVENT_TYPES = (
 )
 KILL_SWITCH_EVENT_TYPES = ("tripped", "resumed")
 INTRADAY_VERDICTS = ("allow_long", "allow_short", "hold", "block", "data_unavailable")
+SHADOW_WOULD_TRADE_STATUS = ("pending", "evaluated", "superseded", "cancelled")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -295,6 +296,26 @@ intraday_decisions = Table(
     Index("ix_intraday_decisions_symbol_decided_at", "symbol", "decided_at"),
     Index("ix_intraday_decisions_verdict", "verdict", "decided_at"),
     Index("ix_intraday_decisions_block_reason", "block_reason", "decided_at"),
+)
+
+shadow_would_trades = Table(
+    "shadow_would_trades",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("decision_id", Integer, ForeignKey("intraday_decisions.id"), nullable=False),
+    Column("decided_at", DateTime(timezone=True), nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("side", String(20), nullable=False),
+    Column("entry_price", Float, nullable=False),
+    Column("estimated_entry_slippage_bps", Float, nullable=False),
+    Column("nightly_score", Float),
+    Column("gate_version", String(50), nullable=False),
+    Column("evaluation_date", Date, nullable=False),
+    Column("status", String(20), nullable=False, default="pending"),
+    CheckConstraint(_in_values("side", ("long", "short")), name="ck_shadow_would_trades_side"),
+    CheckConstraint(_in_values("status", SHADOW_WOULD_TRADE_STATUS), name="ck_shadow_would_trades_status"),
+    Index("ix_shadow_wt_pending", "evaluation_date"),
+    Index("ix_shadow_wt_symbol_decided", "symbol", "decided_at"),
 )
 
 

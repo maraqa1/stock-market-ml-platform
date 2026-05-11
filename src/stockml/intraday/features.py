@@ -61,6 +61,7 @@ class IntradayFeatures:
     liquidity_ratio: float | None = None
 
     # Microstructure
+    mid_price: float | None = None
     spread_bps: float | None = None
     spread_bps_zscore_20d: float | None = None
     bid_ask_size_imbalance: float | None = None
@@ -248,6 +249,7 @@ def compute_features(
         volume_ratio=_safe_div(last_volume, avg_volume),
         dollar_volume_today=dollar_volume_today,
         liquidity_ratio=_safe_div(dollar_volume_today, avg_dollar_volume_20d),
+        mid_price=mid,
         spread_bps=spread_bps,
         spread_bps_zscore_20d=_safe_float(position_context.get("spread_bps_zscore_20d")),
         bid_ask_size_imbalance=imbalance,
@@ -281,4 +283,3 @@ def compute_features(
         preserved_bias=nightly_context.get("preserved_bias"),
         extra={"symbol": symbol},
     )
-
