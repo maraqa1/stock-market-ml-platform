@@ -387,8 +387,8 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
 def apply_paper_autopilot_decisions(
     root: Path | None,
     positions: pd.DataFrame,
-    *,
     state: dict[str, Any] | None = None,
+    *,
     action_func: Callable[[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Apply the first narrow Paper Autopilot authority slice.
