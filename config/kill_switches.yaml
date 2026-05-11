@@ -1,0 +1,26 @@
+version: 1
+account_size_usd: 1000
+daily:
+  realized_plus_unrealized_loss_usd: -30
+  consecutive_losing_trades: 3
+  intraday_decisions_evaluated: 20
+  unique_symbols_traded: 5
+  provider_divergence_fires: 3
+  health_check_failure_within_min: 5
+weekly:
+  cumulative_loss_usd: -70
+  win_rate_last_20_min_pct: 35
+  drawdown_from_week_high_usd: -100
+total:
+  equity_floor_usd: 850
+  single_position_loss_usd: -50
+  runaway_fills_per_5min: 5
+  unauthorized_order_shape: any
+position_limits:
+  max_single_position_usd: 200
+  per_trade_stop_loss_pct: 7.5
+  per_trade_time_stop_days: 25
+friction:
+  require_manual_resume_after_trip: true
+  cooloff_after_stop_loss_hours: 24
+  cooloff_after_stop_loss_scope: sector

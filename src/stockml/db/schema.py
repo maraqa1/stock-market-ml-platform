@@ -40,6 +40,7 @@ POSITION_EVENT_TYPES = (
     "broker_rejected",
     "guardrail_blocked",
 )
+KILL_SWITCH_EVENT_TYPES = ("tripped", "resumed")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -258,6 +259,20 @@ model_feature_importance = Table(
     Column("model_version", String(100), ForeignKey("model_runs.model_version"), primary_key=True),
     Column("feature_name", String(200), primary_key=True),
     Column("importance", Float, nullable=False),
+)
+
+kill_switch_events = Table(
+    "kill_switch_events",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("switch_name", String(100), nullable=False),
+    Column("event_type", String(20), nullable=False),
+    Column("occurred_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("payload", JSON, nullable=False),
+    Column("operator_id", String(100)),
+    Column("notes", Text),
+    CheckConstraint(_in_values("event_type", KILL_SWITCH_EVENT_TYPES), name="ck_kill_switch_events_event_type"),
+    Index("ix_kse_switch_occurred", "switch_name", "occurred_at"),
 )
 
 

@@ -16,6 +16,7 @@ from stockml.db.schema import (
     model_feature_importance,
     model_folds,
     model_runs,
+    kill_switch_events,
 )
 
 
@@ -32,6 +33,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert "model_runs" in metadata.tables
     assert "model_folds" in metadata.tables
     assert "model_feature_importance" in metadata.tables
+    assert "kill_switch_events" in metadata.tables
     assert pipeline_runs.primary_key.columns.keys() == ["run_id"]
     assert pipeline_stages.primary_key.columns.keys() == ["run_id", "stage_name"]
     assert position_events.primary_key.columns.keys() == ["id"]
@@ -39,6 +41,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert model_runs.primary_key.columns.keys() == ["model_version"]
     assert model_folds.primary_key.columns.keys() == ["model_version", "period"]
     assert model_feature_importance.primary_key.columns.keys() == ["model_version", "feature_name"]
+    assert kill_switch_events.primary_key.columns.keys() == ["id"]
 
 
 def test_pipeline_and_position_tables_create_query_and_drop_self_contained():
