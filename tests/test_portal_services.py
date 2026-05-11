@@ -4,6 +4,7 @@ import time
 import pandas as pd
 
 from portal.services.latest_file_reader import latest_file, readable_reason
+from portal.services.trading_api_service import action_queue_context
 from portal.services.universe_service import universe_context
 from portal.services.signal_service import signal_context
 from portal.services.trading_service import lifecycle_context, trading_context
@@ -179,3 +180,47 @@ def test_lifecycle_context_with_artifacts(tmp_path):
     assert ctx["position_count"] == 1
     assert ctx["unrealized_pl"] == 20
     assert ctx["decision_counts"]["hold"] == 1
+
+
+def test_action_queue_adds_operator_calls_for_visible_supervision(tmp_path):
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [
+            {
+                "symbol": "FRMI",
+                "decision": "replace",
+                "recommended_action": "close_then_open_replacement",
+                "decision_reason": "signal_stale|replacement_rank_improvement",
+                "replacement_symbol": "FWRD",
+                "unrealized_pl": 22.34,
+                "unrealized_plpc": 0.0459,
+            },
+            {
+                "symbol": "FWRD",
+                "decision": "watch",
+                "recommended_action": "rescore_before_add_or_hold",
+                "decision_reason": "signal_stale",
+                "unrealized_pl": -13.61,
+                "unrealized_plpc": -0.0271,
+            },
+            {
+                "symbol": "GLIBK",
+                "decision": "replace",
+                "recommended_action": "close_then_open_replacement",
+                "decision_reason": "take_profit_triggered|replacement_available",
+                "replacement_symbol": "FWRD",
+                "unrealized_pl": -9.53,
+                "unrealized_plpc": -0.0186,
+            },
+        ],
+    )
+
+    ctx = action_queue_context(tmp_path)
+    rows = {row["symbol"]: row for row in ctx["items"]}
+
+    assert rows["FWRD"]["operator_call_label"] == "Watch only"
+    assert rows["FWRD"]["operator_apply_enabled"] is False
+    assert rows["FRMI"]["operator_call_label"] == "Review concentration"
+    assert rows["FRMI"]["operator_apply_enabled"] is False
+    assert rows["GLIBK"]["operator_call_label"] == "Hold - logic check"
+    assert rows["GLIBK"]["operator_apply_enabled"] is False

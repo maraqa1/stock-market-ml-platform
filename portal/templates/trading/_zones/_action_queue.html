@@ -20,6 +20,7 @@
             <th class="num" data-sortable data-sort-key="pnl_pct" data-sort-type="number">P&amp;L</th>
             <th class="num" data-sortable data-sort-key="age" data-sort-type="number">Age</th>
             <th>Recommendation</th>
+            <th>Operator Call</th>
             <th>Reason</th>
             <th>Detected At</th>
             <th>Decision</th>
@@ -33,11 +34,15 @@
               <td data-sort-value="{{ item.unrealized_plpc or 0 }}">{{ signed_money(item.unrealized_pl or 0) }} {{ signed_pct(item.unrealized_plpc or 0) }}</td>
               <td class="num" data-sort-value="{{ item.signal_age_minutes|default(0, true) }}">{{ item.signal_age_minutes|default("", true) }}</td>
               <td>{{ pill(item.decision) }}</td>
+              <td>
+                {{ pill(item.operator_call or "info", item.operator_call_label or "Review") }}
+                <div class="muted small">{{ item.operator_call_reason }}</div>
+              </td>
               <td>{{ item.decision_reason|reason }}</td>
               <td>{{ time_utc(item.generated_at or action_queue.generated_at) }}</td>
               <td>
                 <div class="action-buttons">
-                  <button class="btn btn-primary btn-sm" type="button" data-queue-action="apply" data-event-id="{{ item.event_id }}" data-symbol="{{ item.symbol }}" data-position-id="{{ item.position_id }}" data-decision="{{ item.decision }}">Apply</button>
+                  <button class="btn btn-primary btn-sm" type="button" data-queue-action="apply" data-event-id="{{ item.event_id }}" data-symbol="{{ item.symbol }}" data-position-id="{{ item.position_id }}" data-decision="{{ item.decision }}"{% if item.operator_apply_enabled is sameas false %} disabled title="{{ item.operator_call_reason }}"{% endif %}>Apply</button>
                   <button class="btn btn-ghost btn-sm" type="button" data-queue-action="override" data-event-id="{{ item.event_id }}" data-symbol="{{ item.symbol }}" data-position-id="{{ item.position_id }}" data-decision="{{ item.decision }}">Override</button>
                 </div>
               </td>

@@ -563,19 +563,97 @@ def action_queue_context(root: Path) -> dict[str, Any]:
     if decisions.empty or "decision" not in decisions.columns:
         items: list[dict[str, Any]] = []
     else:
-        actionable = decisions[decisions["decision"].fillna("").isin(["watch", "close", "rotate"])].copy()
-        order = {"close": 0, "rotate": 1, "watch": 2}
+        actionable = decisions[decisions["decision"].fillna("").isin(["watch", "close", "rotate", "replace"])].copy()
+        order = {"close": 0, "rotate": 1, "replace": 1, "watch": 2}
         actionable["__order"] = actionable["decision"].map(order).fillna(9)
         if "unrealized_plpc" not in actionable.columns:
             actionable["unrealized_plpc"] = 0
         actionable = actionable.sort_values(["__order", "unrealized_plpc"], ascending=[True, True], na_position="last")
         actionable = actionable.drop(columns="__order")
         items = _records(actionable)
+        held_symbols = {str(symbol).upper() for symbol in decisions.get("symbol", pd.Series(dtype=str)).dropna()}
         for index, item in enumerate(items):
             item["event_id"] = item.get("event_id") or f"queue-{index + 1}"
             item["position_id"] = position_id_for_symbol(str(item.get("symbol") or ""))
+            item.update(_operator_call_for_queue_item(item, held_symbols))
     counts = _status_counts(pd.DataFrame(items), "decision")
     return {"source": "csv_artifacts", "generated_at": _csv_timestamp(decisions_file), "items": items, "counts": {"total": len(items), **counts}}
+
+
+def _operator_call_for_queue_item(item: dict[str, Any], held_symbols: set[str]) -> dict[str, Any]:
+    decision = str(item.get("decision") or "").strip().lower()
+    reason = str(item.get("decision_reason") or "").strip().lower()
+    replacement_symbol = str(item.get("replacement_symbol") or "").strip().upper()
+    current_symbol = str(item.get("symbol") or "").strip().upper()
+    replacement_already_held = bool(replacement_symbol and replacement_symbol in held_symbols and replacement_symbol != current_symbol)
+    pnl = _float_value(item.get("unrealized_pl"))
+    pnl_pct = _float_value(item.get("unrealized_plpc"))
+
+    if decision == "watch":
+        return {
+            "operator_call": "watch",
+            "operator_call_label": "Watch only",
+            "operator_call_reason": "No trade. Monitor flagged stale signal; wait for fresh rescore.",
+            "operator_apply_enabled": False,
+        }
+    if decision == "close":
+        return {
+            "operator_call": "close",
+            "operator_call_label": "Review close",
+            "operator_call_reason": "Close signal needs operator confirmation before paper order submission.",
+            "operator_apply_enabled": True,
+        }
+    if decision in {"rotate", "replace"}:
+        if "take_profit" in reason and pnl <= 0:
+            return {
+                "operator_call": "warning",
+                "operator_call_label": "Hold - logic check",
+                "operator_call_reason": "Take-profit reason conflicts with current negative P&L; do not apply until reviewed.",
+                "operator_apply_enabled": False,
+            }
+        if replacement_already_held:
+            return {
+                "operator_call": "warning",
+                "operator_call_label": "Review concentration",
+                "operator_call_reason": f"Replacement {replacement_symbol} is already held; avoid increasing concentration without review.",
+                "operator_apply_enabled": False,
+            }
+        if "stop_loss" in reason:
+            return {
+                "operator_call": "close",
+                "operator_call_label": "Review stop-loss",
+                "operator_call_reason": "Stop-loss was flagged; confirm broker state and replacement before applying.",
+                "operator_apply_enabled": True,
+            }
+        if pnl > 0 and "replacement_rank_improvement" in reason:
+            return {
+                "operator_call": "watch",
+                "operator_call_label": "Hold winner",
+                "operator_call_reason": "Position is profitable; do not rotate on rank improvement alone.",
+                "operator_apply_enabled": False,
+            }
+        return {
+            "operator_call": "warning",
+            "operator_call_label": "Manual review",
+            "operator_call_reason": "Rotation needs confirmation before paper order submission.",
+            "operator_apply_enabled": False,
+        }
+    return {
+        "operator_call": "info",
+        "operator_call_label": "Review",
+        "operator_call_reason": "Monitor output needs review.",
+        "operator_apply_enabled": False,
+    }
+
+
+def _float_value(value: Any) -> float:
+    try:
+        number = float(value)
+        if pd.isna(number):
+            return 0.0
+        return number
+    except Exception:
+        return 0.0
 
 
 def _run_id_from_path(path: Path | None) -> str:
