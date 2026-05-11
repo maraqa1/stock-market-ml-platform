@@ -49,7 +49,9 @@
       <div>
         <span class="label">Autopilot actions</span>
         <strong class="num-l">{{ paper_autopilot.autopilot_actions }}</strong>
-        <div class="text-secondary">defensive {{ paper_autopilot.autopilot_defensive_close_submitted }}</div>
+        <div class="text-secondary">
+          hard {{ paper_autopilot.autopilot_hard_stop_submitted }} · defensive {{ paper_autopilot.autopilot_defensive_close_submitted }} · trail {{ paper_autopilot.autopilot_trailing_close_submitted }}
+        </div>
       </div>
     </div>
     {% if paper_autopilot.termination_reason %}

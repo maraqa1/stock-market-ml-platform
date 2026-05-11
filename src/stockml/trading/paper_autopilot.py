@@ -21,6 +21,9 @@ STATE_VERSION = 1
 TERMINAL_ORDER_STATES = {"filled", "canceled", "cancelled", "expired", "rejected"}
 OPEN_ORDER_STATES = {"accepted", "new", "pending_new", "pending_replace", "submitted", "partially_filled", "partial"}
 DEFENSIVE_STALE_LOSS_THRESHOLD = -0.025
+HARD_STOP_LOSS_THRESHOLD = -0.04
+TRAILING_PROFIT_MIN = 0.03
+TRAILING_GIVEBACK_THRESHOLD = 0.015
 AUTOPILOT_MODE_ORDER = ["observe", "paper_assist", "paper_autopilot", "ai_gated_paper"]
 AUTOPILOT_MODES: dict[str, dict[str, Any]] = {
     "observe": {
@@ -71,6 +74,8 @@ TICK_LOG_COLUMNS = [
     "autopilot_actions",
     "autopilot_close_submitted",
     "autopilot_defensive_close_submitted",
+    "autopilot_hard_stop_submitted",
+    "autopilot_trailing_close_submitted",
     "autopilot_action_notes",
 ]
 
@@ -127,7 +132,10 @@ def _default_state() -> dict[str, Any]:
         "autopilot_actions": 0,
         "autopilot_close_submitted": 0,
         "autopilot_defensive_close_submitted": 0,
+        "autopilot_hard_stop_submitted": 0,
+        "autopilot_trailing_close_submitted": 0,
         "autopilot_action_notes": "",
+        "position_peak_plpc": {},
         "paper_only": True,
         "live_trading_enabled": False,
     }
@@ -310,7 +318,36 @@ def load_monitor_decision_summary(root: Path | None = None) -> dict[str, Any]:
     }
 
 
-def _auto_close_candidates(root: Path | None, positions: pd.DataFrame) -> pd.DataFrame:
+def _position_plpc_by_symbol(positions: pd.DataFrame) -> dict[str, float]:
+    if positions.empty or "symbol" not in positions.columns:
+        return {}
+    out: dict[str, float] = {}
+    for row in positions.fillna("").to_dict("records"):
+        symbol = str(row.get("symbol") or "").upper()
+        if not symbol:
+            continue
+        try:
+            out[symbol] = float(row.get("unrealized_plpc") or 0)
+        except Exception:
+            out[symbol] = 0.0
+    return out
+
+
+def update_position_peaks(state: dict[str, Any], positions: pd.DataFrame) -> dict[str, float]:
+    current = _position_plpc_by_symbol(positions)
+    existing = state.get("position_peak_plpc") if isinstance(state.get("position_peak_plpc"), dict) else {}
+    peaks: dict[str, float] = {}
+    for symbol, plpc in current.items():
+        try:
+            previous = float((existing or {}).get(symbol, plpc))
+        except Exception:
+            previous = plpc
+        peaks[symbol] = max(previous, plpc)
+    state["position_peak_plpc"] = peaks
+    return peaks
+
+
+def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: dict[str, Any] | None = None) -> pd.DataFrame:
     path = _latest_csv(_agent_decisions_dir(root), "position_decisions_*.csv")
     decisions = _read_csv(path)
     if decisions.empty or positions.empty or "decision" not in decisions.columns or "symbol" not in decisions.columns:
@@ -323,15 +360,27 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame) -> pd.Dat
     frame["__decision"] = frame["decision"].fillna("").astype(str).str.lower()
     frame["__reason"] = frame.get("decision_reason", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
     frame["__plpc"] = pd.to_numeric(frame.get("unrealized_plpc", pd.Series(0, index=frame.index)), errors="coerce").fillna(0)
+    peaks = (state or {}).get("position_peak_plpc") if isinstance((state or {}).get("position_peak_plpc"), dict) else {}
+    frame["__peak_plpc"] = frame["__symbol"].map(lambda symbol: float((peaks or {}).get(symbol, frame.loc[frame["__symbol"] == symbol, "__plpc"].iloc[-1])))
     explicit_close = frame["__decision"] == "close"
+    hard_stop = frame["__plpc"] <= HARD_STOP_LOSS_THRESHOLD
     defensive_stale_loss = (
         (frame["__decision"] == "watch")
         & frame["__reason"].str.contains("signal_stale", na=False)
         & (frame["__plpc"] <= DEFENSIVE_STALE_LOSS_THRESHOLD)
     )
-    out = frame[(explicit_close | defensive_stale_loss) & frame["__symbol"].isin(open_symbols)].copy()
+    trailing_profit = (
+        (frame["__decision"] == "watch")
+        & frame["__reason"].str.contains("signal_stale", na=False)
+        & (frame["__peak_plpc"] >= TRAILING_PROFIT_MIN)
+        & ((frame["__peak_plpc"] - frame["__plpc"]) >= TRAILING_GIVEBACK_THRESHOLD)
+    )
+    out = frame[(explicit_close | hard_stop | defensive_stale_loss | trailing_profit) & frame["__symbol"].isin(open_symbols)].copy()
     out["__autopilot_close_reason"] = "monitor_close"
+    out.loc[hard_stop.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "hard_stop_loss"
     out.loc[defensive_stale_loss.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "defensive_stale_loss"
+    out.loc[trailing_profit.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "trailing_profit_giveback"
+    out.loc[explicit_close.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "monitor_close"
     return out
 
 
@@ -339,22 +388,32 @@ def apply_paper_autopilot_decisions(
     root: Path | None,
     positions: pd.DataFrame,
     *,
+    state: dict[str, Any] | None = None,
     action_func: Callable[[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Apply the first narrow Paper Autopilot authority slice.
 
-    Paper Autopilot may submit paper close orders for monitor decisions that
-    already say `close`, plus defensive stale-loss exits beyond the threshold.
-    It deliberately does not auto-open or auto-rotate.
+    Paper Autopilot may submit paper close orders for monitor close decisions,
+    hard stop-loss breaches, stale losing positions, and stale winners that
+    give back too much profit. It deliberately does not auto-open or auto-rotate.
     """
-    candidates = _auto_close_candidates(root, positions)
+    candidates = _auto_close_candidates(root, positions, state)
     if candidates.empty:
-        return {"autopilot_actions": 0, "autopilot_close_submitted": 0, "autopilot_defensive_close_submitted": 0, "autopilot_action_notes": ""}
+        return {
+            "autopilot_actions": 0,
+            "autopilot_close_submitted": 0,
+            "autopilot_defensive_close_submitted": 0,
+            "autopilot_hard_stop_submitted": 0,
+            "autopilot_trailing_close_submitted": 0,
+            "autopilot_action_notes": "",
+        }
 
     apply_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
     notes: list[str] = []
     submitted = 0
     defensive_submitted = 0
+    hard_stop_submitted = 0
+    trailing_submitted = 0
     actions = 0
     seen: set[str] = set()
     for row in candidates.fillna("").to_dict("records"):
@@ -368,14 +427,21 @@ def apply_paper_autopilot_decisions(
         message = str(result.get("message") or "")
         if status == "submitted":
             submitted += 1
-            if str(row.get("__autopilot_close_reason") or "") == "defensive_stale_loss":
+            reason = str(row.get("__autopilot_close_reason") or "")
+            if reason == "defensive_stale_loss":
                 defensive_submitted += 1
+            elif reason == "hard_stop_loss":
+                hard_stop_submitted += 1
+            elif reason == "trailing_profit_giveback":
+                trailing_submitted += 1
         close_reason = str(row.get("__autopilot_close_reason") or "monitor_close")
         notes.append(f"{symbol}:{close_reason}:{status or 'unknown'}:{message or 'no_message'}")
     return {
         "autopilot_actions": actions,
         "autopilot_close_submitted": submitted,
         "autopilot_defensive_close_submitted": defensive_submitted,
+        "autopilot_hard_stop_submitted": hard_stop_submitted,
+        "autopilot_trailing_close_submitted": trailing_submitted,
         "autopilot_action_notes": "; ".join(notes[:10]),
     }
 
@@ -409,7 +475,7 @@ def tick(
     broker_open_orders_func: Callable[[Any], int] | None = None,
     intraday_decision_loader: Callable[[], dict[str, Any]] = load_intraday_decision_summary,
     monitor_decision_loader: Callable[[Path | None], dict[str, Any]] = load_monitor_decision_summary,
-    autopilot_decision_applier: Callable[[Path | None, pd.DataFrame], dict[str, Any]] = apply_paper_autopilot_decisions,
+    autopilot_decision_applier: Callable[[Path | None, pd.DataFrame, dict[str, Any]], dict[str, Any]] = apply_paper_autopilot_decisions,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -440,14 +506,17 @@ def tick(
         monitor_summary = monitor_decision_loader(root)
         open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
+        update_position_peaks(state, positions)
         autopilot_result = {
             "autopilot_actions": 0,
             "autopilot_close_submitted": 0,
             "autopilot_defensive_close_submitted": 0,
+            "autopilot_hard_stop_submitted": 0,
+            "autopilot_trailing_close_submitted": 0,
             "autopilot_action_notes": "",
         }
         if state.get("mode") == "paper_autopilot" and open_orders == 0 and open_positions > 0:
-            autopilot_result = autopilot_decision_applier(root, positions)
+            autopilot_result = autopilot_decision_applier(root, positions, state)
             if int(autopilot_result.get("autopilot_close_submitted") or 0) > 0:
                 open_orders = max(open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))
                 broker_open_orders = max(broker_open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))

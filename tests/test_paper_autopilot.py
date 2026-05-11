@@ -143,11 +143,12 @@ def test_paper_autopilot_mode_auto_closes_close_decisions(monkeypatch, tmp_path)
     ).to_csv(decisions / "position_decisions_1.csv", index=False)
     calls = []
 
-    def apply_close(root, frame):
+    def apply_close(root, frame, state):
         calls.append(frame["symbol"].tolist())
         return paper_autopilot.apply_paper_autopilot_decisions(
             root,
             frame,
+            state=state,
             action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
         )
 
@@ -188,9 +189,10 @@ def test_paper_autopilot_mode_defensively_closes_stale_losers(monkeypatch, tmp_p
         tmp_path,
         refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
         broker_open_orders_func=lambda cfg: 0,
-        autopilot_decision_applier=lambda root, frame: paper_autopilot.apply_paper_autopilot_decisions(
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
             root,
             frame,
+            state=state,
             action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
         ),
     )
@@ -200,6 +202,65 @@ def test_paper_autopilot_mode_defensively_closes_stale_losers(monkeypatch, tmp_p
     assert state["autopilot_close_submitted"] == 1
     assert state["autopilot_defensive_close_submitted"] == 1
     assert "AAA:defensive_stale_loss:submitted:auto_close" in state["autopilot_action_notes"]
+
+
+def test_paper_autopilot_mode_closes_hard_stop_losers(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1}]).to_csv(positions, index=False)
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "position_within_rules", "unrealized_plpc": -0.045}]).to_csv(decisions / "position_decisions_1.csv", index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            state=state,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        ),
+    )
+
+    assert state["autopilot_hard_stop_submitted"] == 1
+    assert "AAA:hard_stop_loss:submitted:auto_close" in state["autopilot_action_notes"]
+
+
+def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    state = paper_autopilot.load_state(tmp_path)
+    state["position_peak_plpc"] = {"AAA": 0.052}
+    paper_autopilot.save_state(state, tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1, "unrealized_plpc": 0.034}]).to_csv(positions, index=False)
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": 0.034}]).to_csv(decisions / "position_decisions_1.csv", index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            state=state,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        ),
+    )
+
+    assert state["autopilot_trailing_close_submitted"] == 1
+    assert "AAA:trailing_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_assist_does_not_auto_close_close_decisions(monkeypatch, tmp_path):
@@ -215,7 +276,7 @@ def test_paper_assist_does_not_auto_close_close_decisions(monkeypatch, tmp_path)
         tmp_path,
         refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
         broker_open_orders_func=lambda cfg: 0,
-        autopilot_decision_applier=lambda root, frame: {"autopilot_actions": 9, "autopilot_close_submitted": 9, "autopilot_action_notes": "should_not_run"},
+        autopilot_decision_applier=lambda root, frame, state: {"autopilot_actions": 9, "autopilot_close_submitted": 9, "autopilot_action_notes": "should_not_run"},
     )
 
     assert state["phase"] == "monitoring_positions"
