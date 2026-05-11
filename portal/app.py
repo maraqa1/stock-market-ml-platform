@@ -225,7 +225,10 @@ def create_app(root: Path | None = None) -> Flask:
 
     @app.route("/trading/autopilot/<action>", methods=["POST"])
     def trading_autopilot(action: str):
-        state = autopilot_action(action, root_path())
+        if action == "mode":
+            state = autopilot_action(f"mode:{request.form.get('mode', '')}", root_path())
+        else:
+            state = autopilot_action(action, root_path())
         if request.accept_mimetypes.best == "application/json":
             return jsonify({"status": "ok", "autopilot": state})
         return redirect(url_for("trading", _anchor="paper-autopilot"))

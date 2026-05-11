@@ -154,6 +154,9 @@ def test_trading_paper_autopilot_controls(client):
     response = client.get("/trading")
     assert response.status_code == 200
     assert b"Paper Autopilot" in response.data
+    assert b"Autopilot mode" in response.data
+    assert b"Paper Assist" in response.data
+    assert b"AI-Gated Paper" in response.data
     assert b"Start Paper Autopilot" in response.data
     assert b"Recent Autopilot Ticks" in response.data
 
@@ -162,6 +165,12 @@ def test_trading_paper_autopilot_controls(client):
     followup = client.get("/trading")
     assert b"Autopilot Running" in followup.data
     assert b"Pause Autopilot" in followup.data
+
+    mode_post = client.post("/trading/autopilot/mode", data={"mode": "paper_assist"})
+    assert mode_post.status_code == 302
+    mode_followup = client.get("/trading")
+    assert b"Paper Assist" in mode_followup.data
+    assert b"selected" in mode_followup.data
 
 
 def test_data_estate_renders_new_style_and_key_datasets(symbol_client):

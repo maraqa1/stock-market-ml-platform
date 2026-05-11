@@ -34,6 +34,7 @@ def test_paper_autopilot_start_is_paper_only(monkeypatch, tmp_path):
 
     state = paper_autopilot.start(tmp_path)
 
+    assert state["mode"] == "observe"
     assert state["status"] == "running"
     assert state["phase"] == "tracking_orders"
     assert state["paper_only"] is True
@@ -78,6 +79,7 @@ def test_paper_autopilot_tick_waits_for_fills(monkeypatch, tmp_path):
     assert state["monitor_close"] == 1
     logs = paper_autopilot.recent_tick_logs(tmp_path)
     assert logs[0]["phase"] == "waiting_for_fills"
+    assert logs[0]["mode"] == "observe"
     assert logs[0]["open_orders"] == 1
     assert logs[0]["intraday_allows"] == 2
     assert logs[0]["monitor_actions"] == 3
@@ -134,6 +136,30 @@ def test_paper_autopilot_logs_not_running_ticks(tmp_path):
     logs = paper_autopilot.recent_tick_logs(tmp_path)
     assert len(logs) == 1
     assert logs[0]["last_error"] == "autopilot_not_running"
+
+
+def test_paper_autopilot_mode_can_be_switched(tmp_path):
+    state = paper_autopilot.set_mode("paper_autopilot", tmp_path)
+
+    assert state["mode"] == "paper_autopilot"
+    view = paper_autopilot.context(tmp_path)
+    assert view["mode"] == "paper_autopilot"
+    assert view["mode_label"] == "Paper Autopilot"
+    assert {option["value"] for option in view["mode_options"]} == {
+        "observe",
+        "paper_assist",
+        "paper_autopilot",
+        "ai_gated_paper",
+    }
+
+
+def test_paper_autopilot_rejects_unknown_mode(tmp_path):
+    paper_autopilot.set_mode("observe", tmp_path)
+
+    state = paper_autopilot.set_mode("live", tmp_path)
+
+    assert state["mode"] == "observe"
+    assert state["last_error"] == "unsupported_autopilot_mode:live"
 
 
 def test_monitor_decision_summary_reads_latest_position_decisions(tmp_path):

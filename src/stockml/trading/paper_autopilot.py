@@ -19,8 +19,36 @@ from stockml.trading.paper_trader import refresh_order_tracking
 STATE_VERSION = 1
 TERMINAL_ORDER_STATES = {"filled", "canceled", "cancelled", "expired", "rejected"}
 OPEN_ORDER_STATES = {"accepted", "new", "pending_new", "pending_replace", "submitted", "partially_filled", "partial"}
+AUTOPILOT_MODE_ORDER = ["observe", "paper_assist", "paper_autopilot", "ai_gated_paper"]
+AUTOPILOT_MODES: dict[str, dict[str, Any]] = {
+    "observe": {
+        "label": "Observe",
+        "button_label": "Switch to Observe",
+        "summary": "Track broker state, monitor decisions, intraday decisions, and candidate evaluations. No automatic broker action.",
+        "execution_policy": "read_only",
+    },
+    "paper_assist": {
+        "label": "Paper Assist",
+        "button_label": "Switch to Paper Assist",
+        "summary": "Prepare paper actions for operator review. The operator still applies or overrides every action.",
+        "execution_policy": "operator_confirmed",
+    },
+    "paper_autopilot": {
+        "label": "Paper Autopilot",
+        "button_label": "Switch to Paper Autopilot",
+        "summary": "Allow the paper state machine to execute approved paper-cycle actions once their guards are implemented.",
+        "execution_policy": "paper_guarded",
+    },
+    "ai_gated_paper": {
+        "label": "AI-Gated Paper",
+        "button_label": "Switch to AI-Gated Paper",
+        "summary": "Require an AI reviewer to approve paper-cycle actions before execution. No live trading path exists.",
+        "execution_policy": "ai_reviewed_paper",
+    },
+}
 TICK_LOG_COLUMNS = [
     "timestamp",
+    "mode",
     "status",
     "phase",
     "open_orders",
@@ -66,6 +94,7 @@ def _default_state() -> dict[str, Any]:
     return {
         "version": STATE_VERSION,
         "name": "Paper Autopilot",
+        "mode": "observe",
         "status": "idle",
         "phase": "idle",
         "started_at": "",
@@ -110,6 +139,8 @@ def load_state(root: Path | None = None) -> dict[str, Any]:
 def save_state(state: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
     out = _default_state()
     out.update(state)
+    if out.get("mode") not in AUTOPILOT_MODES:
+        out["mode"] = "observe"
     out["version"] = STATE_VERSION
     out["paper_only"] = True
     path = _state_path(root)
@@ -123,6 +154,7 @@ def append_tick_log(state: dict[str, Any], root: Path | None = None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     row = {column: state.get(column, "") for column in TICK_LOG_COLUMNS}
     row["timestamp"] = state.get("last_tick_at") or state.get("updated_at") or _now()
+    row["mode"] = state.get("mode") or "observe"
     frame = pd.DataFrame([row], columns=TICK_LOG_COLUMNS)
     frame.to_csv(path, mode="a", index=False, header=not path.exists())
     return path
@@ -143,6 +175,21 @@ def recent_tick_logs(root: Path | None = None, limit: int = 10) -> list[dict[str
         return []
     frame = pd.concat(frames, ignore_index=True)
     return frame.tail(max(1, limit)).iloc[::-1].fillna("").to_dict("records")
+
+
+def mode_options() -> list[dict[str, str]]:
+    return [{"value": key, **AUTOPILOT_MODES[key]} for key in AUTOPILOT_MODE_ORDER]
+
+
+def set_mode(mode: str, root: Path | None = None) -> dict[str, Any]:
+    clean = str(mode or "").strip().lower()
+    state = load_state(root)
+    stamp = _now()
+    if clean not in AUTOPILOT_MODES:
+        state.update({"last_error": f"unsupported_autopilot_mode:{clean}", "updated_at": stamp})
+        return save_state(state, root)
+    state.update({"mode": clean, "updated_at": stamp, "last_error": ""})
+    return save_state(state, root)
 
 
 def start(root: Path | None = None) -> dict[str, Any]:
@@ -353,6 +400,8 @@ def tick(
 
 def action(action_name: str, root: Path | None = None) -> dict[str, Any]:
     clean = str(action_name or "").strip().lower()
+    if clean.startswith("mode:"):
+        return set_mode(clean.split(":", 1)[1], root)
     if clean == "start":
         return start(root)
     if clean == "pause":
@@ -372,6 +421,8 @@ def context(root: Path | None = None) -> dict[str, Any]:
     if root is None:
         ensure_data_dirs()
     state = load_state(root)
+    mode = str(state.get("mode") or "observe")
+    mode_meta = AUTOPILOT_MODES.get(mode, AUTOPILOT_MODES["observe"])
     labels = {
         "idle": "Autopilot Idle",
         "running": "Autopilot Running",
@@ -392,6 +443,11 @@ def context(root: Path | None = None) -> dict[str, Any]:
     }
     return {
         **state,
+        "mode": mode,
+        "mode_label": mode_meta["label"],
+        "mode_summary": mode_meta["summary"],
+        "mode_execution_policy": mode_meta["execution_policy"],
+        "mode_options": mode_options(),
         "status_label": labels.get(str(state.get("status") or ""), str(state.get("status") or "idle").replace("_", " ").title()),
         "phase_label": phase_labels.get(str(state.get("phase") or ""), str(state.get("phase") or "idle").replace("_", " ").title()),
         "state_path": str(_state_path(root)),

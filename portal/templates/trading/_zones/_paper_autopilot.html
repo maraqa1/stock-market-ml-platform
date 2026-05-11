@@ -7,6 +7,10 @@
   <div class="zone__body autopilot-panel">
     <div class="autopilot-panel__state">
       <div>
+        <span class="label">Mode</span>
+        <strong>{{ paper_autopilot.mode_label }}</strong>
+      </div>
+      <div>
         <span class="label">Status</span>
         {{ pill(paper_autopilot.status if paper_autopilot.status != "running" else "submitted", paper_autopilot.status_label) }}
       </div>
@@ -50,6 +54,15 @@
       <div class="stale-banner">Autopilot note: {{ paper_autopilot.last_error }}</div>
     {% endif %}
     <div class="autopilot-panel__actions">
+      <form class="autopilot-mode-form" method="post" action="/trading/autopilot/mode">
+        <label class="label" for="autopilot-mode">Autopilot mode</label>
+        <select id="autopilot-mode" name="mode">
+          {% for option in paper_autopilot.mode_options %}
+            <option value="{{ option.value }}" {% if option.value == paper_autopilot.mode %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-ghost" type="submit">Switch mode</button>
+      </form>
       {% if paper_autopilot.status in ["idle", "stopped", "complete"] %}
         <form method="post" action="/trading/autopilot/start">
           <button class="btn btn-primary" type="submit">Start Paper Autopilot</button>
@@ -73,7 +86,7 @@
       {% endif %}
     </div>
     <p class="text-secondary">
-      Paper-only control loop. This first state-machine slice tracks orders, waits for fills, and terminates when no open orders or positions remain.
+      {{ paper_autopilot.mode_summary }} Paper-only control loop; live trading remains disabled.
     </p>
     <details class="autopilot-log" data-key="autopilot-tick-log">
       <summary>Recent Autopilot Ticks</summary>
@@ -82,6 +95,7 @@
           <thead>
             <tr>
               <th>Time</th>
+              <th>Mode</th>
               <th>Status</th>
               <th>Phase</th>
               <th class="num">Orders</th>
@@ -95,11 +109,12 @@
           </thead>
           <tbody>
             {% if not paper_autopilot.recent_ticks %}
-              <tr><td colspan="10" class="empty small">No autopilot tick logs yet.</td></tr>
+              <tr><td colspan="11" class="empty small">No autopilot tick logs yet.</td></tr>
             {% else %}
               {% for tick in paper_autopilot.recent_ticks %}
                 <tr>
                   <td class="num-l">{{ tick.timestamp }}</td>
+                  <td>{{ tick.mode or "observe" }}</td>
                   <td>{{ tick.status }}</td>
                   <td>{{ tick.phase }}</td>
                   <td class="num">{{ tick.open_orders }}</td>

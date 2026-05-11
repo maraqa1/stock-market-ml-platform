@@ -14,8 +14,11 @@ from stockml.trading.paper_autopilot import action, context
 
 def main() -> int:
     command = sys.argv[1] if len(sys.argv) > 1 else "tick"
+    if command in {"mode", "set-mode"} and len(sys.argv) > 2:
+        command = f"mode:{sys.argv[2]}"
     state = action(command)
     view = context()
+    print(f"paper_autopilot_mode: {view['mode']}")
     print(f"paper_autopilot_status: {view['status']}")
     print(f"paper_autopilot_phase: {view['phase']}")
     print(f"open_orders: {view['open_orders']}")
