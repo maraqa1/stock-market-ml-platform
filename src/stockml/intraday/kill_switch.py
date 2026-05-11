@@ -124,16 +124,23 @@ def _insert_event(
         intraday_log(f"kill_switch_{event_type}", {"switch_name": switch_name, **payload})
         return
     occurred_at = _aware(now)
-    with db.begin() as conn:
-        conn.execute(
-            insert(kill_switch_events).values(
-                switch_name=switch_name,
-                event_type=event_type,
-                occurred_at=occurred_at,
-                payload=payload,
-                operator_id=operator_id,
-                notes=notes,
+    try:
+        with db.begin() as conn:
+            conn.execute(
+                insert(kill_switch_events).values(
+                    switch_name=switch_name,
+                    event_type=event_type,
+                    occurred_at=occurred_at,
+                    payload=payload,
+                    operator_id=operator_id,
+                    notes=notes,
+                )
             )
+    except Exception:
+        intraday_log(
+            f"kill_switch_{event_type}",
+            {"switch_name": switch_name, "operator_id": operator_id, "notes": notes, **payload},
+            now=occurred_at,
         )
 
 
@@ -261,4 +268,3 @@ def state(*, engine: Engine | None = None, config: KillSwitchConfig | None = Non
         "active": sorted(active),
         "events": _event_rows(engine)[-20:],
     }
-

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% from "_macros/pill.html" import pill %}
+{% block content %}
+<section class="trading-console intraday-console">
+  <section class="zone trading-zone" data-zone="intraday-kill-switches" id="kill-switches">
+    <div class="zone__header">
+      <span>Kill Switches</span>
+      <span class="zone__header-meta">{{ intraday.tripped_count }} tripped · {{ intraday.armed_count }} armed</span>
+    </div>
+    <div class="zone__body">
+      <div class="diagnostic-grid">
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Account basis</span>
+          <strong class="diagnostic-card__value num-l">${{ "%.0f"|format(intraday.account_size_usd or 0) }}</strong>
+          <span class="text-tertiary">Paper account thresholds</span>
+        </article>
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Switches armed</span>
+          <strong class="diagnostic-card__value num-l">{{ intraday.armed_count }}</strong>
+          {{ pill("safe", "Armed") }}
+        </article>
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Switches tripped</span>
+          <strong class="diagnostic-card__value num-l">{{ intraday.tripped_count }}</strong>
+          {{ pill("failed" if intraday.tripped_count else "safe", "Tripped" if intraday.tripped_count else "Clear") }}
+        </article>
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Live trading</span>
+          <strong class="diagnostic-card__value">Disabled</strong>
+          {{ pill("safe", "Paper Only") }}
+        </article>
+      </div>
+
+      <div class="table-scroll">
+        <table class="data dense" data-table="kill-switches">
+          <thead>
+            <tr>
+              <th class="col-pinned">Switch</th>
+              <th>Status</th>
+              <th class="num-l">Current</th>
+              <th class="num-l">Threshold</th>
+              <th>Manual Resume</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for switch in intraday.switches %}
+              <tr>
+                <td class="col-pinned">
+                  <div>{{ switch.label }}</div>
+                  <div class="text-tertiary num-l">{{ switch.name }}</div>
+                </td>
+                <td>{{ pill(switch.pill_status, switch.status_label) }}</td>
+                <td class="num-l">{{ switch.current_value if switch.current_value is not none else "-" }}</td>
+                <td class="num-l">{{ switch.threshold }}</td>
+                <td>
+                  {% if switch.requires_manual_resume %}
+                    <form method="post" action="/intraday/kill-switches/{{ switch.name }}/resume" data-kill-switch-resume data-switch-name="{{ switch.name }}">
+                      <input type="hidden" name="operator_id" value="operator@stockml">
+                      <input type="hidden" name="notes" value="Manual resume confirmed in operator console">
+                      <button class="btn btn-danger btn-sm" type="submit">Resume</button>
+                    </form>
+                  {% else %}
+                    <span class="text-tertiary">Not required</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <details data-key="intraday-kill-switch-events" open>
+        <summary class="details-summary">Last 20 trip/resume events</summary>
+        <div class="table-scroll">
+          <table class="data dense" data-table="kill-switch-events">
+            <thead>
+              <tr>
+                <th class="num-l">Time</th>
+                <th>Switch</th>
+                <th>Event</th>
+                <th>Operator</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if not intraday.events %}
+                <tr><td colspan="5" class="empty small">No kill-switch events recorded.</td></tr>
+              {% else %}
+                {% for event in intraday.events %}
+                  <tr>
+                    <td class="num-l">{{ event.occurred_at }}</td>
+                    <td>{{ event.switch_name }}</td>
+                    <td>{{ pill("failed" if event.event_type == "tripped" else "safe", event.event_type|replace("_", " ")|title) }}</td>
+                    <td>{{ event.operator_id or "-" }}</td>
+                    <td>{{ event.notes or event.payload }}</td>
+                  </tr>
+                {% endfor %}
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <div class="empty small">Intraday v1 is shadow-only. These controls do not submit paper or live orders.</div>
+    </div>
+  </section>
+</section>
+<dialog class="confirm-dialog" data-confirm-dialog>
+  <form method="dialog">
+    <h2 data-confirm-title>Confirm action</h2>
+    <p data-confirm-text></p>
+    <p class="muted">Paper account only. Live trading remains disabled.</p>
+    <menu>
+      <button class="btn btn-ghost" value="cancel">Cancel</button>
+      <button class="btn btn-danger" value="confirm" data-confirm-primary><span data-confirm-primary-label>Confirm</span></button>
+    </menu>
+  </form>
+</dialog>
+<div class="toast" data-toast hidden></div>
+{% endblock %}

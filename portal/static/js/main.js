@@ -136,6 +136,19 @@ const postJson = async (url, payload) => {
 };
 
 document.addEventListener("click", async (event) => {
+  const resumeForm = event.target.closest("[data-kill-switch-resume]");
+  if (!resumeForm) return;
+  event.preventDefault();
+  const switchName = resumeForm.dataset.switchName || "";
+  const ok = await confirmAction({
+    title: "Resume kill switch",
+    text: `resume ${switchName}`,
+    danger: true,
+  });
+  if (ok) resumeForm.submit();
+});
+
+document.addEventListener("click", async (event) => {
   const queueButton = event.target.closest("[data-queue-action]");
   if (!queueButton) return;
   const action = queueButton.dataset.queueAction;

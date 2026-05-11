@@ -3,6 +3,7 @@
     ('/trading', 'Trading Console', pending_count),
     ('/journal', 'Activity Journal', none),
     ('/shortlist', 'Model Shortlist', none),
+    ('/intraday', 'Intraday', none),
     ('/validation', 'Validation', none),
     ('/data', 'Data Estate', none),
     ('/diagnostics', 'Diagnostics', diagnostics_alert),
@@ -11,7 +12,7 @@
     <a
       href="{{ path }}"
       class="top-nav__tab{% if request.path == path or (path != '/' and request.path.startswith(path)) %} is-active{% endif %}"
-      {% if loop.index == 4 %}data-divider{% endif %}
+      {% if loop.index == 5 %}data-divider{% endif %}
     >
       {{ label }}
       {% if badge is number and badge > 0 %}

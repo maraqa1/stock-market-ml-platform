@@ -43,7 +43,7 @@ def symbol_client():
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/validation", "/model-validation", "/no-decision", "/dev/styleguide"]:
+    for route in ["/", "/universe", "/data-quality", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/intraday", "/validation", "/model-validation", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
 
@@ -88,6 +88,7 @@ def test_base_renders_spec25_top_nav_and_search(client):
         b"Trading Console",
         b"Activity Journal",
         b"Model Shortlist",
+        b"Intraday",
         b"Validation",
         b"Data Estate",
         b"Diagnostics",
@@ -101,6 +102,22 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b"js/nav_search.js" in response.data
     assert b"js/keyboard.js" in response.data
     assert b"js/table_sort.js" in response.data
+
+
+def test_intraday_kill_switch_page_and_api_contract(client):
+    response = client.get("/intraday")
+    assert response.status_code == 200
+    assert b"Kill Switches" in response.data
+    assert b"daily.realized_plus_unrealized_loss_usd" in response.data
+    assert b"Live trading" in response.data
+    assert b"Paper Only" in response.data
+    assert b"No kill-switch events recorded." in response.data
+
+    payload_response = client.get("/api/intraday/kill-switches")
+    assert payload_response.status_code == 200
+    payload = payload_response.get_json()
+    assert "switches" in payload
+    assert any(row["name"] == "total.equity_floor_usd" for row in payload["switches"])
 
 
 def test_trading_paper_autopilot_controls(client):

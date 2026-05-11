@@ -14,6 +14,7 @@ from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
+from portal.services.intraday import kill_switch_context, resume_kill_switch
 from portal.services.search import search
 from portal.services.shortlist import get_for_date as shortlist_get_for_date
 from portal.services.signal_service import no_decision_context, signal_context
@@ -354,6 +355,25 @@ def create_app(root: Path | None = None) -> Flask:
             trading_header=trading_header_context(root),
             trading_cadence=trading_cadence_context(root),
         )
+
+    @app.route("/intraday")
+    def intraday():
+        return render_template("intraday/index.html", title="Intraday", intraday=kill_switch_context())
+
+    @app.route("/api/intraday/kill-switches")
+    def api_intraday_kill_switches():
+        return jsonify(kill_switch_context())
+
+    @app.route("/intraday/kill-switches/<path:switch_name>/resume", methods=["POST"])
+    def intraday_kill_switch_resume(switch_name: str):
+        resume_kill_switch(
+            switch_name,
+            request.form.get("operator_id", "operator@stockml"),
+            request.form.get("notes", "Manual resume confirmed in operator console"),
+        )
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify({"status": "ok", "switch_name": switch_name})
+        return redirect(url_for("intraday", _anchor="kill-switches"))
 
     @app.route("/diagnostics")
     def diagnostics():
