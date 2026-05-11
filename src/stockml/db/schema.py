@@ -43,6 +43,7 @@ POSITION_EVENT_TYPES = (
 KILL_SWITCH_EVENT_TYPES = ("tripped", "resumed")
 INTRADAY_VERDICTS = ("allow_long", "allow_short", "hold", "block", "data_unavailable")
 SHADOW_WOULD_TRADE_STATUS = ("pending", "evaluated", "superseded", "cancelled")
+PROMOTION_DRY_RUN_EVENT_TYPES = ("confirmed",)
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -330,6 +331,28 @@ shadow_outcomes = Table(
     Column("spy_return_pct", Float, nullable=False),
     Column("net_excess_pct", Float, nullable=False),
     Column("outperformed", Boolean, nullable=False),
+)
+
+promotion_evaluations = Table(
+    "promotion_evaluations",
+    metadata,
+    Column("evaluated_at", DateTime(timezone=True), primary_key=True),
+    Column("gate_version", String(50), nullable=False),
+    Column("criteria_met", Boolean, nullable=False),
+    Column("criteria_results", JSON, nullable=False),
+    Column("notes", Text),
+)
+
+promotion_dry_runs = Table(
+    "promotion_dry_runs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("confirmed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("operator_id", String(100), nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("side", String(20), nullable=False),
+    Column("notes", Text, nullable=False),
+    CheckConstraint(_in_values("side", ("long", "short")), name="ck_promotion_dry_runs_side"),
 )
 
 

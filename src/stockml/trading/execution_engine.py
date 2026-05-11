@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from stockml.safety.paper_only_guard import paper_only_guard
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.order_builder import bracket_order_payload, validate_order_payload
@@ -30,6 +31,7 @@ class AlpacaExecutionEngine:
     ) -> None:
         self.config = config or alpaca_config()
         self.mode = mode
+        paper_only_guard(live_trading_enabled=self.config.live_trading_enabled, mode=self.mode if self.mode == "live" else None)
         if self.mode == "live" and not self.config.live_trading_enabled:
             raise RuntimeError("Live trading is disabled. Set ALLOW_LIVE_TRADING only after explicit production approval.")
         self.client = client or (_optional_sdk_client(self.config) if use_sdk else None) or AlpacaPaperClient(self.config)
@@ -93,6 +95,7 @@ class AlpacaExecutionEngine:
             return self._report(rec, "rejected", f"submit_exception: {exc}", payload=payload, qty=qty, take_profit=take_profit, stop_loss=stop_loss)
 
     def _submit_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        paper_only_guard(live_trading_enabled=self.config.live_trading_enabled, mode=self.mode if self.mode == "live" else None)
         if isinstance(self.client, AlpacaPaperClient):
             return self.client.submit_order(payload)
         # SDK fallback: use raw dict if a fake test client supports it; real SDK users can adapt request object support here.

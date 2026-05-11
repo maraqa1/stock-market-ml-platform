@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_macros/pill.html" import pill %}
+{% block content %}
+<section class="trading-console intraday-console">
+  <section class="zone trading-zone" data-zone="promotion-contract" id="promotion-contract">
+    <div class="zone__header">
+      <span>Promotion Readiness</span>
+      <span class="zone__header-meta">evaluated {{ evaluation.evaluated_at }}</span>
+    </div>
+    <div class="zone__body">
+      {% if evaluation.criteria_met %}
+        <div class="stale-banner">● PROMOTION CRITERIA MET as of {{ evaluation.evaluated_at[:10] }} — live trading still requires the manual unlock procedure described in docs/safety/live_unlock.md and is currently disabled in code.</div>
+      {% else %}
+        <div class="stale-banner">● PROMOTION CRITERIA NOT MET — live trading remains disabled.</div>
+      {% endif %}
+      <div class="table-scroll">
+        <table class="data dense" data-table="promotion-criteria">
+          <thead>
+            <tr>
+              <th>Criterion</th>
+              <th>Status</th>
+              <th class="num-l">Observed</th>
+              <th class="num-l">Threshold</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in evaluation.criteria_results %}
+              <tr>
+                <td>{{ row.name|replace("_", " ")|title }}</td>
+                <td>{{ pill("safe" if row.met else "failed", "Met" if row.met else "Unmet") }}</td>
+                <td class="num-l">{{ row.observed }}</td>
+                <td class="num-l">{{ row.threshold }}</td>
+                <td>{{ row.note }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="empty small">This page is read-only. There is no control here, or elsewhere in v1, that enables live trading.</div>
+    </div>
+  </section>
+</section>
+{% endblock %}

@@ -141,6 +141,15 @@ def test_intraday_kill_switch_page_and_api_contract(client):
     assert any(row["name"] == "total.equity_floor_usd" for row in payload["switches"])
 
 
+def test_intraday_promotion_page_is_read_only_and_live_disabled(client):
+    response = client.get("/intraday/promotion")
+    assert response.status_code == 200
+    assert b"Promotion Readiness" in response.data
+    assert b"PROMOTION CRITERIA NOT MET" in response.data
+    assert b"live trading remains disabled" in response.data
+    assert b"enable live" not in response.data.lower()
+
+
 def test_trading_paper_autopilot_controls(client):
     response = client.get("/trading")
     assert response.status_code == 200

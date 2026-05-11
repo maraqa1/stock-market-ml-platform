@@ -35,12 +35,15 @@ from portal.services.trading_api_service import (
 from portal.services.trading_service import lifecycle_context, position_action, refresh_trading_artifacts, trading_context
 from portal.services.universe_service import universe_context
 from portal.services.validation import table_csv as validation_table_csv, validation_context
+from stockml.intraday.promotion import latest_evaluation
+from stockml.safety.live_disabled import assert_live_disabled
 from stockml.services.events import record_event_safely
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
 
 
 def create_app(root: Path | None = None) -> Flask:
+    assert_live_disabled()
     app = Flask(__name__)
     app.config["PROJECT_ROOT"] = project_root(root or os.environ.get("STOCKML_PROJECT_ROOT"))
 
@@ -381,6 +384,11 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/api/intraday/shadow/aggregates")
     def api_intraday_shadow_aggregates():
         return jsonify(shadow_track_record().get("summary", {}))
+
+    @app.route("/intraday/promotion")
+    def intraday_promotion():
+        evaluation = latest_evaluation()
+        return render_template("intraday/promotion.html", title="Intraday Promotion", evaluation=evaluation)
 
     @app.route("/api/intraday/kill-switches")
     def api_intraday_kill_switches():

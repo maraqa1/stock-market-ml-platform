@@ -5,6 +5,7 @@ from typing import Optional
 
 import pandas as pd
 
+from stockml.safety.paper_only_guard import paper_only_guard
 from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.services.events import position_id_for_symbol, record_event_safely
@@ -123,6 +124,7 @@ def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple
 def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | int | bool]:
     ensure_data_dirs()
     config = alpaca_config()
+    paper_only_guard(live_trading_enabled=config.live_trading_enabled)
     signals = latest_signal_table(signal_file)
     candidate_pool = build_candidate_pool(signals, config)
     plan = build_order_plan(signals, config)
@@ -202,6 +204,7 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
                         {"symbol": order.get("symbol", ""), "reason": guard_message, "stage": "submission_preflight"},
                     )
                     continue
+                paper_only_guard(live_trading_enabled=config.live_trading_enabled)
                 response = client.submit_order(request)
                 result_rows.append(_result_row(order, "submitted", response.get("id", ""), response=response))
                 record_event_safely(
