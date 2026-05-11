@@ -224,3 +224,38 @@ def test_action_queue_adds_operator_calls_for_visible_supervision(tmp_path):
     assert rows["FRMI"]["operator_apply_enabled"] is False
     assert rows["GLIBK"]["operator_call_label"] == "Hold - logic check"
     assert rows["GLIBK"]["operator_apply_enabled"] is False
+
+
+def test_action_queue_includes_candidate_evaluation_opportunities(tmp_path):
+    write_csv(
+        tmp_path / "data" / "trading" / "candidate_evaluations" / "candidate_evaluation_1.csv",
+        [
+            {
+                "symbol": "AAA",
+                "side": "long",
+                "candidate_rank": 1,
+                "current_price": 10,
+                "decision": "open_candidate",
+                "recommended_action": "review_open_candidate",
+                "decision_reason": "candidate_slot_available",
+                "operator_call_text": "Review candidate for possible paper entry.",
+            },
+            {
+                "symbol": "BBB",
+                "side": "long",
+                "candidate_rank": 2,
+                "current_price": 11,
+                "decision": "skip",
+                "recommended_action": "skip_candidate",
+                "decision_reason": "risk_or_quality_rejected",
+            },
+        ],
+    )
+
+    ctx = action_queue_context(tmp_path)
+    rows = {row["symbol"]: row for row in ctx["items"]}
+
+    assert "AAA" in rows
+    assert "BBB" not in rows
+    assert rows["AAA"]["operator_call_label"] == "Review open"
+    assert rows["AAA"]["operator_apply_enabled"] is False

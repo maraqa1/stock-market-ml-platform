@@ -601,7 +601,9 @@ def monitor_today_context(root: Path) -> dict[str, Any]:
 
 def action_queue_context(root: Path) -> dict[str, Any]:
     decisions_file = latest_file(root, "agent_decisions", "position_decisions_*.csv")
+    evaluations_file = latest_file(root, "candidate_evaluations", "candidate_evaluation_*.csv")
     decisions = safe_read_csv(decisions_file, nrows=1000)
+    evaluations = safe_read_csv(evaluations_file, nrows=1000)
     if decisions.empty or "decision" not in decisions.columns:
         items: list[dict[str, Any]] = []
     else:
@@ -618,8 +620,40 @@ def action_queue_context(root: Path) -> dict[str, Any]:
             item["event_id"] = item.get("event_id") or f"queue-{index + 1}"
             item["position_id"] = position_id_for_symbol(str(item.get("symbol") or ""))
             item.update(_operator_call_for_queue_item(item, held_symbols))
+    items.extend(_candidate_queue_items(evaluations, len(items)))
     counts = _status_counts(pd.DataFrame(items), "decision")
-    return {"source": "csv_artifacts", "generated_at": _csv_timestamp(decisions_file), "items": items, "counts": {"total": len(items), **counts}}
+    generated_at = max([value for value in [_csv_timestamp(decisions_file), _csv_timestamp(evaluations_file)] if value] or [""])
+    return {"source": "csv_artifacts", "generated_at": generated_at, "items": items, "counts": {"total": len(items), **counts}}
+
+
+def _candidate_queue_items(evaluations: pd.DataFrame, offset: int) -> list[dict[str, Any]]:
+    if evaluations.empty or "decision" not in evaluations.columns:
+        return []
+    actionable = evaluations[evaluations["decision"].fillna("").isin(["open_candidate", "replace_candidate"])].copy()
+    if actionable.empty:
+        return []
+    actionable = actionable.sort_values(["decision", "candidate_rank"], ascending=[True, True]).head(10)
+    items: list[dict[str, Any]] = []
+    for index, row in enumerate(_records(actionable), start=offset + 1):
+        decision = str(row.get("decision") or "")
+        label = "Review open" if decision == "open_candidate" else "Review candidate"
+        reason = str(row.get("operator_call_text") or "Candidate evaluation requires operator review.")
+        items.append(
+            {
+                **row,
+                "event_id": f"candidate-{index}",
+                "position_id": "",
+                "unrealized_pl": "",
+                "unrealized_plpc": 0,
+                "signal_age_minutes": "",
+                "replacement_symbol": row.get("held_symbol_to_compare") or "",
+                "operator_call": "info",
+                "operator_call_label": label,
+                "operator_call_reason": reason,
+                "operator_apply_enabled": False,
+            }
+        )
+    return items
 
 
 def _operator_call_for_queue_item(item: dict[str, Any], held_symbols: set[str]) -> dict[str, Any]:
