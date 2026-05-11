@@ -27,6 +27,7 @@ REASON_LABELS = {
     "take_profit_unavailable": "Take profit unavailable",
     "risk_tier_reject": "Risk tier rejected",
     "operator_keep_position": "Operator chose to keep position",
+    "no_eligible_replacement_available": "No eligible replacement available (excluded held names or insufficient rank improvement)",
     "manual_close_dry_run_submit_orders_disabled": "Manual close recorded as dry-run because order submission is disabled",
     "manual_close_submitted": "Manual paper close submitted",
     "manual_close_alpaca_api_error": "Manual paper close failed at Alpaca API",

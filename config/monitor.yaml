@@ -1,0 +1,3 @@
+rotation:
+  min_rank_improvement: 3
+  min_score_delta: 0.02

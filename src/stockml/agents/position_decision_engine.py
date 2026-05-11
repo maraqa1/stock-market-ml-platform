@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import yaml
 
-from stockml.common.paths import AGENT_DECISIONS_DIR, ensure_data_dirs, timestamp
+from stockml.common.paths import AGENT_DECISIONS_DIR, PROJECT_ROOT, ensure_data_dirs, timestamp
 from stockml.services.events import position_id_for_symbol, record_event_safely
+
+
+LOGGER = logging.getLogger(__name__)
+MONITOR_CONFIG_PATH = PROJECT_ROOT / "config" / "monitor.yaml"
 
 
 DECISION_COLUMNS = [
@@ -94,12 +101,16 @@ def build_position_decisions(
     now: datetime | None = None,
     signal_ttl_minutes: int = 10,
     fallback_signal_time: datetime | None = None,
-    min_replacement_rank_improvement: int = 10,
+    min_replacement_rank_improvement: int | None = None,
 ) -> pd.DataFrame:
     if positions.empty:
         return pd.DataFrame(columns=DECISION_COLUMNS)
 
     now = now or datetime.now(timezone.utc)
+    rotation_config = _rotation_config()
+    if min_replacement_rank_improvement is None:
+        min_replacement_rank_improvement = int(rotation_config["min_rank_improvement"])
+    min_score_delta = float(rotation_config["min_score_delta"])
     plan = plan.copy() if plan is not None and not plan.empty else pd.DataFrame(columns=["symbol"])
     results = results.copy() if results is not None and not results.empty else pd.DataFrame(columns=["symbol"])
     candidate_pool = candidate_pool.copy() if candidate_pool is not None and not candidate_pool.empty else pd.DataFrame(columns=["symbol"])
@@ -153,10 +164,12 @@ def build_position_decisions(
 
     decisions = []
     replacement_pool = _replacement_pool(candidate_pool)
+    open_positions = positions.copy()
     for _, row in frame.iterrows():
         side = _text(row.get("side")) or _text(row.get("side_plan")) or _text(row.get("position_side")) or "long"
         latest_signal = _text(row.get("trade_action")) or _text(row.get("trade_action_pool")) or "Unknown"
         current_rank = _num(row.get("candidate_rank"), default=float("nan"))
+        current_score = _score_value(row)
         current_price = _num(row.get("current_price") or row.get("last_price"))
         avg_entry = _num(row.get("avg_entry_price") or row.get("filled_avg_price"))
         stop_loss = _num(row.get("stop_loss_price"), default=float("nan"))
@@ -170,7 +183,16 @@ def build_position_decisions(
         action = "keep_position"
         is_short = side.lower() in {"short", "sell"}
         desired_action = "Short" if is_short else "Long"
-        replacement = _best_replacement(replacement_pool, _text(row.get("symbol")), desired_action)
+        replacement = find_replacement(
+            _text(row.get("symbol")),
+            replacement_pool,
+            open_positions,
+            position_bias=desired_action,
+            current_rank=current_rank,
+            current_score=current_score,
+            min_rank_improvement=min_replacement_rank_improvement,
+            min_score_delta=min_score_delta,
+        )
         replacement_symbol = _text(replacement.get("symbol")) if replacement is not None else ""
         replacement_side = _text(replacement.get("side")) if replacement is not None else ""
         replacement_rank = _num(replacement.get("candidate_rank"), default=float("nan")) if replacement is not None else float("nan")
@@ -223,6 +245,9 @@ def build_position_decisions(
                 decision, action = "replace", "close_then_open_replacement"
                 replacement_reason = "materially_better_candidate_available"
                 reasons.append("replacement_rank_improvement")
+        elif decision in {"hold", "watch"} and pd.notna(current_rank):
+            decision, action = "watch", "rescore_before_add_or_hold"
+            reasons.append("no_eligible_replacement_available")
 
         if not reasons:
             reasons.append("position_within_rules")
@@ -268,16 +293,141 @@ def _replacement_pool(candidate_pool: pd.DataFrame) -> pd.DataFrame:
     return pool[status.isin({"approved", "reduced"}) & eligible & (qty >= 1)].sort_values("candidate_rank")
 
 
-def _best_replacement(pool: pd.DataFrame, current_symbol: str, desired_action: str) -> pd.Series | None:
-    if pool.empty:
+def find_replacement(
+    symbol_to_replace: str,
+    shortlist: pd.DataFrame | list[dict[str, Any]],
+    open_positions: pd.DataFrame | list[dict[str, Any]],
+    min_rank_improvement: int | None = None,
+    *,
+    position_bias: str | None = None,
+    current_rank: float | None = None,
+    current_score: float | None = None,
+    min_score_delta: float | None = None,
+) -> pd.Series | None:
+    """Select a rotation candidate only after consulting open positions.
+
+    Rotation candidates must exclude names already held in open positions.
+    This is a safety requirement; do not bypass this helper with raw
+    ``shortlist.iloc[0]`` selection.
+    """
+
+    cfg = _rotation_config()
+    min_rank = int(min_rank_improvement if min_rank_improvement is not None else cfg["min_rank_improvement"])
+    min_score = float(min_score_delta if min_score_delta is not None else cfg["min_score_delta"])
+    symbol = _text(symbol_to_replace).upper()
+    pool = shortlist.copy() if isinstance(shortlist, pd.DataFrame) else pd.DataFrame(shortlist)
+    positions = open_positions.copy() if isinstance(open_positions, pd.DataFrame) else pd.DataFrame(open_positions)
+    considered = int(len(pool))
+    rejected = {"held": 0, "wrong_bias": 0, "insufficient_rank": 0, "insufficient_score": 0}
+
+    if pool.empty or "symbol" not in pool.columns:
+        _log_replacement_search(symbol, considered, rejected, None)
         return None
-    candidates = pool[
-        pool["symbol"].ne(current_symbol.upper())
-        & pool.get("trade_action", pd.Series("", index=pool.index)).astype(str).str.lower().eq(desired_action.lower())
-    ]
-    if candidates.empty:
+
+    pool = pool.copy()
+    pool["symbol"] = pool["symbol"].astype(str).str.upper()
+    if "candidate_rank" not in pool.columns:
+        pool["candidate_rank"] = range(1, len(pool) + 1)
+    pool = pool.sort_values("candidate_rank")
+    held_symbols = _held_symbols(positions)
+    desired = _normal_bias(position_bias)
+    current_rank_value = _optional_float(current_rank)
+    current_score_value = _optional_float(current_score)
+
+    for _, candidate in pool.iterrows():
+        candidate_symbol = _text(candidate.get("symbol")).upper()
+        if not candidate_symbol or candidate_symbol == symbol:
+            rejected["held"] += 1
+            continue
+        if candidate_symbol in held_symbols:
+            rejected["held"] += 1
+            continue
+        candidate_bias = _normal_bias(candidate.get("trade_action") or candidate.get("bias") or candidate.get("side"))
+        if desired and candidate_bias and candidate_bias != desired:
+            rejected["wrong_bias"] += 1
+            continue
+        candidate_rank = _num(candidate.get("candidate_rank"), default=float("nan"))
+        if current_rank_value is not None and (pd.isna(candidate_rank) or candidate_rank + min_rank > current_rank_value):
+            rejected["insufficient_rank"] += 1
+            continue
+        candidate_score = _score_value(candidate)
+        if current_score_value is not None and candidate_score is not None and candidate_score - current_score_value < min_score:
+            rejected["insufficient_score"] += 1
+            continue
+        _log_replacement_search(symbol, considered, rejected, candidate_symbol)
+        return candidate
+
+    _log_replacement_search(symbol, considered, rejected, None)
+    return None
+
+
+def _rotation_config() -> dict[str, float | int]:
+    payload: dict[str, Any] = {}
+    if MONITOR_CONFIG_PATH.exists():
+        try:
+            payload = yaml.safe_load(MONITOR_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        except Exception:
+            LOGGER.exception("failed_to_read_monitor_rotation_config")
+    rotation = payload.get("rotation") if isinstance(payload, dict) else {}
+    if not isinstance(rotation, dict):
+        rotation = {}
+    return {
+        "min_rank_improvement": int(rotation.get("min_rank_improvement", 3)),
+        "min_score_delta": float(rotation.get("min_score_delta", 0.02)),
+    }
+
+
+def _held_symbols(open_positions: pd.DataFrame) -> set[str]:
+    if open_positions.empty or "symbol" not in open_positions.columns:
+        return set()
+    frame = open_positions.copy()
+    if "status" in frame.columns:
+        status = frame["status"].fillna("open").astype(str).str.lower()
+        frame = frame[status.eq("open") | status.eq("")]
+    return {str(symbol).upper() for symbol in frame["symbol"].dropna() if _text(symbol)}
+
+
+def _normal_bias(value: object) -> str:
+    text = _text(value).lower()
+    if text in {"long", "buy", "l"}:
+        return "long"
+    if text in {"short", "sell", "s"}:
+        return "short"
+    return ""
+
+
+def _score_value(row: pd.Series | dict[str, Any]) -> float | None:
+    for column in ["score", "confidence_score", "risk_adjusted_score", "side_probability"]:
+        try:
+            value = row.get(column)  # type: ignore[union-attr]
+        except Exception:
+            value = None
+        number = _optional_float(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _optional_float(value: object) -> float | None:
+    number = pd.to_numeric(value, errors="coerce")
+    if pd.isna(number):
         return None
-    return candidates.iloc[0]
+    return float(number)
+
+
+def _log_replacement_search(symbol: str, considered: int, rejected: dict[str, int], returned: str | None) -> None:
+    LOGGER.info(
+        "rotation_replacement_search",
+        extra={
+            "symbol": symbol,
+            "shortlist_considered": considered,
+            "rejected_held": rejected.get("held", 0),
+            "rejected_wrong_bias": rejected.get("wrong_bias", 0),
+            "rejected_insufficient_rank": rejected.get("insufficient_rank", 0),
+            "rejected_insufficient_score": rejected.get("insufficient_score", 0),
+            "returned_symbol": returned or "",
+        },
+    )
 
 
 def write_position_decisions(decisions: pd.DataFrame, stamp: str | None = None) -> Path:
