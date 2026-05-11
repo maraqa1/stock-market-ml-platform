@@ -56,12 +56,12 @@
     <div class="autopilot-panel__actions">
       <form class="autopilot-mode-form" method="post" action="/trading/autopilot/mode">
         <label class="label" for="autopilot-mode">Autopilot mode</label>
-        <select id="autopilot-mode" name="mode">
+        <select id="autopilot-mode" name="mode" onchange="this.form.submit()">
           {% for option in paper_autopilot.mode_options %}
             <option value="{{ option.value }}" {% if option.value == paper_autopilot.mode %}selected{% endif %}>{{ option.label }}</option>
           {% endfor %}
         </select>
-        <button class="btn btn-ghost" type="submit">Switch mode</button>
+        <button class="btn btn-ghost" type="submit">Save mode</button>
       </form>
       {% if paper_autopilot.status in ["idle", "stopped", "complete"] %}
         <form method="post" action="/trading/autopilot/start">

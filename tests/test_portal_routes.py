@@ -169,8 +169,7 @@ def test_trading_paper_autopilot_controls(client):
     mode_post = client.post("/trading/autopilot/mode", data={"mode": "paper_assist"})
     assert mode_post.status_code == 302
     mode_followup = client.get("/trading")
-    assert b"Paper Assist" in mode_followup.data
-    assert b"selected" in mode_followup.data
+    assert b'<option value="paper_assist" selected>Paper Assist</option>' in mode_followup.data
 
 
 def test_data_estate_renders_new_style_and_key_datasets(symbol_client):
