@@ -14,7 +14,9 @@ from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
-from portal.services.intraday import kill_switch_context, resume_kill_switch
+from portal.services.intraday import decisions_csv as intraday_decisions_csv
+from portal.services.intraday import decisions_payload as intraday_decisions_payload
+from portal.services.intraday import intraday_context, intraday_filters, kill_switch_context, resume_kill_switch, shadow_track_record
 from portal.services.search import search
 from portal.services.shortlist import get_for_date as shortlist_get_for_date
 from portal.services.signal_service import no_decision_context, signal_context
@@ -358,7 +360,27 @@ def create_app(root: Path | None = None) -> Flask:
 
     @app.route("/intraday")
     def intraday():
-        return render_template("intraday/index.html", title="Intraday", intraday=kill_switch_context())
+        return render_template("intraday/index.html", title="Intraday", intraday=intraday_context(request.args))
+
+    @app.route("/api/intraday/decisions")
+    def api_intraday_decisions():
+        return jsonify(intraday_decisions_payload(intraday_filters(request.args)))
+
+    @app.route("/api/intraday/decisions.csv")
+    def api_intraday_decisions_csv():
+        return Response(
+            intraday_decisions_csv(intraday_filters(request.args)),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=intraday_decisions.csv"},
+        )
+
+    @app.route("/api/intraday/shadow/track-record")
+    def api_intraday_shadow_track_record():
+        return jsonify(shadow_track_record())
+
+    @app.route("/api/intraday/shadow/aggregates")
+    def api_intraday_shadow_aggregates():
+        return jsonify(shadow_track_record().get("summary", {}))
 
     @app.route("/api/intraday/kill-switches")
     def api_intraday_kill_switches():

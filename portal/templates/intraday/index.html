@@ -2,27 +2,188 @@
 {% from "_macros/pill.html" import pill %}
 {% block content %}
 <section class="trading-console intraday-console">
+  <section class="zone trading-zone" data-zone="intraday-flow" id="intraday-flow">
+    <div class="zone__header">
+      <span>Today's Intraday Flow</span>
+      <span class="zone__header-meta">
+        ticks today: {{ intraday.flow.summary.ticks_today }}
+        &middot; decisions: {{ intraday.flow.summary.decisions }}
+        &middot; would-trades: {{ intraday.flow.summary.would_trades }}
+        &middot; blocks: {{ intraday.flow.summary.blocks }}
+      </span>
+    </div>
+    <div class="zone__body">
+      <form class="table-toolbar" method="get" action="/intraday">
+        <label>
+          <span>Verdict</span>
+          <select name="verdict" multiple>
+            {% for value in ["allow_long", "allow_short", "hold", "block", "data_unavailable"] %}
+              <option value="{{ value }}" {% if value in intraday.filters.verdict %}selected{% endif %}>{{ value|replace("_", " ")|title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Block Reason</span>
+          <select name="block_reason" multiple>
+            {% for row in intraday.flow.block_histogram %}
+              <option value="{{ row.reason }}" {% if row.reason in intraday.filters.block_reason %}selected{% endif %}>{{ row.reason|replace("_", " ")|title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Symbol</span>
+          <input type="search" name="symbol" value="{{ intraday.filters.symbol }}" placeholder="Symbol">
+        </label>
+        <button class="btn btn-primary btn-sm" type="submit">Apply</button>
+        <a class="btn btn-ghost btn-sm" href="/intraday">Reset</a>
+        <a class="btn btn-ghost btn-sm" href="/api/intraday/decisions.csv">Export CSV</a>
+      </form>
+
+      {% if intraday.flow.block_histogram %}
+        <div class="diagnostic-grid">
+          {% for row in intraday.flow.block_histogram %}
+            <article class="diagnostic-card">
+              <span class="diagnostic-card__label">{{ row.reason|replace("_", " ")|title }}</span>
+              <strong class="diagnostic-card__value num-l">{{ row.count }}</strong>
+              <span class="text-tertiary">blocks today</span>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="table-scroll">
+        <table class="data dense" data-table="intraday-decisions">
+          <thead>
+            <tr>
+              <th class="num-l">Time</th>
+              <th class="col-pinned">Symbol</th>
+              <th>Verdict</th>
+              <th>Block Reason</th>
+              <th>Contributing</th>
+              <th class="num-l">Valid Until</th>
+              <th>Nightly Signal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if not intraday.flow.rows %}
+              <tr><td colspan="7" class="empty small">No intraday decisions recorded.</td></tr>
+            {% else %}
+              {% for row in intraday.flow.rows %}
+                <tr>
+                  <td class="num-l">{{ row.decided_at }}</td>
+                  <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                  <td>{{ pill("safe" if row.verdict in ["allow_long", "allow_short"] else "failed" if row.verdict == "block" else "info", row.verdict|replace("_", " ")|title) }}</td>
+                  <td>{{ row.block_reason or "-" }}</td>
+                  <td>{{ (row.contributing or [])[:3]|join(", ") or "-" }}</td>
+                  <td class="num-l">{{ row.valid_until }}</td>
+                  <td>
+                    {% if row.nightly_signal %}
+                      {{ row.nightly_signal.bias or row.nightly_signal.trade_action or "-" }}
+                      {% if row.nightly_signal.score is not none %}<span class="num-l">score {{ "%.3f"|format(row.nightly_signal.score) }}</span>{% endif %}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="shadow-track-record" id="shadow-track-record">
+    <div class="zone__header">
+      <span>Shadow-Mode Track Record</span>
+      <span class="zone__header-meta">net of modelled costs</span>
+    </div>
+    <div class="zone__body">
+      <div class="diagnostic-grid">
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Evaluated</span>
+          <strong class="diagnostic-card__value num-l">{{ intraday.track_record.summary.n_evaluated }}</strong>
+          <span class="text-tertiary">would-trades</span>
+        </article>
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Mean Net Excess</span>
+          <strong class="diagnostic-card__value num-l">{{ "%.2f%%"|format((intraday.track_record.summary.mean_net_excess_pct or 0) * 100) }}</strong>
+          <span class="text-tertiary">after costs vs SPY</span>
+        </article>
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Hit Rate</span>
+          <strong class="diagnostic-card__value num-l">{{ "%.1f%%"|format((intraday.track_record.summary.hit_rate or 0) * 100) }}</strong>
+          <span class="text-tertiary">outperformed</span>
+        </article>
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Max Concentration</span>
+          <strong class="diagnostic-card__value num-l">{{ "%.1f%%"|format((intraday.track_record.summary.max_concentration_pct or 0) * 100) }}</strong>
+          <span class="text-tertiary">by symbol</span>
+        </article>
+      </div>
+      <div class="empty small">Cost model: entry slippage plus exit slippage, each half-spread plus 5 bps market impact.</div>
+      <div class="table-scroll">
+        <table class="data dense" data-table="intraday-shadow-track-record">
+          <thead>
+            <tr>
+              <th class="col-pinned">Symbol</th>
+              <th>Side</th>
+              <th class="num-l">Decided</th>
+              <th class="num-l">Eval Date</th>
+              <th class="num">Raw</th>
+              <th class="num">Cost Bps</th>
+              <th class="num">Net</th>
+              <th class="num">SPY</th>
+              <th class="num">Net Excess</th>
+              <th>Outperformed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if not intraday.track_record.rows %}
+              <tr><td colspan="10" class="empty small">No evaluated shadow trades yet.</td></tr>
+            {% else %}
+              {% for row in intraday.track_record.rows %}
+                <tr>
+                  <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                  <td>{{ pill("short" if row.side == "short" else "info", row.side|title) }}</td>
+                  <td class="num-l">{{ row.decided_at }}</td>
+                  <td class="num-l">{{ row.evaluation_date }}</td>
+                  <td class="num">{{ "%.2f%%"|format((row.raw_return_pct or 0) * 100) }}</td>
+                  <td class="num">{{ "%.1f"|format(row.cost_bps or 0) }}</td>
+                  <td class="num">{{ "%.2f%%"|format((row.net_return_pct or 0) * 100) }}</td>
+                  <td class="num">{{ "%.2f%%"|format((row.spy_return_pct or 0) * 100) }}</td>
+                  <td class="num">{{ "%.2f%%"|format((row.net_excess_pct or 0) * 100) }}</td>
+                  <td>{{ pill("safe" if row.outperformed else "failed", "Yes" if row.outperformed else "No") }}</td>
+                </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <section class="zone trading-zone" data-zone="intraday-kill-switches" id="kill-switches">
     <div class="zone__header">
       <span>Kill Switches</span>
-      <span class="zone__header-meta">{{ intraday.tripped_count }} tripped · {{ intraday.armed_count }} armed</span>
+      <span class="zone__header-meta">{{ intraday.kill_switches.tripped_count }} tripped &middot; {{ intraday.kill_switches.armed_count }} armed</span>
     </div>
     <div class="zone__body">
       <div class="diagnostic-grid">
         <article class="diagnostic-card">
           <span class="diagnostic-card__label">Account basis</span>
-          <strong class="diagnostic-card__value num-l">${{ "%.0f"|format(intraday.account_size_usd or 0) }}</strong>
+          <strong class="diagnostic-card__value num-l">${{ "%.0f"|format(intraday.kill_switches.account_size_usd or 0) }}</strong>
           <span class="text-tertiary">Paper account thresholds</span>
         </article>
         <article class="diagnostic-card">
           <span class="diagnostic-card__label">Switches armed</span>
-          <strong class="diagnostic-card__value num-l">{{ intraday.armed_count }}</strong>
+          <strong class="diagnostic-card__value num-l">{{ intraday.kill_switches.armed_count }}</strong>
           {{ pill("safe", "Armed") }}
         </article>
         <article class="diagnostic-card">
           <span class="diagnostic-card__label">Switches tripped</span>
-          <strong class="diagnostic-card__value num-l">{{ intraday.tripped_count }}</strong>
-          {{ pill("failed" if intraday.tripped_count else "safe", "Tripped" if intraday.tripped_count else "Clear") }}
+          <strong class="diagnostic-card__value num-l">{{ intraday.kill_switches.tripped_count }}</strong>
+          {{ pill("failed" if intraday.kill_switches.tripped_count else "safe", "Tripped" if intraday.kill_switches.tripped_count else "Clear") }}
         </article>
         <article class="diagnostic-card">
           <span class="diagnostic-card__label">Live trading</span>
@@ -43,7 +204,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for switch in intraday.switches %}
+            {% for switch in intraday.kill_switches.switches %}
               <tr>
                 <td class="col-pinned">
                   <div>{{ switch.label }}</div>
@@ -83,10 +244,10 @@
               </tr>
             </thead>
             <tbody>
-              {% if not intraday.events %}
+              {% if not intraday.kill_switches.events %}
                 <tr><td colspan="5" class="empty small">No kill-switch events recorded.</td></tr>
               {% else %}
-                {% for event in intraday.events %}
+                {% for event in intraday.kill_switches.events %}
                   <tr>
                     <td class="num-l">{{ event.occurred_at }}</td>
                     <td>{{ event.switch_name }}</td>
@@ -100,7 +261,37 @@
           </table>
         </div>
       </details>
-      <div class="empty small">Intraday v1 is shadow-only. These controls do not submit paper or live orders.</div>
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="promotion-readiness" id="promotion-readiness">
+    <div class="zone__header">
+      <span>Promotion Readiness</span>
+      <span class="zone__header-meta">read-only placeholder until SPEC 36</span>
+    </div>
+    <div class="zone__body">
+      <div class="empty small">{{ intraday.promotion.status_text }}</div>
+      <div class="table-scroll">
+        <table class="data dense" data-table="promotion-readiness">
+          <thead>
+            <tr>
+              <th>Criterion</th>
+              <th>Status</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in intraday.promotion.criteria %}
+              <tr>
+                <td>{{ item.name }}</td>
+                <td>{{ pill("warning", item.status|title) }}</td>
+                <td>{{ item.note }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="empty small">Intraday v1 is shadow-only. This page does not submit paper or live orders.</div>
     </div>
   </section>
 </section>

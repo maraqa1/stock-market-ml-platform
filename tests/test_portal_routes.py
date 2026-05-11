@@ -107,11 +107,32 @@ def test_base_renders_spec25_top_nav_and_search(client):
 def test_intraday_kill_switch_page_and_api_contract(client):
     response = client.get("/intraday")
     assert response.status_code == 200
+    assert b"Today's Intraday Flow" in response.data
+    assert b"Shadow-Mode Track Record" in response.data
     assert b"Kill Switches" in response.data
+    assert b"Promotion Readiness" in response.data
     assert b"daily.realized_plus_unrealized_loss_usd" in response.data
     assert b"Live trading" in response.data
     assert b"Paper Only" in response.data
     assert b"No kill-switch events recorded." in response.data
+
+    decisions_response = client.get("/api/intraday/decisions")
+    assert decisions_response.status_code == 200
+    decisions_payload = decisions_response.get_json()
+    assert {"rows", "summary", "block_histogram"}.issubset(decisions_payload)
+
+    csv_response = client.get("/api/intraday/decisions.csv")
+    assert csv_response.status_code == 200
+    assert csv_response.mimetype == "text/csv"
+    assert b"id,decided_at,symbol,verdict,block_reason,valid_until,gate_version" in csv_response.data
+
+    track_response = client.get("/api/intraday/shadow/track-record")
+    assert track_response.status_code == 200
+    assert {"rows", "summary"}.issubset(track_response.get_json())
+
+    aggregate_response = client.get("/api/intraday/shadow/aggregates")
+    assert aggregate_response.status_code == 200
+    assert "n_evaluated" in aggregate_response.get_json()
 
     payload_response = client.get("/api/intraday/kill-switches")
     assert payload_response.status_code == 200
