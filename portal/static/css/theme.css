@@ -476,6 +476,10 @@ th.numeric {
   text-decoration: none;
 }
 
+.positions-summary {
+  padding: 0 0 var(--space-3);
+}
+
 .kpi-card--clickable {
   cursor: pointer;
 }

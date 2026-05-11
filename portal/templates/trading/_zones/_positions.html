@@ -1,3 +1,4 @@
+{% from "_macros/format.html" import money, signed_money, signed_pct %}
 {% from "_macros/table.html" import table_toolbar %}
 <section class="zone trading-zone" data-zone="open-positions" id="open-positions">
   <div class="zone__header">
@@ -5,6 +6,28 @@
     <span class="zone__header-meta" data-position-staleness>live, refreshed {{ positions_api.refreshed_at or "not available" }}</span>
   </div>
   <div class="zone__body">
+    <div class="kpi-row positions-summary" aria-label="Open positions money summary">
+      <article class="kpi-card">
+        <span class="kpi-card__label">Open Value</span>
+        <strong class="kpi-card__value">{{ money(positions_api.summary.position_market_value or 0) }}</strong>
+        <small class="kpi-card__detail">{{ positions_api.summary.position_count or 0 }} open positions</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Cost Basis</span>
+        <strong class="kpi-card__value">{{ money(positions_api.summary.position_cost_basis or 0) }}</strong>
+        <small class="kpi-card__detail">Paper capital at entry</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Money Made</span>
+        <strong class="kpi-card__value {{ 'text-up' if (positions_api.summary.position_unrealized_pl or 0) > 0 else 'text-down' if (positions_api.summary.position_unrealized_pl or 0) < 0 else '' }}">{{ signed_money(positions_api.summary.position_unrealized_pl or 0) }}</strong>
+        <small class="kpi-card__detail">{{ signed_pct(positions_api.summary.position_unrealized_plpc or 0) }} unrealized</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Return</span>
+        <strong class="kpi-card__value {{ 'text-up' if (positions_api.summary.position_unrealized_plpc or 0) > 0 else 'text-down' if (positions_api.summary.position_unrealized_plpc or 0) < 0 else '' }}">{{ signed_pct(positions_api.summary.position_unrealized_plpc or 0) }}</strong>
+        <small class="kpi-card__detail">Open P&amp;L percent</small>
+      </article>
+    </div>
     <div class="stale-banner" data-position-stale-banner hidden>Position prices may be stale.</div>
     {% if positions_api.pending_close_order_count %}
       <div class="stale-banner" data-close-orders-banner>

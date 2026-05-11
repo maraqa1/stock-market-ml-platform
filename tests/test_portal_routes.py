@@ -332,6 +332,10 @@ def test_trading_page_renders_spec07_zone_skeleton(client):
         position = response.data.find(marker)
         assert position > cursor
         cursor = position
+    assert b"Open Value" in response.data
+    assert b"Cost Basis" in response.data
+    assert b"Money Made" in response.data
+    assert b"Return" in response.data
 
 
 def test_trading_page_renders_spec08_09_10_top_of_page(client):
