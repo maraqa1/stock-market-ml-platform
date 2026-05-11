@@ -199,6 +199,92 @@ def mode_options() -> list[dict[str, str]]:
     return [{"value": key, **AUTOPILOT_MODES[key]} for key in AUTOPILOT_MODE_ORDER]
 
 
+def capability_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "mode": "observe",
+            "label": "Observe",
+            "tracks": True,
+            "operator_review": True,
+            "auto_close": False,
+            "auto_open": False,
+            "auto_rotate": False,
+            "description": "Read-only tracking, logging, monitor and candidate visibility.",
+        },
+        {
+            "mode": "paper_assist",
+            "label": "Paper Assist",
+            "tracks": True,
+            "operator_review": True,
+            "auto_close": False,
+            "auto_open": False,
+            "auto_rotate": False,
+            "description": "Prepares actions for manual operator confirmation.",
+        },
+        {
+            "mode": "paper_autopilot",
+            "label": "Paper Autopilot",
+            "tracks": True,
+            "operator_review": False,
+            "auto_close": True,
+            "auto_open": False,
+            "auto_rotate": False,
+            "description": "Can submit guarded paper close orders from the exit playbook.",
+        },
+        {
+            "mode": "ai_gated_paper",
+            "label": "AI-Gated Paper",
+            "tracks": True,
+            "operator_review": True,
+            "auto_close": False,
+            "auto_open": False,
+            "auto_rotate": False,
+            "description": "Reserved for future AI-reviewed paper actions.",
+        },
+    ]
+
+
+def rule_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "rule": "Monitor close",
+            "trigger": "Latest monitor decision is close.",
+            "action": "Submit paper close order",
+            "active_in": "Paper Autopilot",
+        },
+        {
+            "rule": "Hard stop-loss",
+            "trigger": f"Unrealized return <= {HARD_STOP_LOSS_THRESHOLD:.1%}.",
+            "action": "Submit paper close order",
+            "active_in": "Paper Autopilot",
+        },
+        {
+            "rule": "Defensive stale loser",
+            "trigger": f"Signal stale and unrealized return <= {DEFENSIVE_STALE_LOSS_THRESHOLD:.1%}.",
+            "action": "Submit paper close order",
+            "active_in": "Paper Autopilot",
+        },
+        {
+            "rule": "Trailing profit protection",
+            "trigger": f"Peak return >= {TRAILING_PROFIT_MIN:.1%} and giveback >= {TRAILING_GIVEBACK_THRESHOLD:.1%} on a stale signal.",
+            "action": "Submit paper close order",
+            "active_in": "Paper Autopilot",
+        },
+        {
+            "rule": "Open candidate",
+            "trigger": "Candidate evaluation finds a new possible entry.",
+            "action": "Review only",
+            "active_in": "No automatic mode",
+        },
+        {
+            "rule": "Rotation",
+            "trigger": "A better candidate exists than a current holding.",
+            "action": "Review only",
+            "active_in": "No automatic mode",
+        },
+    ]
+
+
 def set_mode(mode: str, root: Path | None = None) -> dict[str, Any]:
     clean = str(mode or "").strip().lower()
     state = load_state(root)
@@ -610,6 +696,8 @@ def context(root: Path | None = None) -> dict[str, Any]:
         "mode_summary": mode_meta["summary"],
         "mode_execution_policy": mode_meta["execution_policy"],
         "mode_options": mode_options(),
+        "capability_rows": capability_rows(),
+        "rule_rows": rule_rows(),
         "status_label": labels.get(str(state.get("status") or ""), str(state.get("status") or "idle").replace("_", " ").title()),
         "phase_label": phase_labels.get(str(state.get("phase") or ""), str(state.get("phase") or "idle").replace("_", " ").title()),
         "state_path": str(_state_path(root)),

@@ -98,6 +98,59 @@
     <p class="text-secondary">
       {{ paper_autopilot.mode_summary }} Paper-only control loop; live trading remains disabled.
     </p>
+    <details class="autopilot-log" data-key="autopilot-capabilities" open>
+      <summary>Autopilot Capabilities & Options</summary>
+      <div class="table-scroll">
+        <table class="data dense">
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Tracks</th>
+              <th>Manual Review</th>
+              <th>Auto Close</th>
+              <th>Auto Open</th>
+              <th>Auto Rotate</th>
+              <th>Option</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in paper_autopilot.capability_rows %}
+              <tr>
+                <td><strong>{{ row.label }}</strong></td>
+                <td>{{ "Yes" if row.tracks else "No" }}</td>
+                <td>{{ "Yes" if row.operator_review else "No" }}</td>
+                <td>{{ "Yes" if row.auto_close else "No" }}</td>
+                <td>{{ "Yes" if row.auto_open else "No" }}</td>
+                <td>{{ "Yes" if row.auto_rotate else "No" }}</td>
+                <td>{{ row.description }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="table-scroll">
+        <table class="data dense">
+          <thead>
+            <tr>
+              <th>Rule</th>
+              <th>Trigger</th>
+              <th>Action</th>
+              <th>Active In</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in paper_autopilot.rule_rows %}
+              <tr>
+                <td><strong>{{ row.rule }}</strong></td>
+                <td>{{ row.trigger }}</td>
+                <td>{{ row.action }}</td>
+                <td>{{ row.active_in }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
     <details class="autopilot-log" data-key="autopilot-tick-log">
       <summary>Recent Autopilot Ticks</summary>
       <div class="table-scroll">

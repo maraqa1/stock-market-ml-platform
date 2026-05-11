@@ -157,6 +157,12 @@ def test_trading_paper_autopilot_controls(client):
     assert b"Autopilot mode" in response.data
     assert b"Paper Assist" in response.data
     assert b"AI-Gated Paper" in response.data
+    assert b"Autopilot Capabilities & Options" in response.data
+    assert b"Hard stop-loss" in response.data
+    assert b"Defensive stale loser" in response.data
+    assert b"Trailing profit protection" in response.data
+    assert b"Auto Open" in response.data
+    assert b"Auto Rotate" in response.data
     assert b"Start Paper Autopilot" in response.data
     assert b"Recent Autopilot Ticks" in response.data
 
