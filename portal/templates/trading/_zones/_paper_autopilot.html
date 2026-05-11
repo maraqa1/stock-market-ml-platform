@@ -34,6 +34,14 @@
         <span class="label">Last tick</span>
         <strong class="num-l">{{ paper_autopilot.last_tick_at or "Not run" }}</strong>
       </div>
+      <div>
+        <span class="label">Intraday allows / blocks</span>
+        <strong class="num-l">{{ paper_autopilot.intraday_allows }} / {{ paper_autopilot.intraday_blocks }}</strong>
+      </div>
+      <div>
+        <span class="label">Monitor actions</span>
+        <strong class="num-l">{{ paper_autopilot.monitor_actions }}</strong>
+      </div>
     </div>
     {% if paper_autopilot.termination_reason %}
       <div class="stale-banner">Termination: {{ paper_autopilot.termination_reason|replace("_", " ") }}</div>
@@ -79,13 +87,15 @@
               <th class="num">Orders</th>
               <th class="num">Broker</th>
               <th class="num">Positions</th>
+              <th class="num">Intraday</th>
+              <th class="num">Monitor</th>
               <th>Termination</th>
               <th>Error</th>
             </tr>
           </thead>
           <tbody>
             {% if not paper_autopilot.recent_ticks %}
-              <tr><td colspan="8" class="empty small">No autopilot tick logs yet.</td></tr>
+              <tr><td colspan="10" class="empty small">No autopilot tick logs yet.</td></tr>
             {% else %}
               {% for tick in paper_autopilot.recent_ticks %}
                 <tr>
@@ -95,6 +105,8 @@
                   <td class="num">{{ tick.open_orders }}</td>
                   <td class="num">{{ tick.broker_open_orders }}</td>
                   <td class="num">{{ tick.open_positions }}</td>
+                  <td class="num">{{ tick.intraday_allows }}/{{ tick.intraday_blocks }}</td>
+                  <td class="num">{{ tick.monitor_actions }}</td>
                   <td>{{ tick.termination_reason }}</td>
                   <td>{{ tick.last_error }}</td>
                 </tr>

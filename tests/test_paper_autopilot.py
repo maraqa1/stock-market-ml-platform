@@ -62,6 +62,8 @@ def test_paper_autopilot_tick_waits_for_fills(monkeypatch, tmp_path):
         tmp_path,
         refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
         broker_open_orders_func=lambda cfg: 0,
+        intraday_decision_loader=lambda: {"intraday_allows": 2, "intraday_blocks": 1, "latest_intraday_at": "2026-05-11T15:00:00+00:00"},
+        monitor_decision_loader=lambda root: {"monitor_actions": 3, "monitor_close": 1, "monitor_rotate": 1, "monitor_watch": 1, "latest_monitor_at": "2026-05-11T15:00:00+00:00"},
     )
 
     assert state["status"] == "running"
@@ -70,9 +72,15 @@ def test_paper_autopilot_tick_waits_for_fills(monkeypatch, tmp_path):
     assert state["tracked_open_orders"] == 1
     assert state["broker_open_orders"] == 0
     assert state["open_positions"] == 1
+    assert state["intraday_allows"] == 2
+    assert state["intraday_blocks"] == 1
+    assert state["monitor_actions"] == 3
+    assert state["monitor_close"] == 1
     logs = paper_autopilot.recent_tick_logs(tmp_path)
     assert logs[0]["phase"] == "waiting_for_fills"
     assert logs[0]["open_orders"] == 1
+    assert logs[0]["intraday_allows"] == 2
+    assert logs[0]["monitor_actions"] == 3
 
 
 def test_paper_autopilot_tick_terminates_when_flat(monkeypatch, tmp_path):
@@ -126,3 +134,23 @@ def test_paper_autopilot_logs_not_running_ticks(tmp_path):
     logs = paper_autopilot.recent_tick_logs(tmp_path)
     assert len(logs) == 1
     assert logs[0]["last_error"] == "autopilot_not_running"
+
+
+def test_monitor_decision_summary_reads_latest_position_decisions(tmp_path):
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"symbol": "AAA", "decision": "watch"},
+            {"symbol": "BBB", "decision": "close"},
+            {"symbol": "CCC", "decision": "rotate"},
+            {"symbol": "DDD", "decision": "hold"},
+        ]
+    ).to_csv(decisions / "position_decisions_1.csv", index=False)
+
+    summary = paper_autopilot.load_monitor_decision_summary(tmp_path)
+
+    assert summary["monitor_actions"] == 3
+    assert summary["monitor_watch"] == 1
+    assert summary["monitor_close"] == 1
+    assert summary["monitor_rotate"] == 1

@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
+from sqlalchemy import desc, select
 
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
+from stockml.db.connection import get_engine
+from stockml.db.schema import intraday_decisions
 from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
 from stockml.trading.paper_trader import refresh_order_tracking
@@ -29,6 +32,12 @@ TICK_LOG_COLUMNS = [
     "last_error",
     "tracking_path",
     "positions_path",
+    "intraday_allows",
+    "intraday_blocks",
+    "monitor_actions",
+    "monitor_close",
+    "monitor_rotate",
+    "monitor_watch",
 ]
 
 
@@ -72,6 +81,14 @@ def _default_state() -> dict[str, Any]:
         "orders_tracked": 0,
         "tracking_path": "",
         "positions_path": "",
+        "intraday_allows": 0,
+        "intraday_blocks": 0,
+        "latest_intraday_at": "",
+        "monitor_actions": 0,
+        "monitor_close": 0,
+        "monitor_rotate": 0,
+        "monitor_watch": 0,
+        "latest_monitor_at": "",
         "paper_only": True,
         "live_trading_enabled": False,
     }
@@ -207,11 +224,64 @@ def _count_broker_open_orders(cfg: Any) -> int:
     return len(orders)
 
 
+def _agent_decisions_dir(root: Path | None = None) -> Path:
+    if root is None:
+        return PORTAL_OUTPUTS_DIR.parent / "trading" / "agent_decisions"
+    return Path(root) / "data" / "trading" / "agent_decisions"
+
+
+def _latest_csv(directory: Path, pattern: str) -> Path | None:
+    if not directory.exists():
+        return None
+    files = sorted(directory.glob(pattern), key=lambda path: path.stat().st_mtime, reverse=True)
+    return files[0] if files else None
+
+
+def load_monitor_decision_summary(root: Path | None = None) -> dict[str, Any]:
+    path = _latest_csv(_agent_decisions_dir(root), "position_decisions_*.csv")
+    frame = _read_csv(path)
+    if frame.empty or "decision" not in frame.columns:
+        return {"monitor_actions": 0, "monitor_close": 0, "monitor_rotate": 0, "monitor_watch": 0, "latest_monitor_at": ""}
+    decisions = frame["decision"].fillna("").astype(str).str.lower()
+    actions = decisions.isin(["watch", "close", "rotate"])
+    return {
+        "monitor_actions": int(actions.sum()),
+        "monitor_close": int((decisions == "close").sum()),
+        "monitor_rotate": int((decisions == "rotate").sum()),
+        "monitor_watch": int((decisions == "watch").sum()),
+        "latest_monitor_at": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(timespec="seconds") if path else "",
+    }
+
+
+def load_intraday_decision_summary(limit: int = 500) -> dict[str, Any]:
+    engine = get_engine(required=False)
+    if engine is None:
+        return {"intraday_allows": 0, "intraday_blocks": 0, "latest_intraday_at": ""}
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                select(intraday_decisions.c.decided_at, intraday_decisions.c.verdict)
+                .order_by(desc(intraday_decisions.c.decided_at))
+                .limit(limit)
+            ).all()
+    except Exception:
+        return {"intraday_allows": 0, "intraday_blocks": 0, "latest_intraday_at": ""}
+    verdicts = [str(row.verdict or "").lower() for row in rows]
+    latest = rows[0].decided_at.isoformat(timespec="seconds") if rows and rows[0].decided_at else ""
+    return {
+        "intraday_allows": int(sum(1 for verdict in verdicts if verdict in {"allow_long", "allow_short"})),
+        "intraday_blocks": int(sum(1 for verdict in verdicts if verdict == "block")),
+        "latest_intraday_at": latest,
+    }
+
+
 def tick(
     root: Path | None = None,
     *,
     refresh_func: Callable[[], dict[str, Any]] = refresh_order_tracking,
     broker_open_orders_func: Callable[[Any], int] | None = None,
+    intraday_decision_loader: Callable[[], dict[str, Any]] = load_intraday_decision_summary,
+    monitor_decision_loader: Callable[[Path | None], dict[str, Any]] = load_monitor_decision_summary,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -238,6 +308,8 @@ def tick(
         positions = _read_csv(refreshed.get("positions_path"))
         tracked_open_orders = _count_open_orders(tracking)
         broker_open_orders = (broker_open_orders_func or _count_broker_open_orders)(cfg)
+        intraday_summary = intraday_decision_loader()
+        monitor_summary = monitor_decision_loader(root)
         open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
         if open_orders > 0:
@@ -267,6 +339,8 @@ def tick(
                 "orders_tracked": int(refreshed.get("orders_tracked") or 0),
                 "tracking_path": str(refreshed.get("tracking_path") or ""),
                 "positions_path": str(refreshed.get("positions_path") or ""),
+                **intraday_summary,
+                **monitor_summary,
                 "live_trading_enabled": False,
             }
         )
