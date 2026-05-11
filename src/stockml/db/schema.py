@@ -41,6 +41,7 @@ POSITION_EVENT_TYPES = (
     "guardrail_blocked",
 )
 KILL_SWITCH_EVENT_TYPES = ("tripped", "resumed")
+INTRADAY_VERDICTS = ("allow_long", "allow_short", "hold", "block", "data_unavailable")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -273,6 +274,27 @@ kill_switch_events = Table(
     Column("notes", Text),
     CheckConstraint(_in_values("event_type", KILL_SWITCH_EVENT_TYPES), name="ck_kill_switch_events_event_type"),
     Index("ix_kse_switch_occurred", "switch_name", "occurred_at"),
+)
+
+intraday_decisions = Table(
+    "intraday_decisions",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("decided_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("symbol", String(50), nullable=False),
+    Column("bar_close_at", DateTime(timezone=True), nullable=False),
+    Column("verdict", String(30), nullable=False),
+    Column("block_reason", String(100)),
+    Column("gate_version", String(50), nullable=False),
+    Column("valid_until", DateTime(timezone=True), nullable=False),
+    Column("nightly_signal", JSON),
+    Column("features", JSON, nullable=False),
+    Column("contributing", JSON),
+    CheckConstraint(_in_values("verdict", INTRADAY_VERDICTS), name="ck_intraday_decisions_verdict"),
+    Index("ix_intraday_decisions_decided_at", "decided_at"),
+    Index("ix_intraday_decisions_symbol_decided_at", "symbol", "decided_at"),
+    Index("ix_intraday_decisions_verdict", "verdict", "decided_at"),
+    Index("ix_intraday_decisions_block_reason", "block_reason", "decided_at"),
 )
 
 
