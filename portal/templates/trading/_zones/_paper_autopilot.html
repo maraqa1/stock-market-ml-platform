@@ -46,12 +46,19 @@
         <span class="label">Monitor actions</span>
         <strong class="num-l">{{ paper_autopilot.monitor_actions }}</strong>
       </div>
+      <div>
+        <span class="label">Autopilot actions</span>
+        <strong class="num-l">{{ paper_autopilot.autopilot_actions }}</strong>
+      </div>
     </div>
     {% if paper_autopilot.termination_reason %}
       <div class="stale-banner">Termination: {{ paper_autopilot.termination_reason|replace("_", " ") }}</div>
     {% endif %}
     {% if paper_autopilot.last_error %}
       <div class="stale-banner">Autopilot note: {{ paper_autopilot.last_error }}</div>
+    {% endif %}
+    {% if paper_autopilot.autopilot_action_notes %}
+      <div class="stale-banner">Autopilot action: {{ paper_autopilot.autopilot_action_notes }}</div>
     {% endif %}
     <div class="autopilot-panel__actions">
       <form class="autopilot-mode-form" method="post" action="/trading/autopilot/mode">

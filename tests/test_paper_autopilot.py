@@ -125,6 +125,68 @@ def test_paper_autopilot_tick_counts_direct_broker_orders(monkeypatch, tmp_path)
     assert state["broker_open_orders"] == 5
 
 
+def test_paper_autopilot_mode_auto_closes_close_decisions(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1}, {"symbol": "BBB", "qty": 1}]).to_csv(positions, index=False)
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"symbol": "AAA", "decision": "close"},
+            {"symbol": "BBB", "decision": "watch"},
+        ]
+    ).to_csv(decisions / "position_decisions_1.csv", index=False)
+    calls = []
+
+    def apply_close(root, frame):
+        calls.append(frame["symbol"].tolist())
+        return paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        )
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=apply_close,
+    )
+
+    assert calls == [["AAA", "BBB"]]
+    assert state["mode"] == "paper_autopilot"
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_actions"] == 1
+    assert state["autopilot_close_submitted"] == 1
+    assert "AAA:submitted:auto_close" in state["autopilot_action_notes"]
+
+
+def test_paper_assist_does_not_auto_close_close_decisions(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_assist", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1}]).to_csv(positions, index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame: {"autopilot_actions": 9, "autopilot_close_submitted": 9, "autopilot_action_notes": "should_not_run"},
+    )
+
+    assert state["phase"] == "monitoring_positions"
+    assert state["autopilot_actions"] == 0
+    assert state["autopilot_close_submitted"] == 0
+
+
 def test_paper_autopilot_logs_not_running_ticks(tmp_path):
     state = paper_autopilot.tick(
         tmp_path,

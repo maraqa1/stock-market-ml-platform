@@ -13,6 +13,7 @@ from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
 from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
+from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
 
 
@@ -66,6 +67,9 @@ TICK_LOG_COLUMNS = [
     "monitor_close",
     "monitor_rotate",
     "monitor_watch",
+    "autopilot_actions",
+    "autopilot_close_submitted",
+    "autopilot_action_notes",
 ]
 
 
@@ -118,6 +122,9 @@ def _default_state() -> dict[str, Any]:
         "monitor_rotate": 0,
         "monitor_watch": 0,
         "latest_monitor_at": "",
+        "autopilot_actions": 0,
+        "autopilot_close_submitted": 0,
+        "autopilot_action_notes": "",
         "paper_only": True,
         "live_trading_enabled": False,
     }
@@ -300,6 +307,59 @@ def load_monitor_decision_summary(root: Path | None = None) -> dict[str, Any]:
     }
 
 
+def _auto_close_candidates(root: Path | None, positions: pd.DataFrame) -> pd.DataFrame:
+    path = _latest_csv(_agent_decisions_dir(root), "position_decisions_*.csv")
+    decisions = _read_csv(path)
+    if decisions.empty or positions.empty or "decision" not in decisions.columns or "symbol" not in decisions.columns:
+        return pd.DataFrame()
+    open_symbols = {str(symbol).upper() for symbol in positions.get("symbol", pd.Series(dtype=str)).dropna()}
+    if not open_symbols:
+        return pd.DataFrame()
+    frame = decisions.copy()
+    frame["__symbol"] = frame["symbol"].fillna("").astype(str).str.upper()
+    frame["__decision"] = frame["decision"].fillna("").astype(str).str.lower()
+    return frame[(frame["__decision"] == "close") & frame["__symbol"].isin(open_symbols)].copy()
+
+
+def apply_paper_autopilot_decisions(
+    root: Path | None,
+    positions: pd.DataFrame,
+    *,
+    action_func: Callable[[str, str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Apply the first narrow Paper Autopilot authority slice.
+
+    Paper Autopilot may submit paper close orders for monitor decisions that
+    already say `close`. It deliberately does not auto-open or auto-rotate.
+    """
+    candidates = _auto_close_candidates(root, positions)
+    if candidates.empty:
+        return {"autopilot_actions": 0, "autopilot_close_submitted": 0, "autopilot_action_notes": ""}
+
+    apply_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
+    notes: list[str] = []
+    submitted = 0
+    actions = 0
+    seen: set[str] = set()
+    for row in candidates.fillna("").to_dict("records"):
+        symbol = str(row.get("__symbol") or row.get("symbol") or "").upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        result = apply_action(symbol, "close")
+        actions += 1
+        status = str(result.get("status") or "")
+        message = str(result.get("message") or "")
+        if status == "submitted":
+            submitted += 1
+        notes.append(f"{symbol}:{status or 'unknown'}:{message or 'no_message'}")
+    return {
+        "autopilot_actions": actions,
+        "autopilot_close_submitted": submitted,
+        "autopilot_action_notes": "; ".join(notes[:10]),
+    }
+
+
 def load_intraday_decision_summary(limit: int = 500) -> dict[str, Any]:
     engine = get_engine(required=False)
     if engine is None:
@@ -329,6 +389,7 @@ def tick(
     broker_open_orders_func: Callable[[Any], int] | None = None,
     intraday_decision_loader: Callable[[], dict[str, Any]] = load_intraday_decision_summary,
     monitor_decision_loader: Callable[[Path | None], dict[str, Any]] = load_monitor_decision_summary,
+    autopilot_decision_applier: Callable[[Path | None, pd.DataFrame], dict[str, Any]] = apply_paper_autopilot_decisions,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -359,6 +420,12 @@ def tick(
         monitor_summary = monitor_decision_loader(root)
         open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
+        autopilot_result = {"autopilot_actions": 0, "autopilot_close_submitted": 0, "autopilot_action_notes": ""}
+        if state.get("mode") == "paper_autopilot" and open_orders == 0 and open_positions > 0:
+            autopilot_result = autopilot_decision_applier(root, positions)
+            if int(autopilot_result.get("autopilot_close_submitted") or 0) > 0:
+                open_orders = max(open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))
+                broker_open_orders = max(broker_open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))
         if open_orders > 0:
             phase = "waiting_for_fills"
             status = "running"
@@ -388,6 +455,7 @@ def tick(
                 "positions_path": str(refreshed.get("positions_path") or ""),
                 **intraday_summary,
                 **monitor_summary,
+                **autopilot_result,
                 "live_trading_enabled": False,
             }
         )
