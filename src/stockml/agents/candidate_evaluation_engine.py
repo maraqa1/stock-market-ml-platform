@@ -43,6 +43,7 @@ def evaluate_candidates(
     quote_loader: Callable[[str], Any] | None = None,
     now: datetime | None = None,
     max_open_positions: int = 5,
+    max_spread_bps: float = 50.0,
 ) -> pd.DataFrame:
     now = now or datetime.now(timezone.utc)
     pool = candidate_pool.copy() if candidate_pool is not None and not candidate_pool.empty else pd.DataFrame(columns=["symbol"])
@@ -82,6 +83,8 @@ def evaluate_candidates(
             candidate,
             price=price,
             is_held=is_held,
+            spread_bps=spread_bps,
+            max_spread_bps=max_spread_bps,
             open_slots=open_slots,
             rank_delta=rank_delta,
             score_delta=score_delta,
@@ -126,6 +129,8 @@ def _candidate_decision(
     *,
     price: float,
     is_held: bool,
+    spread_bps: float,
+    max_spread_bps: float,
     open_slots: int,
     rank_delta: float,
     score_delta: float,
@@ -139,6 +144,10 @@ def _candidate_decision(
         return "watch", "already_held", "already_held", "Already held; monitor as an open position."
     if price <= 0:
         return "skip", "skip_candidate", "price_unavailable", "No current price; keep out of Action Queue."
+    if spread_bps <= 0:
+        return "skip", "skip_candidate", "spread_unavailable", "No reliable bid/ask spread; keep out of Action Queue."
+    if spread_bps > max_spread_bps:
+        return "skip", "skip_candidate", "wide_spread", "Spread too wide for candidate entry."
     if status not in {"approved", "reduced"} or not eligible:
         return "skip", "skip_candidate", "risk_or_quality_rejected", "Risk/quality gate rejected this candidate."
     if open_slots > 0:

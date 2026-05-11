@@ -69,3 +69,33 @@ def test_candidate_evaluation_skips_rejected_or_unpriced_candidate():
     evaluated = evaluate_candidates(candidates, pd.DataFrame([]), quote_loader=lambda symbol: None)
 
     assert set(evaluated["decision"]) == {"skip"}
+
+
+def test_candidate_evaluation_skips_wide_spread_candidates():
+    candidates = pd.DataFrame([candidate("AAA", 1)])
+
+    evaluated = evaluate_candidates(
+        candidates,
+        pd.DataFrame([]),
+        quote_loader=lambda symbol: {"bid": 9.0, "ask": 11.0, "last_price": 10.0},
+        max_spread_bps=50,
+    )
+
+    row = evaluated.iloc[0]
+    assert row["decision"] == "skip"
+    assert row["decision_reason"] == "wide_spread"
+
+
+def test_candidate_evaluation_requires_reliable_spread_for_action_queue():
+    candidates = pd.DataFrame([candidate("AAA", 1)])
+
+    evaluated = evaluate_candidates(
+        candidates,
+        pd.DataFrame([]),
+        quote_loader=lambda symbol: {"last_price": 10.0},
+        max_spread_bps=50,
+    )
+
+    row = evaluated.iloc[0]
+    assert row["decision"] == "skip"
+    assert row["decision_reason"] == "spread_unavailable"
