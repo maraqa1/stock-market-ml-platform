@@ -191,3 +191,35 @@ def score_unscored_snapshots(*, engine: Engine | None = None, now: datetime | No
             written += 1
             verdict_counts[decision.verdict] = verdict_counts.get(decision.verdict, 0) + 1
     return {"status": "ok", "snapshots_scored": written, "verdict_counts": verdict_counts}
+
+
+def explain_latest_snapshot(symbol: str, *, engine: Engine | None = None) -> dict[str, Any]:
+    db = engine or get_engine(required=True)
+    clean_symbol = str(symbol or "").strip().upper()
+    if not clean_symbol:
+        return {"status": "error", "reason": "symbol_required"}
+    with db.connect() as conn:
+        row = conn.execute(
+            select(intraday_candidate_snapshots)
+            .where(intraday_candidate_snapshots.c.symbol == clean_symbol)
+            .order_by(intraday_candidate_snapshots.c.snapshot_at.desc(), intraday_candidate_snapshots.c.id.desc())
+            .limit(1)
+        ).mappings().first()
+    if row is None:
+        return {"status": "missing", "symbol": clean_symbol}
+    payload = dict(row)
+    decision = evaluate_snapshot(payload)
+    return {
+        "status": "ok",
+        "symbol": clean_symbol,
+        "snapshot_id": payload.get("id"),
+        "snapshot_at": payload.get("snapshot_at"),
+        "nightly_bias": payload.get("nightly_bias"),
+        "nightly_score": payload.get("nightly_score"),
+        "spread_bps": payload.get("spread_bps"),
+        "dollar_volume_today": payload.get("dollar_volume_today"),
+        "trend_5m_pct": payload.get("trend_5m_pct"),
+        "trend_15m_pct": payload.get("trend_15m_pct"),
+        "intraday_range_position": payload.get("intraday_range_position"),
+        "decision": decision,
+    }

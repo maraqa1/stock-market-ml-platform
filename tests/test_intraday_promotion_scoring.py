@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, insert, select
 
 from portal.app import create_app
 from stockml.db.schema import create_all, intraday_candidate_snapshots, intraday_promotion_log
-from stockml.intraday.promotion_score import evaluate_snapshot, record_promotion_decision, score_unscored_snapshots
+from stockml.intraday.promotion_score import evaluate_snapshot, explain_latest_snapshot, record_promotion_decision, score_unscored_snapshots
 
 
 NOW = datetime(2026, 5, 11, 15, 0, tzinfo=timezone.utc)
@@ -185,6 +185,30 @@ def test_record_promotion_decision_reuses_existing_snapshot_log():
     assert first == second
     with db.connect() as conn:
         assert len(conn.execute(select(intraday_promotion_log)).all()) == 1
+
+
+def test_explain_latest_snapshot_evaluates_current_code_without_writing_log():
+    db = engine()
+    snapshot_id = insert_snapshot(
+        db,
+        symbol="EMBC",
+        nightly_score=0.6411,
+        spread_bps=29.81,
+        dollar_volume_today=1_496_769,
+        trend_5m_pct=0.1502,
+        trend_15m_pct=0.9077,
+        intraday_range_position=0.95,
+        distance_from_vwap_bps=16.25,
+        details={"volume_ratio": 1.0, "spy_intraday_trend_5m_pct": 0.1, "vix_regime": "normal"},
+    )
+
+    explanation = explain_latest_snapshot("EMBC", engine=db)
+
+    assert explanation["snapshot_id"] == snapshot_id
+    assert explanation["decision"].verdict == "promote_to_selection_strong"
+    assert "strong_candidate_spread_relaxed" in explanation["decision"].contributing
+    with db.connect() as conn:
+        assert conn.execute(select(intraday_promotion_log)).all() == []
 
 
 def test_trading_page_renders_intraday_promotion_zone(monkeypatch, tmp_path):
