@@ -48,6 +48,8 @@ EOD_STATES = ("review", "trim", "observe", "flatten", "verify", "postclose")
 EOD_DISPOSITIONS = ("weak", "stale", "winner_hold", "none")
 INTRADAY_CANDIDATE_SNAPSHOT_STATUS = ("ok", "data_unavailable", "provider_error")
 INTRADAY_PROMOTION_VERDICTS = ("block", "watch", "promote_to_selection", "promote_to_selection_strong")
+ROTATION_RECOMMENDATION_VERDICTS = ("proposed", "confirmed", "overridden", "expired", "blocked")
+ROTATION_REASONS = ("HIGHER_PROMOTION_SCORE", "HELD_SIGNAL_STALE", "HELD_NEGATIVE_TREND", "HELD_DROPPED_FROM_SHORTLIST")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -440,6 +442,27 @@ intraday_promotion_log = Table(
     UniqueConstraint("snapshot_id", name="uq_ipl_snapshot_id"),
     Index("ix_ipl_logged_at", "logged_at"),
     Index("ix_ipl_symbol_verdict", "symbol", "verdict", "logged_at"),
+)
+
+rotation_recommendation_log = Table(
+    "rotation_recommendation_log",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("logged_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("replace_symbol", String(50), nullable=False),
+    Column("with_symbol", String(50), nullable=False),
+    Column("replace_position_id", String(200)),
+    Column("promotion_score", Float),
+    Column("held_score", Float),
+    Column("score_delta", Float),
+    Column("reason", String(100), nullable=False),
+    Column("verdict", String(30), nullable=False),
+    Column("operator_id", String(100)),
+    Column("operator_at", DateTime(timezone=True)),
+    Column("details", JSON, nullable=False, default=dict),
+    CheckConstraint(_in_values("reason", ROTATION_REASONS), name="ck_rotation_recommendation_reason"),
+    CheckConstraint(_in_values("verdict", ROTATION_RECOMMENDATION_VERDICTS), name="ck_rotation_recommendation_verdict"),
+    Index("ix_rrl_logged_at", "logged_at"),
 )
 
 

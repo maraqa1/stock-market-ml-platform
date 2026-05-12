@@ -39,6 +39,7 @@ from portal.services.validation import table_csv as validation_table_csv, valida
 from stockml.intraday.promotion import latest_evaluation
 from stockml.safety.live_disabled import assert_live_disabled
 from stockml.services.events import record_event_safely
+from stockml.autopilot.rotate import confirm_rotation, override_rotation
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
 
@@ -264,7 +265,19 @@ def create_app(root: Path | None = None) -> Flask:
         symbol = str(payload.get("symbol", "")).upper()
         position_id = str(payload.get("position_id") or f"paper:{symbol}")
         decision = str(payload.get("decision", "")).lower()
-        if action == "apply" and decision == "close":
+        if event_id.startswith("rotation-") and decision == "rotate":
+            try:
+                rotation_id = int(event_id.split("-", 1)[1])
+            except ValueError:
+                rotation_id = 0
+            if action == "override":
+                ok = override_rotation(rotation_id)
+                result = {"status": "recorded" if ok else "rejected", "message": "rotation_overridden" if ok else "rotation_not_found", "order_id": ""}
+            elif action == "apply":
+                result = confirm_rotation(rotation_id)
+            else:
+                result = {"status": "rejected", "message": "unsupported_rotation_action", "order_id": ""}
+        elif action == "apply" and decision == "close":
             result = position_action(root_path(), symbol, "close")
         elif action in {"apply", "override"}:
             result = position_action(root_path(), symbol, "keep")

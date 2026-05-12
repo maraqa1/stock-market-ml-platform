@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from portal.services.latest_file_reader import count_rows, latest_file, readable_reason, safe_read_csv
 from portal.services.trading_service import _position_summary, _status_counts
 from stockml.db.connection import get_engine
-from stockml.db.schema import PIPELINE_STAGE_NAMES, intraday_candidate_snapshots, intraday_promotion_log, pipeline_runs, pipeline_stages, position_events
+from stockml.db.schema import PIPELINE_STAGE_NAMES, intraday_candidate_snapshots, intraday_promotion_log, pipeline_runs, pipeline_stages, position_events, rotation_recommendation_log
 from stockml.services.events import position_id_for_symbol
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 
@@ -625,9 +625,45 @@ def action_queue_context(root: Path) -> dict[str, Any]:
             item["position_id"] = position_id_for_symbol(str(item.get("symbol") or ""))
             item.update(_operator_call_for_queue_item(item, held_symbols))
     items.extend(_candidate_queue_items(evaluations, len(items)))
+    items.extend(_rotation_queue_items(len(items)))
     counts = _status_counts(pd.DataFrame(items), "decision")
     generated_at = max([value for value in [_csv_timestamp(decisions_file), _csv_timestamp(evaluations_file)] if value] or [""])
     return {"source": "csv_artifacts", "generated_at": generated_at, "items": items, "counts": {"total": len(items), **counts}}
+
+
+def _rotation_queue_items(offset: int) -> list[dict[str, Any]]:
+    rows = _rows_from_db(
+        rotation_recommendation_log.select()
+        .where(rotation_recommendation_log.c.verdict == "proposed")
+        .order_by(rotation_recommendation_log.c.logged_at.desc())
+        .limit(10)
+    )
+    items: list[dict[str, Any]] = []
+    for index, row in enumerate(rows, start=offset + 1):
+        replace_symbol = str(row.get("replace_symbol") or "").upper()
+        with_symbol = str(row.get("with_symbol") or "").upper()
+        items.append(
+            {
+                **row,
+                "event_id": f"rotation-{row.get('id')}",
+                "symbol": f"{replace_symbol} -> {with_symbol}",
+                "side": "long",
+                "unrealized_pl": "",
+                "unrealized_plpc": row.get("score_delta") or 0,
+                "signal_age_minutes": "",
+                "decision": "rotate",
+                "recommended_action": "apply_rotation",
+                "decision_reason": row.get("reason") or "HIGHER_PROMOTION_SCORE",
+                "replacement_symbol": with_symbol,
+                "position_id": row.get("replace_position_id") or position_id_for_symbol(replace_symbol),
+                "operator_call": "warning",
+                "operator_call_label": "Apply rotation",
+                "operator_call_reason": f"Paper Assist proposes {replace_symbol} -> {with_symbol}. Operator confirmation required.",
+                "operator_apply_enabled": True,
+                "generated_at": row.get("logged_at"),
+            }
+        )
+    return items
 
 
 def intraday_promotion_context(root: Path) -> dict[str, Any]:

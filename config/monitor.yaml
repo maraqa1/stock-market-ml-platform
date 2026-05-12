@@ -1,3 +1,8 @@
 rotation:
+  enabled: true
   min_rank_improvement: 3
   min_score_delta: 0.02
+  promotion_min_score_delta: 0.10
+  min_hold_minutes: 60
+  max_rotations_per_day: 3
+  require_operator_confirm: true
