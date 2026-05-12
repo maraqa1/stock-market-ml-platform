@@ -46,6 +46,7 @@ SHADOW_WOULD_TRADE_STATUS = ("pending", "evaluated", "superseded", "cancelled")
 PROMOTION_DRY_RUN_EVENT_TYPES = ("confirmed",)
 EOD_STATES = ("review", "trim", "observe", "flatten", "verify", "postclose")
 EOD_DISPOSITIONS = ("weak", "stale", "winner_hold", "none")
+INTRADAY_CANDIDATE_SNAPSHOT_STATUS = ("ok", "data_unavailable", "provider_error")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -384,6 +385,41 @@ eod_summary = Table(
     Column("failed_to_flatten", Integer, nullable=False),
     Column("held_overnight", Integer, nullable=False),
     Column("notes", Text),
+)
+
+intraday_candidate_snapshots = Table(
+    "intraday_candidate_snapshots",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("snapshot_at", DateTime(timezone=True), nullable=False),
+    Column("bar_close_at", DateTime(timezone=True), nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("nightly_score", Float),
+    Column("nightly_bias", String(20)),
+    Column("is_held", Boolean, nullable=False, default=False),
+    Column("bid", Float),
+    Column("ask", Float),
+    Column("last_price", Float),
+    Column("spread_bps", Float),
+    Column("quote_age_sec", Integer),
+    Column("dollar_volume_today", Float),
+    Column("liquidity_ratio", Float),
+    Column("trend_5m_pct", Float),
+    Column("trend_15m_pct", Float),
+    Column("trend_30m_pct", Float),
+    Column("vwap_today", Float),
+    Column("distance_from_vwap_bps", Float),
+    Column("intraday_range_position", Float),
+    Column("volatility_burst", Boolean, nullable=False, default=False),
+    Column("sector_etf_trend_5m_pct", Float),
+    Column("market_aligned", Boolean),
+    Column("status", String(30), nullable=False),
+    Column("details", JSON, nullable=False, default=dict),
+    CheckConstraint(_in_values("nightly_bias", ("long", "short", "neutral")), name="ck_ics_nightly_bias"),
+    CheckConstraint(_in_values("status", INTRADAY_CANDIDATE_SNAPSHOT_STATUS), name="ck_ics_status"),
+    UniqueConstraint("symbol", "bar_close_at", name="uq_ics_symbol_bar_close_at"),
+    Index("ix_ics_snapshot_at", "snapshot_at"),
+    Index("ix_ics_symbol_snapshot", "symbol", "snapshot_at"),
 )
 
 
