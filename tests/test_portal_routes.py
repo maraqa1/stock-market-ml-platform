@@ -441,7 +441,8 @@ def test_trading_page_renders_intraday_promotion_zone(client):
     response = client.get("/trading")
     assert response.status_code == 200
     assert b"Intraday Promotion" in response.data
-    assert b"Awaiting candidate snapshots" in response.data
+    assert b'data-zone="intraday-promotion"' in response.data
+    assert b'data-table="intraday-promotion"' in response.data
 
 
 def test_trading_page_renders_spec08_09_10_top_of_page(client):
