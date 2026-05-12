@@ -701,8 +701,25 @@ def tick(
             else:
                 auto_open_result = apply_auto_open(candidates, positions_records, mode=str(state.get("mode") or "observe"))
             if int(auto_open_result.get("autopilot_open_submitted") or 0) > 0:
-                open_orders = max(open_orders, int(auto_open_result.get("autopilot_open_submitted") or 0))
-                broker_open_orders = max(broker_open_orders, int(auto_open_result.get("autopilot_open_submitted") or 0))
+                submitted_opens = int(auto_open_result.get("autopilot_open_submitted") or 0)
+                open_orders = max(open_orders, submitted_opens)
+                broker_open_orders = max(broker_open_orders, submitted_opens)
+                post_open_refreshed = refresh_func()
+                post_tracking = _read_csv(post_open_refreshed.get("tracking_path"))
+                post_positions = _read_csv(post_open_refreshed.get("positions_path"))
+                post_tracked_open_orders = _count_open_orders(post_tracking)
+                post_broker_open_orders = (broker_open_orders_func or _count_broker_open_orders)(cfg)
+                post_open_orders = max(post_tracked_open_orders, post_broker_open_orders)
+                post_open_positions = int(len(post_positions))
+                if post_open_orders > 0 or post_open_positions > open_positions:
+                    refreshed = post_open_refreshed
+                    tracking = post_tracking
+                    positions = post_positions
+                    tracked_open_orders = post_tracked_open_orders
+                    broker_open_orders = post_broker_open_orders
+                    open_orders = post_open_orders
+                    open_positions = post_open_positions
+                    update_position_peaks(state, positions)
         if open_orders > 0:
             phase = "waiting_for_fills"
             status = "running"

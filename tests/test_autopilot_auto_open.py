@@ -430,6 +430,44 @@ def test_paper_autopilot_tick_uses_flat_fallback_when_account_is_empty(monkeypat
     assert state["autopilot_open_submitted"] == 1
 
 
+def test_paper_autopilot_tick_refreshes_positions_after_auto_open_fill(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking_before = tmp_path / "tracking-before.csv"
+    positions_before = tmp_path / "positions-before.csv"
+    tracking_after = tmp_path / "tracking-after.csv"
+    positions_after = tmp_path / "positions-after.csv"
+    pd.DataFrame([]).to_csv(tracking_before, index=False)
+    pd.DataFrame([]).to_csv(positions_before, index=False)
+    pd.DataFrame([{"symbol": "ANGI", "alpaca_status": "filled"}]).to_csv(tracking_after, index=False)
+    pd.DataFrame([{"symbol": "ANGI", "qty": 10, "unrealized_plpc": 0.0}]).to_csv(positions_after, index=False)
+    refreshes = [
+        {"orders_tracked": 0, "tracking_path": tracking_before, "positions_path": positions_before},
+        {"orders_tracked": 1, "tracking_path": tracking_after, "positions_path": positions_after},
+    ]
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: refreshes.pop(0),
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [],
+        fallback_candidate_loader=lambda: [_fallback_candidate("ANGI")],
+        auto_open_applier=lambda candidates, open_positions, mode: {
+            "autopilot_open_attempted": 1,
+            "autopilot_open_submitted": 1,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "ANGI:fallback_opened:order-ANGI",
+        },
+    )
+
+    assert state["phase"] == "monitoring_positions"
+    assert state["open_orders"] == 0
+    assert state["open_positions"] == 1
+    assert state["orders_tracked"] == 1
+    assert state["positions_path"] == str(positions_after)
+
+
 def test_paper_autopilot_tick_does_not_auto_open_during_eod(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
     paper_autopilot.start(tmp_path)
