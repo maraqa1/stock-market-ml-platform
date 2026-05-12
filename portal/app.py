@@ -43,7 +43,7 @@ from stockml.autopilot.rotate import confirm_rotation, override_rotation
 from stockml.autopilot.open import set_auto_open_enabled
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
-from stockml.reports.daily import get_or_build_report, report_csv, report_index
+from stockml.reports.daily import dashboard_report_card, get_or_build_report, report_csv, report_index
 
 
 def create_app(root: Path | None = None) -> Flask:
@@ -179,6 +179,7 @@ def create_app(root: Path | None = None) -> Flask:
                 {"label": "Neutral", "value": signals["no_decision_count"]},
             ],
             model_status=signals,
+            daily_report=dashboard_report_card(),
             files=[
                 *universe["files"],
                 file_status(validated, "Price validated universe"),

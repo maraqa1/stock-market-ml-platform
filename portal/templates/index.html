@@ -16,6 +16,37 @@
     <article class="kpi"><span>{{ kpi.label }}</span><strong>{{ kpi.value|fmt }}</strong></article>
   {% endfor %}
 </section>
+<section class="zone trading-zone" data-zone="dashboard-daily-report">
+  <div class="zone__header">
+    <span>Daily Trading Report</span>
+    <span class="zone__header-meta">{{ daily_report.status }} · {{ daily_report.session_date }}</span>
+  </div>
+  <div class="zone__body">
+    <div class="positions-summary kpi-grid">
+      <div class="kpi-card">
+        <span class="kpi-card__label">Total P&amp;L</span>
+        <strong class="kpi-card__value num-l">{{ "%+.2f"|format(daily_report.total_pnl) }}</strong>
+        <small>{{ "%+.2f%%"|format(daily_report.net_pnl_pct) }} net</small>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-card__label">Trades</span>
+        <strong class="kpi-card__value num-l">{{ daily_report.total_trades }}</strong>
+        <small>Win rate {{ "%.2f%%"|format(daily_report.win_rate or 0) }}</small>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-card__label">Computed</span>
+        <strong class="kpi-card__value num-l">{{ daily_report.computed_at or "Pending" }}</strong>
+        <small>{{ "Latest report ready" if daily_report.has_report else "Open to generate today" }}</small>
+      </div>
+    </div>
+    <div class="table-toolbar">
+      <a class="btn btn-primary" href="{{ daily_report.view_url }}">View Report</a>
+      <a class="btn btn-ghost" href="{{ daily_report.csv_url }}">Download CSV</a>
+      <a class="btn btn-ghost" href="{{ daily_report.json_url }}">Download JSON</a>
+      <a class="btn btn-ghost" href="/reports">Report History</a>
+    </div>
+  </div>
+</section>
 <section class="grid-2">
 <section class="panel">
   <h2>Model Status</h2>

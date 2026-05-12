@@ -14,7 +14,7 @@ from stockml.db.schema import (
     position_events,
     rotation_recommendation_log,
 )
-from stockml.reports.daily import build_daily_report, get_or_build_report, report_csv, report_index
+from stockml.reports.daily import build_daily_report, dashboard_report_card, get_or_build_report, report_csv, report_index
 
 
 def _engine():
@@ -166,3 +166,16 @@ def test_report_index_and_get_or_build_read_persisted_payload():
 
     assert rows[0]["session_date"] == "2026-05-12"
     assert report["session_date"] == "2026-05-12"
+
+
+def test_dashboard_report_card_returns_latest_or_today_links():
+    engine = _engine()
+    empty = dashboard_report_card(engine=engine, today=date(2026, 5, 13))
+    assert empty["has_report"] is False
+    assert empty["csv_url"] == "/reports/daily/2026-05-13.csv?refresh=1"
+
+    build_daily_report(date(2026, 5, 12), engine=engine, now=datetime(2026, 5, 12, 20, 30, tzinfo=timezone.utc))
+    card = dashboard_report_card(engine=engine)
+    assert card["has_report"] is True
+    assert card["view_url"] == "/reports/daily/2026-05-12"
+    assert card["csv_url"] == "/reports/daily/2026-05-12.csv"

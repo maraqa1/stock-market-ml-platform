@@ -105,6 +105,17 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b"js/table_sort.js" in response.data
 
 
+def test_dashboard_shows_daily_report_download_links(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b"Daily Trading Report" in response.data
+    assert b"View Report" in response.data
+    assert b"Download CSV" in response.data
+    assert b"Download JSON" in response.data
+    assert b"Report History" in response.data
+    assert b"/reports/daily/" in response.data
+
+
 def test_intraday_kill_switch_page_and_api_contract(client):
     response = client.get("/intraday")
     assert response.status_code == 200

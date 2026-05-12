@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import delete, insert, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.engine import Engine
 
 from stockml.db.connection import get_engine
@@ -326,8 +327,11 @@ def report_index(*, engine: Engine | None = None, limit: int = 30) -> list[dict[
     db = engine or get_engine(required=False)
     if db is None:
         return []
-    with db.connect() as conn:
-        rows = conn.execute(select(daily_report_runs).order_by(daily_report_runs.c.session_date.desc()).limit(limit)).mappings().all()
+    try:
+        with db.connect() as conn:
+            rows = conn.execute(select(daily_report_runs).order_by(daily_report_runs.c.session_date.desc()).limit(limit)).mappings().all()
+    except SQLAlchemyError:
+        return []
     return [_jsonable(dict(row)) for row in rows]
 
 
@@ -353,11 +357,48 @@ def get_or_build_report(session_date: date | str, *, engine: Engine | None = Non
             },
         }
     if not refresh:
-        with db.connect() as conn:
-            row = conn.execute(select(daily_report_runs.c.details).where(daily_report_runs.c.session_date == day)).scalar()
-            if isinstance(row, dict):
-                return row
+        try:
+            with db.connect() as conn:
+                row = conn.execute(select(daily_report_runs.c.details).where(daily_report_runs.c.session_date == day)).scalar()
+                if isinstance(row, dict):
+                    return row
+        except SQLAlchemyError:
+            pass
     return build_daily_report(day, engine=db, persist=True)
+
+
+def dashboard_report_card(*, engine: Engine | None = None, today: date | None = None) -> dict[str, Any]:
+    rows = report_index(engine=engine, limit=1)
+    if rows:
+        row = rows[0]
+        session_date = str(row.get("session_date") or "")
+        return {
+            "has_report": True,
+            "session_date": session_date,
+            "computed_at": str(row.get("computed_at") or ""),
+            "total_pnl": _float(row.get("total_pnl")),
+            "net_pnl_pct": _float(row.get("net_pnl_pct")),
+            "total_trades": int(row.get("total_trades") or 0),
+            "win_rate": row.get("win_rate"),
+            "view_url": f"/reports/daily/{session_date}",
+            "csv_url": f"/reports/daily/{session_date}.csv",
+            "json_url": f"/reports/daily/{session_date}.json",
+            "status": "Computed",
+        }
+    session_date = (today or utc_now().date()).isoformat()
+    return {
+        "has_report": False,
+        "session_date": session_date,
+        "computed_at": "",
+        "total_pnl": 0.0,
+        "net_pnl_pct": 0.0,
+        "total_trades": 0,
+        "win_rate": None,
+        "view_url": f"/reports/daily/{session_date}?refresh=1",
+        "csv_url": f"/reports/daily/{session_date}.csv?refresh=1",
+        "json_url": f"/reports/daily/{session_date}.json?refresh=1",
+        "status": "Not computed",
+    }
 
 
 def report_csv(report: dict[str, Any]) -> str:
