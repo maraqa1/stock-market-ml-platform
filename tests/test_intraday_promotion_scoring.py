@@ -102,6 +102,43 @@ def test_precheck_blocks_take_precedence_over_confirmation():
     assert decision.block_reason == "wide_spread"
 
 
+def test_strong_candidate_gets_limited_spread_relaxation():
+    decision = evaluate_snapshot(
+        row(
+            symbol="EMBC",
+            nightly_score=0.6411,
+            spread_bps=30.26,
+            dollar_volume_today=1_913_491,
+            trend_5m_pct=0.607,
+            trend_15m_pct=1.2214,
+            distance_from_vwap_bps=42.8,
+            intraday_range_position=0.61,
+            sector_etf_trend_5m_pct=0.0,
+            details={"volume_ratio": 1.0, "spy_intraday_trend_5m_pct": 0.1, "vix_regime": "normal"},
+        )
+    )
+
+    assert decision.verdict == "promote_to_selection"
+    assert decision.block_reason is None
+    assert "strong_candidate_spread_relaxed" in decision.contributing
+
+
+def test_wide_spread_relaxation_requires_strong_candidate_quality():
+    decision = evaluate_snapshot(
+        row(
+            nightly_score=0.3375,
+            spread_bps=30.26,
+            dollar_volume_today=1_913_491,
+            trend_5m_pct=0.607,
+            trend_15m_pct=1.2214,
+            intraday_range_position=0.61,
+        )
+    )
+
+    assert decision.verdict == "block"
+    assert decision.block_reason == "wide_spread"
+
+
 def test_nightly_signal_missing_blocks():
     decision = evaluate_snapshot(row(nightly_bias="neutral"))
 

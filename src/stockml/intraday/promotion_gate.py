@@ -19,6 +19,7 @@ PROMOTION_RULES = (
     "fresh_quote",
     "not_near_open",
     "not_near_close",
+    "strong_candidate_spread_relaxed",
     "regime_not_extreme",
     "symbol_cooloff_clear",
     "long_trend_5m_positive",
@@ -47,6 +48,10 @@ class PromotionConfig:
     selection_threshold: float = 0.55
     strong_selection_threshold: float = 0.65
     symbol_cooloff_minutes: int = 60
+    max_spread_bps: float = 25
+    strong_candidate_max_spread_bps: float = 35
+    strong_candidate_min_score: float = 0.60
+    strong_candidate_min_dollar_volume: float = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,10 @@ def load_promotion_config(path: Path | str = CONFIG_PATH) -> PromotionConfig:
         selection_threshold=float(section.get("selection_threshold", 0.55)),
         strong_selection_threshold=float(section.get("strong_selection_threshold", 0.65)),
         symbol_cooloff_minutes=int(section.get("symbol_cooloff_minutes", 60)),
+        max_spread_bps=float(section.get("max_spread_bps", 25)),
+        strong_candidate_max_spread_bps=float(section.get("strong_candidate_max_spread_bps", 35)),
+        strong_candidate_min_score=float(section.get("strong_candidate_min_score", 0.60)),
+        strong_candidate_min_dollar_volume=float(section.get("strong_candidate_min_dollar_volume", 1_000_000)),
     )
 
 
@@ -86,7 +95,23 @@ def _block(reason: BlockReason, contributing: list[str]) -> PromotionGateResult:
     return PromotionGateResult(True, reason, False, contributing)
 
 
+def _strong_candidate_spread_exception(row: dict[str, Any], cfg: PromotionConfig, bias: str, spread: float) -> bool:
+    if spread > cfg.strong_candidate_max_spread_bps:
+        return False
+    score = _float(row, "nightly_score", 0) or 0
+    dollar_volume = _float(row, "dollar_volume_today", 0) or 0
+    trend_5m = _float(row, "trend_5m_pct", 0) or 0
+    trend_15m = _float(row, "trend_15m_pct", 0) or 0
+    range_position = _float(row, "intraday_range_position")
+    if score < cfg.strong_candidate_min_score or dollar_volume < cfg.strong_candidate_min_dollar_volume:
+        return False
+    if bias == "long":
+        return trend_5m > 0 and trend_15m > 0 and range_position is not None and range_position > 0.5
+    return trend_5m < 0 and trend_15m < 0 and range_position is not None and range_position < 0.5
+
+
 def evaluate_promotion_gate(row: dict[str, Any], *, recent_action_taken: bool = False) -> PromotionGateResult:
+    cfg = load_promotion_config()
     contributing: list[str] = []
     if str(row.get("status") or "ok") != "ok":
         return _block(BlockReason.MISC, ["status_not_ok"])
@@ -120,8 +145,11 @@ def evaluate_promotion_gate(row: dict[str, Any], *, recent_action_taken: bool = 
 
     spread = _float(row, "spread_bps", 0) or 0
     spread_z = _float(row.get("details") or {}, "spread_bps_zscore_20d", 0) or 0
-    if spread > 25 or spread_z > 3:
-        return _block(BlockReason.WIDE_SPREAD, contributing + ["wide_spread"])
+    if spread > cfg.max_spread_bps or spread_z > 3:
+        if spread_z <= 3 and _strong_candidate_spread_exception(row, cfg, bias, spread):
+            contributing.append("strong_candidate_spread_relaxed")
+        else:
+            return _block(BlockReason.WIDE_SPREAD, contributing + ["wide_spread"])
     contributing.append("spread_within_limit")
 
     liquidity_ratio = _float(row, "liquidity_ratio")

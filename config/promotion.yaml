@@ -3,3 +3,7 @@ promotion:
   selection_threshold: 0.55
   strong_selection_threshold: 0.65
   symbol_cooloff_minutes: 60
+  max_spread_bps: 25
+  strong_candidate_max_spread_bps: 35
+  strong_candidate_min_score: 0.60
+  strong_candidate_min_dollar_volume: 1000000
