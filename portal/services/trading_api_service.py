@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from portal.services.latest_file_reader import count_rows, latest_file, readable_reason, safe_read_csv
 from portal.services.trading_service import _position_summary, _status_counts
 from stockml.db.connection import get_engine
-from stockml.db.schema import PIPELINE_STAGE_NAMES, pipeline_runs, pipeline_stages, position_events
+from stockml.db.schema import PIPELINE_STAGE_NAMES, intraday_candidate_snapshots, intraday_promotion_log, pipeline_runs, pipeline_stages, position_events
 from stockml.services.events import position_id_for_symbol
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 
@@ -628,6 +628,48 @@ def action_queue_context(root: Path) -> dict[str, Any]:
     counts = _status_counts(pd.DataFrame(items), "decision")
     generated_at = max([value for value in [_csv_timestamp(decisions_file), _csv_timestamp(evaluations_file)] if value] or [""])
     return {"source": "csv_artifacts", "generated_at": generated_at, "items": items, "counts": {"total": len(items), **counts}}
+
+
+def intraday_promotion_context(root: Path) -> dict[str, Any]:
+    engine = _engine()
+    if engine is None:
+        return {"source": "empty", "latest_tick": "", "rows": [], "counts": {}}
+    try:
+        with engine.connect() as conn:
+            latest_tick = conn.execute(select(func.max(intraday_candidate_snapshots.c.snapshot_at))).scalar()
+            if latest_tick is None:
+                return {"source": "database", "latest_tick": "", "rows": [], "counts": {}}
+            joined = intraday_promotion_log.join(
+                intraday_candidate_snapshots,
+                intraday_promotion_log.c.snapshot_id == intraday_candidate_snapshots.c.id,
+            )
+            rows = conn.execute(
+                select(
+                    intraday_promotion_log.c.symbol,
+                    intraday_candidate_snapshots.c.is_held,
+                    intraday_promotion_log.c.nightly_score,
+                    intraday_promotion_log.c.intraday_adjustment,
+                    intraday_promotion_log.c.promotion_score,
+                    intraday_promotion_log.c.verdict,
+                    intraday_promotion_log.c.block_reason,
+                    intraday_promotion_log.c.contributing,
+                    intraday_candidate_snapshots.c.snapshot_at,
+                )
+                .select_from(joined)
+                .where(intraday_candidate_snapshots.c.snapshot_at == latest_tick)
+                .order_by(intraday_promotion_log.c.promotion_score.desc(), intraday_promotion_log.c.symbol.asc())
+                .limit(20)
+            ).mappings().all()
+        records = [_record(dict(row)) for row in rows]
+        counts = _status_counts(pd.DataFrame(records), "verdict")
+        return {
+            "source": "database",
+            "latest_tick": latest_tick.isoformat(timespec="seconds") if hasattr(latest_tick, "isoformat") else str(latest_tick),
+            "rows": records,
+            "counts": {"total": len(records), **counts},
+        }
+    except Exception:
+        return {"source": "empty", "latest_tick": "", "rows": [], "counts": {}}
 
 
 def _candidate_queue_items(evaluations: pd.DataFrame, offset: int) -> list[dict[str, Any]]:

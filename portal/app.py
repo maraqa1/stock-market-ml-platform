@@ -29,6 +29,7 @@ from portal.services.trading_api_service import (
     monitor_today_context,
     pipeline_current_context,
     pipeline_history_context,
+    intraday_promotion_context,
     position_lineage_context,
     positions_context,
 )
@@ -217,6 +218,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "monitor_activity": monitor_today_context(root),
                 "action_queue": action_queue_context(root),
                 "positions_api": positions_context(root),
+                "intraday_promotion": intraday_promotion_context(root),
                 "timer_settings": timer_settings_context(root),
                 "paper_autopilot": autopilot_context(root),
             }
@@ -454,6 +456,10 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/api/trading/queue")
     def api_trading_queue():
         return jsonify(action_queue_context(root_path()))
+
+    @app.route("/api/trading/intraday-promotion")
+    def api_trading_intraday_promotion():
+        return jsonify(intraday_promotion_context(root_path()))
 
     @app.route("/validation")
     @app.route("/model-validation")

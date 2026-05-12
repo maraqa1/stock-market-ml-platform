@@ -1,0 +1,58 @@
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import number, time_utc %}
+{% from "_macros/table.html" import table_toolbar %}
+<section class="zone trading-zone" data-zone="intraday-promotion" id="intraday-promotion">
+  <div class="zone__header">
+    <span>Intraday Promotion</span>
+    <span class="zone__header-meta">
+      {% if intraday_promotion.latest_tick %}
+        Latest tick {{ time_utc(intraday_promotion.latest_tick) }}
+      {% else %}
+        Awaiting candidate snapshots
+      {% endif %}
+    </span>
+  </div>
+  <div class="zone__body">
+    {{ table_toolbar("Filter intraday promotions") }}
+    <div class="table-scroll">
+      <table class="data" data-table="intraday-promotion">
+        <thead>
+          <tr>
+            <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
+            <th>Held?</th>
+            <th class="num" data-sortable data-sort-key="nightly" data-sort-type="number">Nightly</th>
+            <th class="num" data-sortable data-sort-key="adjustment" data-sort-type="number">Intraday Adj</th>
+            <th class="num" data-sortable data-sort-key="promotion" data-sort-type="number">Promotion</th>
+            <th>Verdict</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not intraday_promotion.rows %}
+            <tr>
+              <td colspan="7" class="empty small">No intraday promotion rows yet. Run the candidate refresh and promotion scoring ticks during market hours.</td>
+            </tr>
+          {% else %}
+            {% for row in intraday_promotion.rows %}
+              <tr>
+                <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                <td>{{ pill("submitted" if row.is_held else "info", "Held" if row.is_held else "Open") }}</td>
+                <td class="num" data-sort-value="{{ row.nightly_score or 0 }}">{{ number(row.nightly_score, 3) if row.nightly_score is not none else "-" }}</td>
+                <td class="num" data-sort-value="{{ row.intraday_adjustment or 0 }}">{{ number(row.intraday_adjustment, 3) }}</td>
+                <td class="num" data-sort-value="{{ row.promotion_score or 0 }}">{{ number(row.promotion_score, 3) }}</td>
+                <td>{{ pill(row.verdict) }}</td>
+                <td>
+                  {% if row.block_reason %}
+                    {{ row.block_reason|reason }}
+                  {% else %}
+                    {{ (row.contributing or [])[:3]|join("; ")|reason }}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>

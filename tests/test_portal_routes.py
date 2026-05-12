@@ -356,6 +356,7 @@ def test_trading_page_renders_spec07_zone_skeleton(client):
         b'data-zone="monitor-activity"',
         b'data-zone="action-queue"',
         b'data-zone="open-positions"',
+        b'data-zone="intraday-promotion"',
         b'data-zone="run-summary"',
         b'data-zone="todays-basket"',
         b'data-zone="rejected-trimmed"',
@@ -371,6 +372,13 @@ def test_trading_page_renders_spec07_zone_skeleton(client):
     assert b"Cost Basis" in response.data
     assert b"Money Made" in response.data
     assert b"Return" in response.data
+
+
+def test_trading_page_renders_intraday_promotion_zone(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Intraday Promotion" in response.data
+    assert b"Awaiting candidate snapshots" in response.data
 
 
 def test_trading_page_renders_spec08_09_10_top_of_page(client):

@@ -47,6 +47,7 @@ PROMOTION_DRY_RUN_EVENT_TYPES = ("confirmed",)
 EOD_STATES = ("review", "trim", "observe", "flatten", "verify", "postclose")
 EOD_DISPOSITIONS = ("weak", "stale", "winner_hold", "none")
 INTRADAY_CANDIDATE_SNAPSHOT_STATUS = ("ok", "data_unavailable", "provider_error")
+INTRADAY_PROMOTION_VERDICTS = ("block", "watch", "promote_to_selection", "promote_to_selection_strong")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -420,6 +421,25 @@ intraday_candidate_snapshots = Table(
     UniqueConstraint("symbol", "bar_close_at", name="uq_ics_symbol_bar_close_at"),
     Index("ix_ics_snapshot_at", "snapshot_at"),
     Index("ix_ics_symbol_snapshot", "symbol", "snapshot_at"),
+)
+
+intraday_promotion_log = Table(
+    "intraday_promotion_log",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("logged_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("snapshot_id", Integer, ForeignKey("intraday_candidate_snapshots.id"), nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("verdict", String(50), nullable=False),
+    Column("block_reason", String(100)),
+    Column("nightly_score", Float),
+    Column("intraday_adjustment", Float),
+    Column("promotion_score", Float),
+    Column("contributing", JSON),
+    CheckConstraint(_in_values("verdict", INTRADAY_PROMOTION_VERDICTS), name="ck_intraday_promotion_log_verdict"),
+    UniqueConstraint("snapshot_id", name="uq_ipl_snapshot_id"),
+    Index("ix_ipl_logged_at", "logged_at"),
+    Index("ix_ipl_symbol_verdict", "symbol", "verdict", "logged_at"),
 )
 
 

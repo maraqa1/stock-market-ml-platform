@@ -83,7 +83,7 @@ marked as reconstructed.
 | --- | --- | --- | --- | --- |
 | 44 | End-of-day flatten policy | implemented | `527dc10 Add paper autopilot EOD flatten policy`; `migrations/009_eod_flatten_up.sql`; `tests/test_eod_flatten.py` | Paper Autopilot runs EOD review/trim/flatten windows and surfaces EOD banner. |
 | 45 | Intraday candidate refresh loop | implemented | `migrations/010_intraday_candidate_snapshots_up.sql`; `tests/test_intraday_candidate_refresh.py` | Observe-only 5-minute snapshots for all daily candidates. No order submission. |
-| 46 | Intraday promotion scoring | planned | Prompted, not implemented | Observe-only scoring from candidate snapshots to promotion verdicts. |
+| 46 | Intraday promotion scoring | implemented | `migrations/011_intraday_promotion_log_up.sql`; `tests/test_intraday_promotion_scoring.py` | Observe-only scoring from candidate snapshots to promotion verdicts, surfaced in Trading Console. |
 | 47 | Auto-rotate recommendation engine | planned | Prompted, not implemented | Paper Assist rotation recommendations requiring operator confirmation. |
 | 48 | Auto-open and Autopilot rotation | planned | Prompted, not implemented | Paper Autopilot authority after promotion contract and manual flags. |
 | 49 | Daily trading report | planned | Prompted, not implemented | After-action report with P&L, candidate flow, missed opportunities, and recommendations. |

@@ -251,6 +251,13 @@ def test_queue_contract(api_client):
     assert payload["items"][0]["position_id"] == "paper:AAA"
 
 
+def test_intraday_promotion_contract(api_client):
+    payload = _json(api_client, "/api/trading/intraday-promotion")
+    assert set(payload) == {"source", "latest_tick", "rows", "counts"}
+    assert isinstance(payload["rows"], list)
+    assert isinstance(payload["counts"], dict)
+
+
 def test_positions_body_partial_contract(api_client):
     response = api_client.get("/trading/_partials/positions-body")
     assert response.status_code == 200
