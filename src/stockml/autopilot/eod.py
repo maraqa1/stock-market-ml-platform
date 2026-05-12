@@ -21,6 +21,7 @@ EOD_STATES = ("review", "trim", "observe", "flatten", "verify", "postclose", "in
 @dataclass(frozen=True)
 class EODConfig:
     flatten_all_at_t_minus_5: bool = True
+    submit_postclose_rescue_orders: bool = False
     trim_weak_at_t_minus_15: bool = True
     holdover_allowed: bool = False
     time_stop_days: int = 20
@@ -38,6 +39,7 @@ def load_config(path: Path | str = CONFIG_PATH) -> EODConfig:
     data = dict(payload.get("eod") or {})
     return EODConfig(
         flatten_all_at_t_minus_5=bool(data.get("flatten_all_at_t_minus_5", True)),
+        submit_postclose_rescue_orders=bool(data.get("submit_postclose_rescue_orders", False)),
         trim_weak_at_t_minus_15=bool(data.get("trim_weak_at_t_minus_15", True)),
         holdover_allowed=bool(data.get("holdover_allowed", False)),
         time_stop_days=int(data.get("time_stop_days", 20)),
@@ -182,7 +184,13 @@ def run_eod_tick(
     symbols_to_close: list[str] = []
     if stage == "trim" and cfg.trim_weak_at_t_minus_15:
         symbols_to_close = [row["symbol"] for row in dispositions if row["disposition"] in {"weak", "stale"}]
-    elif stage in {"flatten", "verify", "postclose"} and cfg.flatten_all_at_t_minus_5:
+    elif stage in {"flatten", "verify"} and cfg.flatten_all_at_t_minus_5:
+        symbols_to_close = [
+            row["symbol"]
+            for row in dispositions
+            if not (cfg.holdover_allowed and row["disposition"] == "winner_hold")
+        ]
+    elif stage == "postclose" and cfg.flatten_all_at_t_minus_5 and cfg.submit_postclose_rescue_orders:
         symbols_to_close = [
             row["symbol"]
             for row in dispositions

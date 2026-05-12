@@ -1,5 +1,6 @@
 eod:
   flatten_all_at_t_minus_5: true
+  submit_postclose_rescue_orders: false
   trim_weak_at_t_minus_15: true
   holdover_allowed: false
   time_stop_days: 20
