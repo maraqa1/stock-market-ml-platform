@@ -44,6 +44,14 @@ def _clip(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
     return max(lower, min(upper, value))
 
 
+def directional_nightly_score(row: dict[str, Any]) -> float:
+    raw_score = _float(row, "nightly_score")
+    bias = str(row.get("nightly_bias") or "").strip().lower()
+    if bias == "short":
+        return abs(raw_score)
+    return raw_score
+
+
 def intraday_adjustment(row: dict[str, Any]) -> tuple[float, list[str]]:
     adjustment = 0.0
     contributing: list[str] = []
@@ -86,7 +94,7 @@ def intraday_adjustment(row: dict[str, Any]) -> tuple[float, list[str]]:
 def evaluate_snapshot(row: dict[str, Any], *, recent_action_taken: bool = False) -> PromotionDecision:
     gate = evaluate_promotion_gate(row, recent_action_taken=recent_action_taken)
     nightly_score = row.get("nightly_score")
-    base_score = _float(row, "nightly_score")
+    base_score = directional_nightly_score(row)
     adjustment, score_rules = intraday_adjustment(row)
     promotion_score = _clip(base_score + adjustment)
     contributing = [rule for rule in [*gate.contributing, *score_rules] if rule in PROMOTION_RULES]
@@ -216,6 +224,7 @@ def explain_latest_snapshot(symbol: str, *, engine: Engine | None = None) -> dic
         "snapshot_at": payload.get("snapshot_at"),
         "nightly_bias": payload.get("nightly_bias"),
         "nightly_score": payload.get("nightly_score"),
+        "directional_score": directional_nightly_score(payload),
         "spread_bps": payload.get("spread_bps"),
         "dollar_volume_today": payload.get("dollar_volume_today"),
         "trend_5m_pct": payload.get("trend_5m_pct"),

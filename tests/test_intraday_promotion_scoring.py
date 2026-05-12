@@ -81,7 +81,7 @@ def test_short_confirmation_mirrors_long_direction():
         row(
             symbol="SQQQ",
             nightly_bias="short",
-            nightly_score=0.58,
+            nightly_score=-0.58,
             trend_5m_pct=-1.2,
             trend_15m_pct=-2.2,
             distance_from_vwap_bps=-20,
@@ -100,6 +100,25 @@ def test_precheck_blocks_take_precedence_over_confirmation():
 
     assert decision.verdict == "block"
     assert decision.block_reason == "wide_spread"
+
+
+def test_short_promotion_uses_directional_signal_strength():
+    decision = evaluate_snapshot(
+        row(
+            symbol="SQQQ",
+            nightly_bias="short",
+            nightly_score=-0.62,
+            trend_5m_pct=-1.2,
+            trend_15m_pct=-2.2,
+            distance_from_vwap_bps=-20,
+            intraday_range_position=0.25,
+            sector_etf_trend_5m_pct=-0.6,
+            details={"volume_ratio": 1.6, "spy_intraday_trend_5m_pct": -0.1, "vix_regime": "normal"},
+        )
+    )
+
+    assert decision.verdict == "promote_to_selection_strong"
+    assert decision.promotion_score > 0.6
 
 
 def test_strong_candidate_gets_limited_spread_relaxation():
@@ -207,6 +226,7 @@ def test_explain_latest_snapshot_evaluates_current_code_without_writing_log():
     assert explanation["snapshot_id"] == snapshot_id
     assert explanation["decision"].verdict == "promote_to_selection_strong"
     assert "strong_candidate_spread_relaxed" in explanation["decision"].contributing
+    assert explanation["directional_score"] == 0.6411
     with db.connect() as conn:
         assert conn.execute(select(intraday_promotion_log)).all() == []
 

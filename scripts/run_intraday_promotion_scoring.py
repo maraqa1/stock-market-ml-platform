@@ -13,6 +13,7 @@ def _print_explanation(payload: dict) -> None:
         "snapshot_at",
         "nightly_bias",
         "nightly_score",
+        "directional_score",
         "spread_bps",
         "dollar_volume_today",
         "trend_5m_pct",
