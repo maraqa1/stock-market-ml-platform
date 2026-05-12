@@ -330,3 +330,27 @@ def test_action_queue_does_not_show_held_symbol_as_open_candidate(tmp_path):
 
     assert "CSTL" not in rows
     assert "ADMA" in rows
+
+
+def test_action_queue_filters_rotation_rows_for_symbols_no_longer_open(monkeypatch, tmp_path):
+    write_csv(tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv", [])
+
+    monkeypatch.setattr(
+        "portal.services.trading_api_service._rows_from_db",
+        lambda *args, **kwargs: [
+            {
+                "id": 7,
+                "replace_symbol": "CSTL",
+                "with_symbol": "ATEC",
+                "score_delta": 0.15,
+                "reason": "HIGHER_PROMOTION_SCORE",
+                "verdict": "proposed",
+                "replace_position_id": "paper:CSTL",
+                "logged_at": "2026-05-12T15:29:40+00:00",
+            }
+        ],
+    )
+
+    ctx = action_queue_context(tmp_path)
+
+    assert ctx["items"] == []

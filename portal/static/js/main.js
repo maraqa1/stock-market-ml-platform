@@ -266,13 +266,60 @@ if (positionsBody) {
   const banner = document.querySelector("[data-position-stale-banner]");
   const refreshUrl = positionsBody.dataset.refreshUrl;
   const refreshMs = Number(positionsBody.dataset.refreshMs || 5000);
+  const moneyFormatter = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+  const pctFormatter = new Intl.NumberFormat(undefined, { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const updateSignedClass = (element, value) => {
+    if (!element) return;
+    element.classList.toggle("text-up", value > 0);
+    element.classList.toggle("text-down", value < 0);
+  };
+  const signedMoney = (value) => {
+    const number = Number(value || 0);
+    if (number === 0) return moneyFormatter.format(0);
+    return `${number > 0 ? "+" : "-"}${moneyFormatter.format(Math.abs(number))}`;
+  };
+  const signedPct = (value) => {
+    const number = Number(value || 0);
+    if (number === 0) return pctFormatter.format(0);
+    return `${number > 0 ? "+" : "-"}${pctFormatter.format(Math.abs(number))}`;
+  };
+  const updatePositionSummary = (summary = {}, refreshedAt = "") => {
+    const count = Number(summary.position_count || 0);
+    const marketValue = Number(summary.position_market_value || 0);
+    const costBasis = Number(summary.position_cost_basis || 0);
+    const unrealized = Number(summary.position_unrealized_pl || 0);
+    const unrealizedPct = Number(summary.position_unrealized_plpc || 0);
+    const marketElement = document.querySelector('[data-position-summary="market_value"]');
+    const countElement = document.querySelector('[data-position-summary="count"]');
+    const costElement = document.querySelector('[data-position-summary="cost_basis"]');
+    const unrealizedElement = document.querySelector('[data-position-summary="unrealized_pl"]');
+    const unrealizedPctElement = document.querySelector('[data-position-summary="unrealized_plpc"]');
+    const unrealizedPctDetail = document.querySelector('[data-position-summary="unrealized_plpc_detail"]');
+    const staleness = document.querySelector("[data-position-staleness]");
+    if (marketElement) marketElement.textContent = moneyFormatter.format(marketValue);
+    if (countElement) countElement.textContent = `${count} open position${count === 1 ? "" : "s"}`;
+    if (costElement) costElement.textContent = moneyFormatter.format(costBasis);
+    if (unrealizedElement) unrealizedElement.textContent = signedMoney(unrealized);
+    if (unrealizedPctElement) unrealizedPctElement.textContent = signedPct(unrealizedPct);
+    if (unrealizedPctDetail) unrealizedPctDetail.textContent = `${signedPct(unrealizedPct)} unrealized`;
+    updateSignedClass(unrealizedElement, unrealized);
+    updateSignedClass(unrealizedPctElement, unrealizedPct);
+    if (staleness) staleness.textContent = `live, refreshed ${refreshedAt || "not available"}`;
+  };
   window.setInterval(async () => {
     if (document.hidden || inFlight) return;
     inFlight = true;
     try {
       const response = await fetch(refreshUrl);
       if (!response.ok) throw new Error(`Position refresh failed: ${response.status}`);
-      positionsBody.innerHTML = await response.text();
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const payload = await response.json();
+        positionsBody.innerHTML = payload.body_html || "";
+        updatePositionSummary(payload.summary, payload.refreshed_at);
+      } else {
+        positionsBody.innerHTML = await response.text();
+      }
       failures = 0;
       if (banner) banner.hidden = true;
     } catch (error) {

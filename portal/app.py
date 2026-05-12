@@ -261,6 +261,18 @@ def create_app(root: Path | None = None) -> Flask:
     def trading_positions_body_partial():
         return render_template("trading/_partials/positions_body.html", positions_api=positions_context(root_path()))
 
+    @app.route("/trading/_partials/positions-state")
+    def trading_positions_state_partial():
+        positions_api = positions_context(root_path())
+        return jsonify(
+            {
+                "body_html": render_template("trading/_partials/positions_body.html", positions_api=positions_api),
+                "refreshed_at": positions_api.get("refreshed_at") or "",
+                "summary": positions_api.get("summary") or {},
+                "pending_close_order_count": positions_api.get("pending_close_order_count") or 0,
+            }
+        )
+
     @app.route("/trading/positions/<path:position_id>/lineage")
     def trading_position_lineage_partial(position_id: str):
         return render_template("trading/_partials/lineage.html", lineage=position_lineage_context(root_path(), position_id))

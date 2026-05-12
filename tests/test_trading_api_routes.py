@@ -267,6 +267,15 @@ def test_positions_body_partial_contract(api_client):
     assert b"close-aaa" in response.data
 
 
+def test_positions_state_partial_includes_summary_and_body(api_client):
+    payload = _json(api_client, "/trading/_partials/positions-state")
+
+    assert payload["summary"]["position_count"] == 1
+    assert payload["summary"]["position_market_value"] == 520
+    assert "data-position-id=\"paper:AAA\"" in payload["body_html"]
+    assert payload["pending_close_order_count"] == 1
+
+
 def test_position_lineage_fragment_contract(api_client):
     response = api_client.get("/trading/positions/paper:AAA/lineage")
     assert response.status_code == 200

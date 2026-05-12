@@ -9,22 +9,22 @@
     <div class="kpi-row positions-summary" aria-label="Open positions money summary">
       <article class="kpi-card">
         <span class="kpi-card__label">Open Value</span>
-        <strong class="kpi-card__value">{{ money(positions_api.summary.position_market_value or 0) }}</strong>
-        <small class="kpi-card__detail">{{ positions_api.summary.position_count or 0 }} open positions</small>
+        <strong class="kpi-card__value" data-position-summary="market_value">{{ money(positions_api.summary.position_market_value or 0) }}</strong>
+        <small class="kpi-card__detail" data-position-summary="count">{{ positions_api.summary.position_count or 0 }} open positions</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Cost Basis</span>
-        <strong class="kpi-card__value">{{ money(positions_api.summary.position_cost_basis or 0) }}</strong>
+        <strong class="kpi-card__value" data-position-summary="cost_basis">{{ money(positions_api.summary.position_cost_basis or 0) }}</strong>
         <small class="kpi-card__detail">Paper capital at entry</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Money Made</span>
-        <strong class="kpi-card__value {{ 'text-up' if (positions_api.summary.position_unrealized_pl or 0) > 0 else 'text-down' if (positions_api.summary.position_unrealized_pl or 0) < 0 else '' }}">{{ signed_money(positions_api.summary.position_unrealized_pl or 0) }}</strong>
-        <small class="kpi-card__detail">{{ signed_pct(positions_api.summary.position_unrealized_plpc or 0) }} unrealized</small>
+        <strong class="kpi-card__value {{ 'text-up' if (positions_api.summary.position_unrealized_pl or 0) > 0 else 'text-down' if (positions_api.summary.position_unrealized_pl or 0) < 0 else '' }}" data-position-summary="unrealized_pl">{{ signed_money(positions_api.summary.position_unrealized_pl or 0) }}</strong>
+        <small class="kpi-card__detail" data-position-summary="unrealized_plpc_detail">{{ signed_pct(positions_api.summary.position_unrealized_plpc or 0) }} unrealized</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Return</span>
-        <strong class="kpi-card__value {{ 'text-up' if (positions_api.summary.position_unrealized_plpc or 0) > 0 else 'text-down' if (positions_api.summary.position_unrealized_plpc or 0) < 0 else '' }}">{{ signed_pct(positions_api.summary.position_unrealized_plpc or 0) }}</strong>
+        <strong class="kpi-card__value {{ 'text-up' if (positions_api.summary.position_unrealized_plpc or 0) > 0 else 'text-down' if (positions_api.summary.position_unrealized_plpc or 0) < 0 else '' }}" data-position-summary="unrealized_plpc">{{ signed_pct(positions_api.summary.position_unrealized_plpc or 0) }}</strong>
         <small class="kpi-card__detail">Open P&amp;L percent</small>
       </article>
     </div>
@@ -56,7 +56,7 @@
           <th>Action</th>
         </tr>
       </thead>
-      <tbody data-positions-body data-refresh-url="/trading/_partials/positions-body" data-refresh-ms="{{ trading_cadence.positions_refresh_ms or 5000 }}">
+      <tbody data-positions-body data-refresh-url="/trading/_partials/positions-state" data-refresh-ms="{{ trading_cadence.positions_refresh_ms or 5000 }}">
         {% include "trading/_partials/positions_body.html" %}
       </tbody>
     </table>
