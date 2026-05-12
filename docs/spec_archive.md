@@ -76,6 +76,7 @@ marked as reconstructed.
 | PA-4 | Defensive stale loser exits | implemented | `7e613dc Let paper autopilot defend stale losers` | Paper Autopilot can close stale losers within guard rails. |
 | PA-5 | Trader-style exits | implemented | `9f0a172 Add trader-style paper autopilot exits`; `f347104 Fix paper autopilot decision applier signature` | Adds hard stop and trailing-profit protection. |
 | PA-6 | Capability table | implemented | `f5588ac Show autopilot capability table` | Portal explains mode capabilities and limits. |
+| PA-7 | Block regular basket submission while Paper Autopilot runs | implemented | `src/stockml/trading/autopilot_guard.py`; `tests/test_position_event_wiring.py` | Regular paper trader basket submission is refused when `paper_autopilot_state.json` has `mode=paper_autopilot` and `status=running`. Tracking-only remains allowed. |
 
 ## SPEC 44-51 Automation Completion Pack
 

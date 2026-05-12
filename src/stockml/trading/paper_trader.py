@@ -10,6 +10,7 @@ from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
+from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, latest_signal_table
@@ -125,6 +126,9 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
     ensure_data_dirs()
     config = alpaca_config()
     paper_only_guard(live_trading_enabled=config.live_trading_enabled)
+    blocked, block_reason = autopilot_blocks_basket_submission()
+    if blocked and config.submit_orders:
+        raise RuntimeError(block_reason)
     signals = latest_signal_table(signal_file)
     candidate_pool = build_candidate_pool(signals, config)
     plan = build_order_plan(signals, config)

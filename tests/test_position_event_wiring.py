@@ -141,6 +141,32 @@ def test_paper_trader_records_submitted_and_guardrail_events(monkeypatch):
     assert [event[0][0] for event in events] == ["paper:FLEX", "paper:FLEX", "paper:AKAN"]
 
 
+def test_paper_trader_blocks_basket_submission_when_paper_autopilot_running(monkeypatch):
+    client_calls = []
+
+    class TrackingClient(FakeClient):
+        def submit_order(self, request):
+            client_calls.append(request)
+            return super().submit_order(request)
+
+    TEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(paper_trader, "PORTAL_OUTPUTS_DIR", TEST_OUTPUT_DIR)
+    monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
+    monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (True, "paper_autopilot_running_blocks_basket_submission"))
+    monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "FLEX"}]))
+    monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: pd.DataFrame())
+    monkeypatch.setattr(paper_trader, "AlpacaPaperClient", lambda cfg: TrackingClient())
+
+    try:
+        paper_trader.run_paper_trading()
+    except RuntimeError as exc:
+        assert str(exc) == "paper_autopilot_running_blocks_basket_submission"
+    else:
+        raise AssertionError("expected basket submission to be blocked")
+
+    assert client_calls == []
+
+
 def test_paper_trader_stamps_client_order_ids_per_run():
     plan = pd.DataFrame(
         [
