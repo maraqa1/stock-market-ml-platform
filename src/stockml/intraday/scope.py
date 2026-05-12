@@ -8,7 +8,6 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
-from portal.services.latest_file_reader import latest_file, safe_read_csv
 from stockml.common.paths import PROJECT_ROOT
 from stockml.db.connection import get_engine
 from stockml.db.schema import pipeline_runs, shortlist_snapshots
@@ -23,6 +22,23 @@ def _symbol(value: Any) -> str:
 
 def _symbols_from_positions(rows: list[dict[str, Any]] | None) -> set[str]:
     return {_symbol(row.get("symbol") or row.get("ticker")) for row in rows or [] if _symbol(row.get("symbol") or row.get("ticker"))}
+
+
+def _latest_file(root: Path, area: str, pattern: str) -> Path | None:
+    base = root / "data" / area
+    if not base.exists():
+        return None
+    matches = sorted(base.glob(pattern), key=lambda path: path.stat().st_mtime, reverse=True)
+    return matches[0] if matches else None
+
+
+def _safe_read_csv(path: Path | None, *, nrows: int | None = None) -> pd.DataFrame:
+    if path is None or not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path, nrows=nrows)
+    except Exception:
+        return pd.DataFrame()
 
 
 def _latest_shortlist_symbols_from_db(engine: Engine, selected: date) -> set[str]:
@@ -81,8 +97,8 @@ def _latest_shortlist_rows_from_db(engine: Engine, selected: date) -> list[dict[
 
 
 def _latest_shortlist_symbols_from_artifacts(root: Path) -> set[str]:
-    path = latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
-    frame = safe_read_csv(path, nrows=1000)
+    path = _latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
+    frame = _safe_read_csv(path, nrows=1000)
     if frame.empty:
         return set()
     column = "symbol" if "symbol" in frame.columns else "ticker" if "ticker" in frame.columns else ""
@@ -92,8 +108,8 @@ def _latest_shortlist_symbols_from_artifacts(root: Path) -> set[str]:
 
 
 def _latest_shortlist_rows_from_artifacts(root: Path) -> list[dict[str, Any]]:
-    path = latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
-    frame = safe_read_csv(path, nrows=1000)
+    path = _latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
+    frame = _safe_read_csv(path, nrows=1000)
     if frame.empty:
         return []
     symbol_col = "symbol" if "symbol" in frame.columns else "ticker" if "ticker" in frame.columns else ""
