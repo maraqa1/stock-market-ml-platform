@@ -39,7 +39,7 @@ marked as reconstructed.
 | 33A | Intraday confirmation gate core | implemented | `15bbd9a Add intraday confirmation gate core`; `tests/test_intraday_gates.py` | Added fixed `BlockReason`, pure feature/gate logic, `paper_only_guard.py`. |
 | 35A | Intraday kill-switch core | implemented | `2827742 Add intraday kill switch core`; `migrations/004_kill_switch_events_up.sql`; `tests/test_kill_switch.py` | Added versioned kill-switch config and event table. |
 | 35B | Kill-switch portal zone | implemented | `0b81430 Add intraday kill switch portal`; `portal/templates/intraday/index.html` | Surfaced kill-switch state and resume controls in the portal. |
-| 33B | Intraday provider and scope skeleton | implemented | `1835811 Add intraday provider scope skeleton`; `config/intraday.yaml`; `tests/test_intraday_provider_scope.py` | Reuses Alpaca paper client for data access; provider hook keeps aggregator replaceable. |
+| 33B | Intraday provider and scope skeleton | implemented | `1835811 Add intraday provider scope skeleton`; `927d426 Parse Alpaca calendar market hours correctly`; `config/intraday.yaml`; `tests/test_intraday_provider_scope.py` | Reuses Alpaca paper client for data access; provider hook keeps aggregator replaceable. Calendar times are normalized from market-local New York time to UTC before market-open checks. |
 | 33C | Guarded intraday decision tick | implemented | `e98fb75 Add guarded intraday decision tick`; `migrations/005_intraday_decisions_up.sql`; `tests/test_intraday_worker.py` | Worker writes decision rows only after kill-switch gate. No order submission. |
 | 34A | Shadow would-trades | implemented | `3e9bc5a Add intraday shadow would trades`; `migrations/006_shadow_would_trades_up.sql`; `tests/test_intraday_shadow.py` | Logs would-trades from allow decisions, still shadow-only. |
 | 34B | Shadow outcome evaluation | implemented | `ba4625a Add intraday shadow outcome evaluation`; `migrations/007_shadow_outcomes_up.sql` | Adds 20-day outcome evaluation and idempotency tests. |
@@ -82,7 +82,7 @@ marked as reconstructed.
 | Spec | Title | Status | Commit / Evidence | Notes |
 | --- | --- | --- | --- | --- |
 | 44 | End-of-day flatten policy | implemented | `527dc10 Add paper autopilot EOD flatten policy`; `migrations/009_eod_flatten_up.sql`; `tests/test_eod_flatten.py` | Paper Autopilot runs EOD review/trim/flatten windows and surfaces EOD banner. |
-| 45 | Intraday candidate refresh loop | implemented | `migrations/010_intraday_candidate_snapshots_up.sql`; `tests/test_intraday_candidate_refresh.py` | Observe-only 5-minute snapshots for all daily candidates. No order submission. |
+| 45 | Intraday candidate refresh loop | implemented | `927d426 Parse Alpaca calendar market hours correctly`; `migrations/010_intraday_candidate_snapshots_up.sql`; `tests/test_intraday_candidate_refresh.py`; `tests/test_intraday_provider_scope.py` | Observe-only 5-minute snapshots for all daily candidates. No order submission. Market-hours gating depends on provider calendar normalization from US Eastern market-local times to UTC. |
 | 46 | Intraday promotion scoring | implemented | `migrations/011_intraday_promotion_log_up.sql`; `tests/test_intraday_promotion_scoring.py` | Observe-only scoring from candidate snapshots to promotion verdicts, surfaced in Trading Console. |
 | 47 | Auto-rotate recommendation engine | implemented | `migrations/012_rotation_recommendation_log_up.sql`; `tests/test_rotation_recommendations.py` | Paper Assist rotation recommendations requiring operator confirmation; no automatic background apply. |
 | 48A | Guarded paper auto-open | implemented | `migrations/013_autopilot_open_log_up.sql`; `tests/test_autopilot_auto_open.py` | Paper Autopilot can submit paper-only opens from strong intraday promotions only when `autopilot.open_enabled` is true, kill-switches allow, slots/caps permit, and EOD is inactive. Auto-rotate remains deferred. |
@@ -127,6 +127,20 @@ sudo systemctl restart stockml-portal
 - New open/rotate authority is not implemented yet; it is planned for SPEC 48
   and must remain gated by explicit promotion criteria and config flags.
 - Intraday and candidate refresh cadence has a 5-minute floor.
+
+## Market Timing Notes
+
+- All worker comparisons use UTC-aware datetimes internally.
+- US equity regular-session calendar values from broker APIs may arrive as
+  market-local strings such as `09:30` and `16:00`, not full UTC timestamps.
+- Provider adapters must normalize those market-local calendar values using
+  `America/New_York` for the selected session date before returning
+  `open_at` and `close_at`.
+- The SPEC 45 refresh failure on 2026-05-12 was caused by treating Alpaca
+  calendar values as closed/invalid during the regular session. Regression
+  coverage lives in `tests/test_intraday_provider_scope.py`.
+- A provider migration, for example Alpaca to Massive/Polygon, must preserve
+  this contract: provider calendar in, UTC-aware `MarketCalendar` out.
 
 ## Maintenance Rule
 
