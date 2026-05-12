@@ -259,3 +259,74 @@ def test_action_queue_includes_candidate_evaluation_opportunities(tmp_path):
     assert "BBB" not in rows
     assert rows["AAA"]["operator_call_label"] == "Review open"
     assert rows["AAA"]["operator_apply_enabled"] is False
+
+
+def test_action_queue_filters_monitor_rows_for_symbols_no_longer_open(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [
+            {"symbol": "FRMI", "qty": 94, "market_value": 505.25},
+            {"symbol": "CERT", "qty": 24, "market_value": 120.36},
+        ],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [
+            {
+                "symbol": "FWRD",
+                "decision": "close",
+                "recommended_action": "close_position",
+                "decision_reason": "stop_loss_triggered",
+                "unrealized_pl": -2.88,
+                "unrealized_plpc": -0.0129,
+            },
+            {
+                "symbol": "CERT",
+                "decision": "watch",
+                "recommended_action": "rescore_before_add_or_hold",
+                "decision_reason": "signal_stale",
+                "unrealized_pl": -1.56,
+                "unrealized_plpc": -0.0128,
+            },
+        ],
+    )
+
+    ctx = action_queue_context(tmp_path)
+    rows = {row["symbol"]: row for row in ctx["items"]}
+
+    assert "FWRD" not in rows
+    assert rows["CERT"]["operator_call_label"] == "Watch only"
+
+
+def test_action_queue_does_not_show_held_symbol_as_open_candidate(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "CSTL", "qty": 9, "market_value": 169.60}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "candidate_evaluations" / "candidate_evaluation_1.csv",
+        [
+            {
+                "symbol": "CSTL",
+                "side": "long",
+                "candidate_rank": 1,
+                "decision": "open_candidate",
+                "recommended_action": "review_open_candidate",
+                "decision_reason": "candidate_slot_available",
+            },
+            {
+                "symbol": "ADMA",
+                "side": "long",
+                "candidate_rank": 2,
+                "decision": "open_candidate",
+                "recommended_action": "review_open_candidate",
+                "decision_reason": "candidate_slot_available",
+            },
+        ],
+    )
+
+    ctx = action_queue_context(tmp_path)
+    rows = {row["symbol"]: row for row in ctx["items"]}
+
+    assert "CSTL" not in rows
+    assert "ADMA" in rows

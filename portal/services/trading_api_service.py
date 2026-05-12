@@ -606,12 +606,16 @@ def monitor_today_context(root: Path) -> dict[str, Any]:
 def action_queue_context(root: Path) -> dict[str, Any]:
     decisions_file = latest_file(root, "agent_decisions", "position_decisions_*.csv")
     evaluations_file = latest_file(root, "candidate_evaluations", "candidate_evaluation_*.csv")
+    positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     decisions = safe_read_csv(decisions_file, nrows=1000)
     evaluations = safe_read_csv(evaluations_file, nrows=1000)
+    position_symbols = _open_symbols_from_positions_file(positions_file)
     if decisions.empty or "decision" not in decisions.columns:
         items: list[dict[str, Any]] = []
     else:
         actionable = decisions[decisions["decision"].fillna("").isin(["watch", "close", "rotate", "replace"])].copy()
+        if position_symbols is not None and "symbol" in actionable.columns:
+            actionable = actionable[actionable["symbol"].fillna("").astype(str).str.upper().isin(position_symbols)].copy()
         order = {"close": 0, "rotate": 1, "replace": 1, "watch": 2}
         actionable["__order"] = actionable["decision"].map(order).fillna(9)
         if "unrealized_plpc" not in actionable.columns:
@@ -619,16 +623,25 @@ def action_queue_context(root: Path) -> dict[str, Any]:
         actionable = actionable.sort_values(["__order", "unrealized_plpc"], ascending=[True, True], na_position="last")
         actionable = actionable.drop(columns="__order")
         items = _records(actionable)
-        held_symbols = {str(symbol).upper() for symbol in decisions.get("symbol", pd.Series(dtype=str)).dropna()}
+        held_symbols = position_symbols if position_symbols is not None else {str(symbol).upper() for symbol in decisions.get("symbol", pd.Series(dtype=str)).dropna()}
         for index, item in enumerate(items):
             item["event_id"] = item.get("event_id") or f"queue-{index + 1}"
             item["position_id"] = position_id_for_symbol(str(item.get("symbol") or ""))
             item.update(_operator_call_for_queue_item(item, held_symbols))
-    items.extend(_candidate_queue_items(evaluations, len(items)))
+    items.extend(_candidate_queue_items(evaluations, len(items), held_symbols=position_symbols or set()))
     items.extend(_rotation_queue_items(len(items)))
     counts = _status_counts(pd.DataFrame(items), "decision")
     generated_at = max([value for value in [_csv_timestamp(decisions_file), _csv_timestamp(evaluations_file)] if value] or [""])
     return {"source": "csv_artifacts", "generated_at": generated_at, "items": items, "counts": {"total": len(items), **counts}}
+
+
+def _open_symbols_from_positions_file(positions_file: Path | None) -> set[str] | None:
+    if positions_file is None or not positions_file.exists():
+        return None
+    positions = safe_read_csv(positions_file, nrows=1000)
+    if positions.empty or "symbol" not in positions.columns:
+        return set()
+    return {str(symbol).upper() for symbol in positions["symbol"].dropna() if str(symbol).strip()}
 
 
 def _rotation_queue_items(offset: int) -> list[dict[str, Any]]:
@@ -708,10 +721,12 @@ def intraday_promotion_context(root: Path) -> dict[str, Any]:
         return {"source": "empty", "latest_tick": "", "rows": [], "counts": {}}
 
 
-def _candidate_queue_items(evaluations: pd.DataFrame, offset: int) -> list[dict[str, Any]]:
+def _candidate_queue_items(evaluations: pd.DataFrame, offset: int, *, held_symbols: set[str] | None = None) -> list[dict[str, Any]]:
     if evaluations.empty or "decision" not in evaluations.columns:
         return []
     actionable = evaluations[evaluations["decision"].fillna("").isin(["open_candidate", "replace_candidate"])].copy()
+    if held_symbols and "symbol" in actionable.columns:
+        actionable = actionable[~actionable["symbol"].fillna("").astype(str).str.upper().isin(held_symbols)].copy()
     if actionable.empty:
         return []
     actionable = actionable.sort_values(["decision", "candidate_rank"], ascending=[True, True]).head(10)
