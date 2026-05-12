@@ -52,6 +52,9 @@
         <div class="text-secondary">
           hard {{ paper_autopilot.autopilot_hard_stop_submitted }} · defensive {{ paper_autopilot.autopilot_defensive_close_submitted }} · trail {{ paper_autopilot.autopilot_trailing_close_submitted }}
         </div>
+        <div class="text-secondary">
+          opens {{ paper_autopilot.autopilot_open_submitted }} · blocked {{ paper_autopilot.autopilot_open_blocked }}
+        </div>
       </div>
     </div>
     {% if paper_autopilot.termination_reason %}
@@ -62,6 +65,9 @@
     {% endif %}
     {% if paper_autopilot.autopilot_action_notes %}
       <div class="stale-banner">Autopilot action: {{ paper_autopilot.autopilot_action_notes }}</div>
+    {% endif %}
+    {% if paper_autopilot.autopilot_open_notes %}
+      <div class="stale-banner">Autopilot open: {{ paper_autopilot.autopilot_open_notes }}</div>
     {% endif %}
     <div class="autopilot-panel__actions">
       <form class="autopilot-mode-form" method="post" action="/trading/autopilot/mode">

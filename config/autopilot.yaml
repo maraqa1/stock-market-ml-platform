@@ -1,0 +1,11 @@
+version: 1
+autopilot:
+  open_enabled: false
+  rotate_enabled: false
+  max_auto_opens_per_day: 3
+  max_positions: 5
+  min_account_equity_usd: 250
+  min_position_value_usd: 50
+  max_single_position_pct_of_equity: 0.20
+  default_position_pct_of_equity: 0.10
+  default_position_value_cap_usd: 200

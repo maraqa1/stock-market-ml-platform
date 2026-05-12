@@ -85,7 +85,8 @@ marked as reconstructed.
 | 45 | Intraday candidate refresh loop | implemented | `migrations/010_intraday_candidate_snapshots_up.sql`; `tests/test_intraday_candidate_refresh.py` | Observe-only 5-minute snapshots for all daily candidates. No order submission. |
 | 46 | Intraday promotion scoring | implemented | `migrations/011_intraday_promotion_log_up.sql`; `tests/test_intraday_promotion_scoring.py` | Observe-only scoring from candidate snapshots to promotion verdicts, surfaced in Trading Console. |
 | 47 | Auto-rotate recommendation engine | implemented | `migrations/012_rotation_recommendation_log_up.sql`; `tests/test_rotation_recommendations.py` | Paper Assist rotation recommendations requiring operator confirmation; no automatic background apply. |
-| 48 | Auto-open and Autopilot rotation | planned | Prompted, not implemented | Paper Autopilot authority after promotion contract and manual flags. |
+| 48A | Guarded paper auto-open | implemented | `migrations/013_autopilot_open_log_up.sql`; `tests/test_autopilot_auto_open.py` | Paper Autopilot can submit paper-only opens from strong intraday promotions only when `autopilot.open_enabled` is true, kill-switches allow, slots/caps permit, and EOD is inactive. Auto-rotate remains deferred. |
+| 48B | Autopilot rotation | planned | Prompted, not implemented | Automatic rotation remains behind a stricter promotion contract and manual config flag. |
 | 49 | Daily trading report | planned | Prompted, not implemented | After-action report with P&L, candidate flow, missed opportunities, and recommendations. |
 | 50 | Configurable autopilot rules | planned | Prompted, not implemented | Moves hardcoded autopilot rules to versioned config and diagnostics view. |
 | 51 | Unified decision audit log | planned | Prompted, not implemented | Database view to query all decision sources in one place. |

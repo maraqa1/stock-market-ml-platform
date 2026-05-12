@@ -9,6 +9,7 @@ import pandas as pd
 from sqlalchemy import desc, select
 
 from stockml.autopilot.eod import run_eod_tick
+from stockml.autopilot.open import apply_auto_open, latest_strong_candidates
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
@@ -78,6 +79,10 @@ TICK_LOG_COLUMNS = [
     "autopilot_hard_stop_submitted",
     "autopilot_trailing_close_submitted",
     "autopilot_action_notes",
+    "autopilot_open_attempted",
+    "autopilot_open_submitted",
+    "autopilot_open_blocked",
+    "autopilot_open_notes",
     "eod_state",
     "eod_actions",
     "eod_flatten_submitted",
@@ -142,6 +147,10 @@ def _default_state() -> dict[str, Any]:
         "autopilot_hard_stop_submitted": 0,
         "autopilot_trailing_close_submitted": 0,
         "autopilot_action_notes": "",
+        "autopilot_open_attempted": 0,
+        "autopilot_open_submitted": 0,
+        "autopilot_open_blocked": 0,
+        "autopilot_open_notes": "",
         "position_peak_plpc": {},
         "eod_state": "inactive",
         "eod_actions": 0,
@@ -240,9 +249,9 @@ def capability_rows() -> list[dict[str, Any]]:
             "tracks": True,
             "operator_review": False,
             "auto_close": True,
-            "auto_open": False,
+            "auto_open": True,
             "auto_rotate": False,
-            "description": "Can submit guarded paper close orders from the exit playbook.",
+            "description": "Can submit guarded paper close orders and config-gated paper opens.",
         },
         {
             "mode": "ai_gated_paper",
@@ -285,9 +294,9 @@ def rule_rows() -> list[dict[str, Any]]:
         },
         {
             "rule": "Open candidate",
-            "trigger": "Candidate evaluation finds a new possible entry.",
-            "action": "Review only",
-            "active_in": "No automatic mode",
+            "trigger": "Intraday promotion is strong and the basket has an empty slot.",
+            "action": "Submit guarded paper open order when enabled",
+            "active_in": "Paper Autopilot",
         },
         {
             "rule": "Rotation",
@@ -510,6 +519,10 @@ def apply_paper_autopilot_decisions(
             "autopilot_hard_stop_submitted": 0,
             "autopilot_trailing_close_submitted": 0,
             "autopilot_action_notes": "",
+            "autopilot_open_attempted": 0,
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "",
         }
 
     apply_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
@@ -581,6 +594,8 @@ def tick(
     monitor_decision_loader: Callable[[Path | None], dict[str, Any]] = load_monitor_decision_summary,
     autopilot_decision_applier: Callable[[Path | None, pd.DataFrame, dict[str, Any]], dict[str, Any]] = apply_paper_autopilot_decisions,
     eod_runner: Callable[[pd.DataFrame, dict[str, Any], int], dict[str, Any]] | None = None,
+    auto_open_applier: Callable[[list[dict[str, Any]], list[dict[str, Any]], str], dict[str, Any]] | None = None,
+    strong_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_strong_candidates,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -627,6 +642,10 @@ def tick(
             "autopilot_hard_stop_submitted": 0,
             "autopilot_trailing_close_submitted": 0,
             "autopilot_action_notes": "",
+            "autopilot_open_attempted": 0,
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "",
         }
         if state.get("mode") == "paper_autopilot" and open_orders == 0 and open_positions > 0:
             autopilot_result = autopilot_decision_applier(root, positions, state)
@@ -647,6 +666,23 @@ def tick(
             if int(eod_result.get("eod_flatten_submitted") or 0) > 0:
                 open_orders = max(open_orders, int(eod_result.get("eod_flatten_submitted") or 0))
                 broker_open_orders = max(broker_open_orders, int(eod_result.get("eod_flatten_submitted") or 0))
+        auto_open_result = {
+            "autopilot_open_attempted": 0,
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "",
+        }
+        eod_state = str(eod_result.get("eod_state") or "inactive")
+        if state.get("mode") == "paper_autopilot" and open_orders == 0 and eod_state == "inactive":
+            positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
+            candidates = strong_candidate_loader()
+            if auto_open_applier is not None:
+                auto_open_result = auto_open_applier(candidates, positions_records, str(state.get("mode") or "observe"))
+            else:
+                auto_open_result = apply_auto_open(candidates, positions_records, mode=str(state.get("mode") or "observe"))
+            if int(auto_open_result.get("autopilot_open_submitted") or 0) > 0:
+                open_orders = max(open_orders, int(auto_open_result.get("autopilot_open_submitted") or 0))
+                broker_open_orders = max(broker_open_orders, int(auto_open_result.get("autopilot_open_submitted") or 0))
         if open_orders > 0:
             phase = "waiting_for_fills"
             status = "running"
@@ -677,6 +713,7 @@ def tick(
                 **intraday_summary,
                 **monitor_summary,
                 **autopilot_result,
+                **auto_open_result,
                 **eod_result,
                 "live_trading_enabled": False,
             }

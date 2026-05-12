@@ -140,3 +140,23 @@ class AlpacaExecutionEngine:
             "request_id": diagnostics.get("request_id", ""),
             "api_error": diagnostics.get("api_error", ""),
         }
+
+
+def submit_paper_order_payload(
+    payload: dict[str, Any],
+    *,
+    config: AlpacaConfig | None = None,
+    client: Any | None = None,
+) -> dict[str, Any]:
+    """Submit a pre-built order through the existing paper-only guard."""
+    cfg = config or alpaca_config()
+    paper_only_guard(live_trading_enabled=cfg.live_trading_enabled)
+    broker = client or AlpacaPaperClient(cfg)
+    if isinstance(broker, AlpacaPaperClient):
+        return broker.submit_order(payload)
+    if hasattr(broker, "submit_order"):
+        response = broker.submit_order(payload)
+        if isinstance(response, dict):
+            return response
+        return response.model_dump() if hasattr(response, "model_dump") else dict(response)
+    raise RuntimeError("client does not support submit_order")

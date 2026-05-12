@@ -50,6 +50,7 @@ INTRADAY_CANDIDATE_SNAPSHOT_STATUS = ("ok", "data_unavailable", "provider_error"
 INTRADAY_PROMOTION_VERDICTS = ("block", "watch", "promote_to_selection", "promote_to_selection_strong")
 ROTATION_RECOMMENDATION_VERDICTS = ("proposed", "confirmed", "overridden", "expired", "blocked")
 ROTATION_REASONS = ("HIGHER_PROMOTION_SCORE", "HELD_SIGNAL_STALE", "HELD_NEGATIVE_TREND", "HELD_DROPPED_FROM_SHORTLIST")
+AUTOPILOT_OPEN_VERDICTS = ("opened", "blocked", "failed")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -463,6 +464,22 @@ rotation_recommendation_log = Table(
     CheckConstraint(_in_values("reason", ROTATION_REASONS), name="ck_rotation_recommendation_reason"),
     CheckConstraint(_in_values("verdict", ROTATION_RECOMMENDATION_VERDICTS), name="ck_rotation_recommendation_verdict"),
     Index("ix_rrl_logged_at", "logged_at"),
+)
+
+autopilot_open_log = Table(
+    "autopilot_open_log",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("logged_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("symbol", String(50), nullable=False),
+    Column("promotion_score", Float),
+    Column("size_usd", Float),
+    Column("verdict", String(30), nullable=False),
+    Column("block_reason", String(100)),
+    Column("order_id", String(200)),
+    Column("details", JSON, nullable=False, default=dict),
+    CheckConstraint(_in_values("verdict", AUTOPILOT_OPEN_VERDICTS), name="ck_autopilot_open_log_verdict"),
+    Index("ix_autopilot_open_logged_at", "logged_at"),
 )
 
 
