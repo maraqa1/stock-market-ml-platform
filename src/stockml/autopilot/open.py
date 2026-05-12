@@ -52,8 +52,31 @@ def _float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def load_auto_open_config(path: Path | str = CONFIG_PATH) -> AutoOpenConfig:
-    config_path = Path(path)
+def auto_open_config_path(root: Path | str | None = None) -> Path:
+    if root is None:
+        return CONFIG_PATH
+    return Path(root) / "config" / "autopilot.yaml"
+
+
+def _default_payload() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "autopilot": {
+            "open_enabled": False,
+            "rotate_enabled": False,
+            "max_auto_opens_per_day": 3,
+            "max_positions": 5,
+            "min_account_equity_usd": 250,
+            "min_position_value_usd": 50,
+            "max_single_position_pct_of_equity": 0.20,
+            "default_position_pct_of_equity": 0.10,
+            "default_position_value_cap_usd": 200,
+        },
+    }
+
+
+def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | None = None) -> AutoOpenConfig:
+    config_path = Path(path) if path is not None else auto_open_config_path(root)
     payload: dict[str, Any] = {}
     if config_path.exists():
         payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
@@ -70,6 +93,22 @@ def load_auto_open_config(path: Path | str = CONFIG_PATH) -> AutoOpenConfig:
         default_position_pct_of_equity=float(section.get("default_position_pct_of_equity", 0.10)),
         default_position_value_cap_usd=float(section.get("default_position_value_cap_usd", 200)),
     )
+
+
+def set_auto_open_enabled(enabled: bool, *, root: Path | str | None = None, path: Path | str | None = None) -> AutoOpenConfig:
+    config_path = Path(path) if path is not None else auto_open_config_path(root)
+    payload = _default_payload()
+    if config_path.exists():
+        stored = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if isinstance(stored, dict):
+            payload.update(stored)
+            section = stored.get("autopilot")
+            if isinstance(section, dict):
+                payload["autopilot"].update(section)
+    payload["autopilot"]["open_enabled"] = bool(enabled)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return load_auto_open_config(config_path)
 
 
 def position_size_usd(account_equity: float, config: AutoOpenConfig) -> float:

@@ -9,7 +9,7 @@ import pandas as pd
 from sqlalchemy import desc, select
 
 from stockml.autopilot.eod import run_eod_tick
-from stockml.autopilot.open import apply_auto_open, latest_strong_candidates
+from stockml.autopilot.open import apply_auto_open, latest_strong_candidates, load_auto_open_config
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
@@ -750,6 +750,7 @@ def context(root: Path | None = None) -> dict[str, Any]:
     state = load_state(root)
     mode = str(state.get("mode") or "observe")
     mode_meta = AUTOPILOT_MODES.get(mode, AUTOPILOT_MODES["observe"])
+    auto_open_config = load_auto_open_config(root=root)
     labels = {
         "idle": "Autopilot Idle",
         "running": "Autopilot Running",
@@ -774,6 +775,10 @@ def context(root: Path | None = None) -> dict[str, Any]:
         "mode_label": mode_meta["label"],
         "mode_summary": mode_meta["summary"],
         "mode_execution_policy": mode_meta["execution_policy"],
+        "auto_open_enabled": auto_open_config.open_enabled,
+        "auto_rotate_enabled": auto_open_config.rotate_enabled,
+        "auto_open_max_per_day": auto_open_config.max_auto_opens_per_day,
+        "auto_open_max_positions": auto_open_config.max_positions,
         "mode_options": mode_options(),
         "capability_rows": capability_rows(),
         "rule_rows": rule_rows(),

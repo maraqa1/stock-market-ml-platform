@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pandas as pd
 from sqlalchemy import create_engine, insert, select
 
-from stockml.autopilot.open import AutoOpenConfig, apply_auto_open, position_size_usd
+from stockml.autopilot.open import AutoOpenConfig, apply_auto_open, load_auto_open_config, position_size_usd, set_auto_open_enabled
 from stockml.db.schema import autopilot_open_log, create_all, kill_switch_events
 from stockml.trading import paper_autopilot
 from stockml.trading.config import AlpacaConfig
@@ -74,6 +74,18 @@ def test_position_size_respects_account_floor_and_caps():
     assert position_size_usd(200, config) == 0
     assert position_size_usd(1000, config) == 100
     assert position_size_usd(5000, config) == 200
+
+
+def test_auto_open_feature_toggle_persists_to_root_config(tmp_path):
+    enabled = set_auto_open_enabled(True, root=tmp_path)
+
+    assert enabled.open_enabled is True
+    assert load_auto_open_config(root=tmp_path).open_enabled is True
+
+    disabled = set_auto_open_enabled(False, root=tmp_path)
+
+    assert disabled.open_enabled is False
+    assert load_auto_open_config(root=tmp_path).open_enabled is False
 
 
 def test_auto_open_is_disabled_by_default_and_writes_no_order():

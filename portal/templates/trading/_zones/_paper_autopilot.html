@@ -35,6 +35,13 @@
         <strong class="num-l">{{ paper_autopilot.open_positions }}</strong>
       </div>
       <div>
+        <span class="label">Auto open</span>
+        {{ pill("submitted" if paper_autopilot.auto_open_enabled else "watch", "Enabled" if paper_autopilot.auto_open_enabled else "Disabled") }}
+        <div class="text-secondary">
+          cap {{ paper_autopilot.auto_open_max_per_day }}/day · max {{ paper_autopilot.auto_open_max_positions }} positions
+        </div>
+      </div>
+      <div>
         <span class="label">Last tick</span>
         <strong class="num-l">{{ paper_autopilot.last_tick_at or "Not run" }}</strong>
       </div>
@@ -95,6 +102,17 @@
       <form method="post" action="/trading/autopilot/tick">
         <button class="btn btn-ghost" type="submit">Run Tracking Tick</button>
       </form>
+      {% if paper_autopilot.auto_open_enabled %}
+        <form method="post" action="/trading/autopilot/feature/auto-open" data-confirm="Disable Paper Autopilot auto-open?">
+          <input type="hidden" name="enabled" value="false">
+          <button class="btn btn-danger" type="submit">Disable Auto Open</button>
+        </form>
+      {% else %}
+        <form method="post" action="/trading/autopilot/feature/auto-open" data-confirm="Enable Paper Autopilot auto-open? This can submit guarded paper open orders.">
+          <input type="hidden" name="enabled" value="true">
+          <button class="btn btn-primary" type="submit">Enable Auto Open</button>
+        </form>
+      {% endif %}
       {% if paper_autopilot.status in ["running", "paused"] %}
         <form method="post" action="/trading/autopilot/stop">
           <button class="btn btn-danger" type="submit">Stop Autopilot</button>

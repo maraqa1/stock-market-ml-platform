@@ -163,6 +163,8 @@ def test_trading_paper_autopilot_controls(client):
     assert b"Trailing profit protection" in response.data
     assert b"Auto Open" in response.data
     assert b"Auto Rotate" in response.data
+    assert b"Enable Auto Open" in response.data
+    assert b"Auto open" in response.data
     assert b"Start Paper Autopilot" in response.data
     assert b"Recent Autopilot Ticks" in response.data
 
@@ -176,6 +178,21 @@ def test_trading_paper_autopilot_controls(client):
     assert mode_post.status_code == 302
     mode_followup = client.get("/trading")
     assert b'<option value="paper_assist" selected>Paper Assist</option>' in mode_followup.data
+
+
+def test_trading_paper_autopilot_auto_open_button_persists_config(client):
+    post = client.post("/trading/autopilot/feature/auto-open", data={"enabled": "true"})
+    assert post.status_code == 302
+    config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
+    assert "open_enabled: true" in config_path.read_text(encoding="utf-8")
+
+    enabled_page = client.get("/trading")
+    assert b"Disable Auto Open" in enabled_page.data
+    assert b"Enable Auto Open" not in enabled_page.data
+
+    disable = client.post("/trading/autopilot/feature/auto-open", data={"enabled": "false"})
+    assert disable.status_code == 302
+    assert "open_enabled: false" in config_path.read_text(encoding="utf-8")
 
 
 def test_trading_positions_zone_shows_eod_banner():

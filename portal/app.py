@@ -40,6 +40,7 @@ from stockml.intraday.promotion import latest_evaluation
 from stockml.safety.live_disabled import assert_live_disabled
 from stockml.services.events import record_event_safely
 from stockml.autopilot.rotate import confirm_rotation, override_rotation
+from stockml.autopilot.open import set_auto_open_enabled
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
 
@@ -234,6 +235,15 @@ def create_app(root: Path | None = None) -> Flask:
             state = autopilot_action(action, root_path())
         if request.accept_mimetypes.best == "application/json":
             return jsonify({"status": "ok", "autopilot": state})
+        return redirect(url_for("trading", _anchor="paper-autopilot"))
+
+    @app.route("/trading/autopilot/feature/auto-open", methods=["POST"])
+    def trading_autopilot_auto_open_feature():
+        enabled = str(request.form.get("enabled", "")).lower() in {"1", "true", "yes", "on"}
+        config = set_auto_open_enabled(enabled, root=root_path())
+        payload = {"status": "ok", "auto_open_enabled": config.open_enabled}
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(payload)
         return redirect(url_for("trading", _anchor="paper-autopilot"))
 
     @app.route("/trading/timer-settings", methods=["POST"])
