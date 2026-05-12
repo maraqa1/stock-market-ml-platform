@@ -19,8 +19,20 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.types import TypeDecorator
 
 metadata = MetaData()
+
+
+class StringList(TypeDecorator):
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(ARRAY(Text))
+        return dialect.type_descriptor(JSON())
 
 PIPELINE_STAGE_NAMES = ("yahoo", "gold", "model", "candidates", "selection", "submitted")
 POSITION_EVENT_TYPES = (
@@ -298,7 +310,7 @@ intraday_decisions = Table(
     Column("valid_until", DateTime(timezone=True), nullable=False),
     Column("nightly_signal", JSON),
     Column("features", JSON, nullable=False),
-    Column("contributing", JSON),
+    Column("contributing", StringList),
     CheckConstraint(_in_values("verdict", INTRADAY_VERDICTS), name="ck_intraday_decisions_verdict"),
     Index("ix_intraday_decisions_decided_at", "decided_at"),
     Index("ix_intraday_decisions_symbol_decided_at", "symbol", "decided_at"),
