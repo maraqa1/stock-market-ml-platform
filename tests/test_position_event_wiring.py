@@ -128,6 +128,7 @@ def test_paper_trader_records_submitted_and_guardrail_events(monkeypatch):
     TEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(paper_trader, "PORTAL_OUTPUTS_DIR", TEST_OUTPUT_DIR)
     monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
+    monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (False, ""))
     monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "FLEX"}]))
     monkeypatch.setattr(paper_trader, "build_candidate_pool", lambda signals, cfg: pd.DataFrame([{"symbol": "FLEX"}]))
     monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: plan)
