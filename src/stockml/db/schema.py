@@ -44,6 +44,8 @@ KILL_SWITCH_EVENT_TYPES = ("tripped", "resumed")
 INTRADAY_VERDICTS = ("allow_long", "allow_short", "hold", "block", "data_unavailable")
 SHADOW_WOULD_TRADE_STATUS = ("pending", "evaluated", "superseded", "cancelled")
 PROMOTION_DRY_RUN_EVENT_TYPES = ("confirmed",)
+EOD_STATES = ("review", "trim", "observe", "flatten", "verify", "postclose")
+EOD_DISPOSITIONS = ("weak", "stale", "winner_hold", "none")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:
@@ -353,6 +355,35 @@ promotion_dry_runs = Table(
     Column("side", String(20), nullable=False),
     Column("notes", Text, nullable=False),
     CheckConstraint(_in_values("side", ("long", "short")), name="ck_promotion_dry_runs_side"),
+)
+
+eod_flatten_log = Table(
+    "eod_flatten_log",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("session_date", Date, nullable=False),
+    Column("logged_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("state", String(20), nullable=False),
+    Column("position_id", String(200)),
+    Column("symbol", String(50)),
+    Column("disposition", String(30)),
+    Column("action_taken", String(100)),
+    Column("reason", Text),
+    Column("details", JSON, nullable=False, default=dict),
+    CheckConstraint(_in_values("state", EOD_STATES), name="ck_eod_flatten_log_state"),
+    CheckConstraint(f"disposition IS NULL OR {_in_values('disposition', EOD_DISPOSITIONS)}", name="ck_eod_flatten_log_disposition"),
+    Index("ix_eod_flatten_session_date", "session_date", "logged_at"),
+)
+
+eod_summary = Table(
+    "eod_summary",
+    metadata,
+    Column("session_date", Date, primary_key=True),
+    Column("total_positions", Integer, nullable=False),
+    Column("flattened", Integer, nullable=False),
+    Column("failed_to_flatten", Integer, nullable=False),
+    Column("held_overnight", Integer, nullable=False),
+    Column("notes", Text),
 )
 
 

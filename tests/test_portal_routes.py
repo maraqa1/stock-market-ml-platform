@@ -178,6 +178,27 @@ def test_trading_paper_autopilot_controls(client):
     assert b'<option value="paper_assist" selected>Paper Assist</option>' in mode_followup.data
 
 
+def test_trading_positions_zone_shows_eod_banner():
+    root = Path("_tmp_eod_banner_routes")
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    write_csv(
+        root / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "AAA", "side": "long", "qty": 1, "avg_entry_price": 10, "current_price": 9.8, "market_value": 9.8, "cost_basis": 10, "unrealized_pl": -0.2, "unrealized_plpc": -0.02}],
+    )
+    state_path = root / "data" / "portal_outputs" / "paper_autopilot_state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps({"eod_state": "flatten", "eod_banner": "EOD flatten in progress: closing 1 positions."}), encoding="utf-8")
+    app = create_app(root)
+    app.config.update(TESTING=True)
+
+    response = app.test_client().get("/trading")
+
+    assert response.status_code == 200
+    assert b"EOD flatten in progress: closing 1 positions." in response.data
+
+
 def test_data_estate_renders_new_style_and_key_datasets(symbol_client):
     response = symbol_client.get("/data")
     assert response.status_code == 200

@@ -29,6 +29,11 @@
       </article>
     </div>
     <div class="stale-banner" data-position-stale-banner hidden>Position prices may be stale.</div>
+    {% if positions_api.eod_banner %}
+      <div class="stale-banner" data-eod-banner>
+        {{ positions_api.eod_banner }}
+      </div>
+    {% endif %}
     {% if positions_api.pending_close_order_count %}
       <div class="stale-banner" data-close-orders-banner>
         {{ positions_api.pending_close_order_count }} close order{{ "s" if positions_api.pending_close_order_count != 1 else "" }} received by broker and waiting for fill.

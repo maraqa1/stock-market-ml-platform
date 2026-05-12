@@ -177,8 +177,10 @@ def test_pipeline_history_contract(api_client):
 
 def test_positions_contract(api_client):
     payload = _json(api_client, "/api/trading/positions")
-    assert set(payload) == {"source", "refreshed_at", "summary", "pending_close_order_count", "positions"}
+    assert set(payload) == {"source", "refreshed_at", "summary", "pending_close_order_count", "eod_state", "eod_banner", "positions"}
     assert isinstance(payload["positions"], list)
+    assert payload["eod_state"] == "inactive"
+    assert payload["eod_banner"] == ""
     assert payload["summary"]["position_count"] == 1
     assert payload["positions"][0]["position_id"] == "paper:AAA"
     assert payload["pending_close_order_count"] == 1

@@ -13,6 +13,7 @@ from portal.services.trading_service import _position_summary, _status_counts
 from stockml.db.connection import get_engine
 from stockml.db.schema import PIPELINE_STAGE_NAMES, pipeline_runs, pipeline_stages, position_events
 from stockml.services.events import position_id_for_symbol
+from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 
 
 MONITOR_EVENT_TYPES = {"monitor_safe", "monitor_watch", "monitor_close", "monitor_rotate"}
@@ -341,11 +342,14 @@ def positions_context(root: Path) -> dict[str, Any]:
     lineage_counts = _position_event_counts(position_ids)
     for row in rows:
         row["lineage_event_count"] = lineage_counts.get(str(row.get("position_id") or ""), 0)
+    autopilot_state = load_autopilot_state(root)
     return {
         "source": "csv_artifacts",
         "refreshed_at": _csv_timestamp(positions_file),
         "summary": _position_summary(positions),
         "pending_close_order_count": len(pending_close_orders),
+        "eod_state": autopilot_state.get("eod_state") or "inactive",
+        "eod_banner": autopilot_state.get("eod_banner") or "",
         "positions": rows,
     }
 

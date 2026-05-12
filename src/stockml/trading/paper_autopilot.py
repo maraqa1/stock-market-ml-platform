@@ -8,6 +8,7 @@ from typing import Any, Callable
 import pandas as pd
 from sqlalchemy import desc, select
 
+from stockml.autopilot.eod import run_eod_tick
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
@@ -77,6 +78,12 @@ TICK_LOG_COLUMNS = [
     "autopilot_hard_stop_submitted",
     "autopilot_trailing_close_submitted",
     "autopilot_action_notes",
+    "eod_state",
+    "eod_actions",
+    "eod_flatten_submitted",
+    "eod_remaining",
+    "eod_banner",
+    "eod_action_notes",
 ]
 
 
@@ -136,6 +143,12 @@ def _default_state() -> dict[str, Any]:
         "autopilot_trailing_close_submitted": 0,
         "autopilot_action_notes": "",
         "position_peak_plpc": {},
+        "eod_state": "inactive",
+        "eod_actions": 0,
+        "eod_flatten_submitted": 0,
+        "eod_remaining": 0,
+        "eod_banner": "",
+        "eod_action_notes": "",
         "paper_only": True,
         "live_trading_enabled": False,
     }
@@ -404,6 +417,11 @@ def load_monitor_decision_summary(root: Path | None = None) -> dict[str, Any]:
     }
 
 
+def load_monitor_decisions(root: Path | None = None) -> pd.DataFrame:
+    path = _latest_csv(_agent_decisions_dir(root), "position_decisions_*.csv")
+    return _read_csv(path)
+
+
 def _position_plpc_by_symbol(positions: pd.DataFrame) -> dict[str, float]:
     if positions.empty or "symbol" not in positions.columns:
         return {}
@@ -562,6 +580,7 @@ def tick(
     intraday_decision_loader: Callable[[], dict[str, Any]] = load_intraday_decision_summary,
     monitor_decision_loader: Callable[[Path | None], dict[str, Any]] = load_monitor_decision_summary,
     autopilot_decision_applier: Callable[[Path | None, pd.DataFrame, dict[str, Any]], dict[str, Any]] = apply_paper_autopilot_decisions,
+    eod_runner: Callable[[pd.DataFrame, dict[str, Any], int], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -593,6 +612,14 @@ def tick(
         open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
         update_position_peaks(state, positions)
+        eod_result = {
+            "eod_state": "inactive",
+            "eod_actions": 0,
+            "eod_flatten_submitted": 0,
+            "eod_remaining": open_positions,
+            "eod_banner": "",
+            "eod_action_notes": "",
+        }
         autopilot_result = {
             "autopilot_actions": 0,
             "autopilot_close_submitted": 0,
@@ -606,6 +633,20 @@ def tick(
             if int(autopilot_result.get("autopilot_close_submitted") or 0) > 0:
                 open_orders = max(open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))
                 broker_open_orders = max(broker_open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))
+        if state.get("mode") == "paper_autopilot" and open_positions > 0:
+            if eod_runner is not None:
+                eod_result = eod_runner(positions, state, open_orders)
+            else:
+                eod_result = run_eod_tick(
+                    positions,
+                    now=datetime.now(timezone.utc),
+                    state=state,
+                    monitor_decisions=load_monitor_decisions(root),
+                    open_orders=open_orders,
+                )
+            if int(eod_result.get("eod_flatten_submitted") or 0) > 0:
+                open_orders = max(open_orders, int(eod_result.get("eod_flatten_submitted") or 0))
+                broker_open_orders = max(broker_open_orders, int(eod_result.get("eod_flatten_submitted") or 0))
         if open_orders > 0:
             phase = "waiting_for_fills"
             status = "running"
@@ -636,6 +677,7 @@ def tick(
                 **intraday_summary,
                 **monitor_summary,
                 **autopilot_result,
+                **eod_result,
                 "live_trading_enabled": False,
             }
         )

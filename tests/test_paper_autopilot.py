@@ -284,6 +284,36 @@ def test_paper_assist_does_not_auto_close_close_decisions(monkeypatch, tmp_path)
     assert state["autopilot_close_submitted"] == 0
 
 
+def test_paper_autopilot_runs_eod_policy_in_autopilot_mode(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1}]).to_csv(positions, index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        eod_runner=lambda frame, current_state, open_orders: {
+            "eod_state": "flatten",
+            "eod_banner": "EOD flatten in progress: closing 1 positions.",
+            "eod_actions": 1,
+            "eod_flatten_submitted": 1,
+            "eod_remaining": 1,
+            "eod_action_notes": "AAA:eod_flatten:submitted",
+        },
+    )
+
+    assert state["phase"] == "waiting_for_fills"
+    assert state["open_orders"] == 1
+    assert state["eod_state"] == "flatten"
+    assert state["eod_flatten_submitted"] == 1
+    assert state["eod_banner"] == "EOD flatten in progress: closing 1 positions."
+
+
 def test_paper_autopilot_logs_not_running_ticks(tmp_path):
     state = paper_autopilot.tick(
         tmp_path,

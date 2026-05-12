@@ -22,6 +22,8 @@ from stockml.db.schema import (
     promotion_evaluations,
     shadow_outcomes,
     shadow_would_trades,
+    eod_flatten_log,
+    eod_summary,
 )
 
 
@@ -44,6 +46,8 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert "shadow_outcomes" in metadata.tables
     assert "promotion_evaluations" in metadata.tables
     assert "promotion_dry_runs" in metadata.tables
+    assert "eod_flatten_log" in metadata.tables
+    assert "eod_summary" in metadata.tables
     assert pipeline_runs.primary_key.columns.keys() == ["run_id"]
     assert pipeline_stages.primary_key.columns.keys() == ["run_id", "stage_name"]
     assert position_events.primary_key.columns.keys() == ["id"]
@@ -57,6 +61,8 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert shadow_outcomes.primary_key.columns.keys() == ["would_trade_id"]
     assert promotion_evaluations.primary_key.columns.keys() == ["evaluated_at"]
     assert promotion_dry_runs.primary_key.columns.keys() == ["id"]
+    assert eod_flatten_log.primary_key.columns.keys() == ["id"]
+    assert eod_summary.primary_key.columns.keys() == ["session_date"]
 
 
 def test_pipeline_and_position_tables_create_query_and_drop_self_contained():

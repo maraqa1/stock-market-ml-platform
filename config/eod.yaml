@@ -1,0 +1,12 @@
+eod:
+  flatten_all_at_t_minus_5: true
+  trim_weak_at_t_minus_15: true
+  holdover_allowed: false
+  time_stop_days: 20
+  weak_loss_pct: -1.0
+  winner_hold_pct: 2.0
+  t_minus_30_min: 30
+  t_minus_15_min: 15
+  t_minus_5_min: 5
+  t_minus_1_min: 1
+  market_close_time_local: "16:00"
