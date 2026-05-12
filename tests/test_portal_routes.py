@@ -43,7 +43,7 @@ def symbol_client():
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/intraday", "/validation", "/model-validation", "/no-decision", "/dev/styleguide"]:
+    for route in ["/", "/universe", "/data-quality", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/intraday", "/validation", "/model-validation", "/reports", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
 
@@ -90,6 +90,7 @@ def test_base_renders_spec25_top_nav_and_search(client):
         b"Model Shortlist",
         b"Intraday",
         b"Validation",
+        b"Reports",
         b"Data Estate",
         b"Diagnostics",
     ]
@@ -148,6 +149,28 @@ def test_intraday_promotion_page_is_read_only_and_live_disabled(client):
     assert b"PROMOTION CRITERIA NOT MET" in response.data
     assert b"live trading remains disabled" in response.data
     assert b"enable live" not in response.data.lower()
+
+
+def test_reports_page_and_daily_exports_render(client):
+    index = client.get("/reports")
+    assert index.status_code == 200
+    assert b"Daily Reports" in index.data
+
+    daily = client.get("/reports/daily/2026-05-12")
+    assert daily.status_code == 200
+    assert b"Daily Report" in daily.data
+    assert b"Account State" in daily.data
+    assert b"Missed Opportunities" in daily.data
+    assert b"Next-Day Recommendations" in daily.data
+
+    payload = client.get("/reports/daily/2026-05-12.json")
+    assert payload.status_code == 200
+    assert payload.get_json()["session_date"] == "2026-05-12"
+
+    csv_response = client.get("/reports/daily/2026-05-12.csv")
+    assert csv_response.status_code == 200
+    assert csv_response.mimetype == "text/csv"
+    assert b"section,metric,value" in csv_response.data
 
 
 def test_trading_paper_autopilot_controls(client):

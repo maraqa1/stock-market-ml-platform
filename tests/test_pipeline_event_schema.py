@@ -28,6 +28,7 @@ from stockml.db.schema import (
     intraday_promotion_log,
     rotation_recommendation_log,
     autopilot_open_log,
+    daily_report_runs,
 )
 
 
@@ -56,6 +57,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert "intraday_promotion_log" in metadata.tables
     assert "rotation_recommendation_log" in metadata.tables
     assert "autopilot_open_log" in metadata.tables
+    assert "daily_report_runs" in metadata.tables
     assert pipeline_runs.primary_key.columns.keys() == ["run_id"]
     assert pipeline_stages.primary_key.columns.keys() == ["run_id", "stage_name"]
     assert position_events.primary_key.columns.keys() == ["id"]
@@ -75,6 +77,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert intraday_promotion_log.primary_key.columns.keys() == ["id"]
     assert rotation_recommendation_log.primary_key.columns.keys() == ["id"]
     assert autopilot_open_log.primary_key.columns.keys() == ["id"]
+    assert daily_report_runs.primary_key.columns.keys() == ["session_date"]
 
 
 def test_pipeline_and_position_tables_create_query_and_drop_self_contained():

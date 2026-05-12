@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+{% set sections = report.sections %}
+<section class="trading-console">
+  <section class="zone trading-zone" data-zone="daily-report">
+    <div class="zone__header">
+      <span>Daily Report · {{ report.session_date }}</span>
+      <span class="zone__header-meta">computed {{ report.computed_at }}</span>
+    </div>
+    <div class="zone__body">
+      <div class="table-toolbar">
+        <a class="btn btn-ghost" href="/reports/daily/{{ report.session_date }}?refresh=1">Refresh</a>
+        <a class="btn btn-ghost" href="/reports/daily/{{ report.session_date }}.csv">CSV</a>
+        <a class="btn btn-ghost" href="/reports/daily/{{ report.session_date }}.json">JSON</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-account">
+    <div class="zone__header"><span>Account State</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body kpi-grid">
+      {% for key, value in sections.account_state.items() %}
+        <div class="kpi-card"><span>{{ key|replace("_", " ")|title }}</span><strong class="num-l">{{ value }}</strong></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-activity">
+    <div class="zone__header"><span>Trading Activity</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body">{{ table([sections.trading_activity]) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-autopilot">
+    <div class="zone__header"><span>Autopilot Actions</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body">{{ table([sections.autopilot_actions]) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-candidates">
+    <div class="zone__header"><span>Candidate Flow</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body">{{ table([sections.candidate_flow]) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-best-worst">
+    <div class="zone__header"><span>Best/Worst Trades</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body">
+      <h3>Top winners</h3>
+      {{ table(sections.best_worst_trades.top_winners) }}
+      <h3>Top losers</h3>
+      {{ table(sections.best_worst_trades.top_losers) }}
+      <h3>Open positions at close</h3>
+      {{ table(sections.best_worst_trades.open_positions_at_close) }}
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-missed">
+    <div class="zone__header"><span>Missed Opportunities</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body">{{ table(sections.missed_opportunities) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-rule-triggers">
+    <div class="zone__header"><span>Rule Triggers And Blocks</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body">
+      {% set trigger_rows = [] %}
+      {% for reason, count in sections.rule_triggers.items() %}
+        {% set _ = trigger_rows.append({"reason": reason, "count": count}) %}
+      {% endfor %}
+      {{ table(trigger_rows) }}
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-should-have">
+    <div class="zone__header"><span>What The System Should Have Done</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body">{{ table(sections.should_have_done) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="report-next-day">
+    <div class="zone__header"><span>Next-Day Recommendations</span><span class="zone__header-meta">fixed templates</span></div>
+    <div class="zone__body">{{ table(sections.next_day_recommendations) }}</div>
+  </section>
+</section>
+{% endblock %}

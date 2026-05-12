@@ -87,7 +87,7 @@ marked as reconstructed.
 | 47 | Auto-rotate recommendation engine | implemented | `migrations/012_rotation_recommendation_log_up.sql`; `tests/test_rotation_recommendations.py` | Paper Assist rotation recommendations requiring operator confirmation; no automatic background apply. |
 | 48A | Guarded paper auto-open | implemented | `migrations/013_autopilot_open_log_up.sql`; `tests/test_autopilot_auto_open.py` | Paper Autopilot can submit paper-only opens from strong intraday promotions only when `autopilot.open_enabled` is true, kill-switches allow, slots/caps permit, and EOD is inactive. Auto-rotate remains deferred. |
 | 48B | Autopilot rotation | planned | Prompted, not implemented | Automatic rotation remains behind a stricter promotion contract and manual config flag. |
-| 49 | Daily trading report | planned | Prompted, not implemented | After-action report with P&L, candidate flow, missed opportunities, and recommendations. |
+| 49 | Daily trading report | implemented | `migrations/014_daily_report_runs_up.sql`; `tests/test_daily_reports.py` | Read-only daily after-action report with account state, activity, autopilot actions, candidate flow, missed opportunities, rule triggers, recommendations, and CSV/JSON exports. |
 | 50 | Configurable autopilot rules | planned | Prompted, not implemented | Moves hardcoded autopilot rules to versioned config and diagnostics view. |
 | 51 | Unified decision audit log | planned | Prompted, not implemented | Database view to query all decision sources in one place. |
 

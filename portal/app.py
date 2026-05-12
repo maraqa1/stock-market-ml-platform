@@ -43,6 +43,7 @@ from stockml.autopilot.rotate import confirm_rotation, override_rotation
 from stockml.autopilot.open import set_auto_open_enabled
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
+from stockml.reports.daily import get_or_build_report, report_csv, report_index
 
 
 def create_app(root: Path | None = None) -> Flask:
@@ -503,6 +504,28 @@ def create_app(root: Path | None = None) -> Flask:
             from_value=request.args.get("from"),
             to_value=request.args.get("to"),
         )
+
+    @app.route("/reports")
+    def reports_index():
+        return render_template("reports/index.html", title="Reports", reports=report_index())
+
+    @app.route("/reports/daily/<report_date>.json")
+    def reports_daily_json(report_date: str):
+        return jsonify(get_or_build_report(report_date, refresh=request.args.get("refresh") == "1"))
+
+    @app.route("/reports/daily/<report_date>.csv")
+    def reports_daily_csv(report_date: str):
+        report = get_or_build_report(report_date, refresh=request.args.get("refresh") == "1")
+        return Response(
+            report_csv(report),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=daily_report_{report_date}.csv"},
+        )
+
+    @app.route("/reports/daily/<report_date>")
+    def reports_daily(report_date: str):
+        report = get_or_build_report(report_date, refresh=request.args.get("refresh") == "1")
+        return render_template("reports/daily.html", title=f"Daily Report {report_date}", report=report)
         csv_text = validation_table_csv(section, context)
         return Response(
             csv_text,

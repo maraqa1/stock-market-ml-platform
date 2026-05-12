@@ -482,6 +482,22 @@ autopilot_open_log = Table(
     Index("ix_autopilot_open_logged_at", "logged_at"),
 )
 
+daily_report_runs = Table(
+    "daily_report_runs",
+    metadata,
+    Column("session_date", Date, primary_key=True),
+    Column("computed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("starting_equity", Float, nullable=False),
+    Column("ending_equity", Float, nullable=False),
+    Column("realized_pnl", Float, nullable=False),
+    Column("unrealized_pnl_delta", Float, nullable=False),
+    Column("total_pnl", Float, nullable=False),
+    Column("net_pnl_pct", Float, nullable=False),
+    Column("win_rate", Float),
+    Column("total_trades", Integer, nullable=False),
+    Column("details", JSON, nullable=False, default=dict),
+)
+
 
 def create_all(engine) -> None:
     metadata.create_all(engine)
