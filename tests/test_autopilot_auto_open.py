@@ -5,8 +5,15 @@ from datetime import datetime, timezone
 import pandas as pd
 from sqlalchemy import create_engine, insert, select
 
-from stockml.autopilot.open import AutoOpenConfig, apply_auto_open, load_auto_open_config, position_size_usd, set_auto_open_enabled
-from stockml.db.schema import autopilot_open_log, create_all, kill_switch_events
+from stockml.autopilot.open import (
+    AutoOpenConfig,
+    apply_auto_open,
+    latest_flat_account_fallback_candidates,
+    load_auto_open_config,
+    position_size_usd,
+    set_auto_open_enabled,
+)
+from stockml.db.schema import autopilot_open_log, create_all, intraday_candidate_snapshots, intraday_promotion_log, kill_switch_events
 from stockml.trading import paper_autopilot
 from stockml.trading.config import AlpacaConfig
 
@@ -66,6 +73,17 @@ def _candidate(symbol: str = "CSTL", score: float = 0.72, bias: str = "long") ->
         "is_held": False,
         "details": {"is_first_15_min": False, "is_last_30_min": False},
     }
+
+
+def _fallback_candidate(symbol: str = "ANGI", score: float = 0.4175, bias: str = "long") -> dict:
+    candidate = _candidate(symbol, score, bias)
+    candidate["details"] = {
+        "flat_account_fallback": True,
+        "fallback_reason": "flat_account_no_strong_promotions",
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+    return candidate
 
 
 def test_position_size_respects_account_floor_and_caps():
@@ -132,6 +150,133 @@ def test_auto_open_submits_paper_order_and_logs_opened():
     assert row["symbol"] == "CSTL"
     assert row["verdict"] == "opened"
     assert row["order_id"] == "order-CSTL"
+
+
+def test_flat_account_fallback_candidates_select_best_confirmed_watch():
+    engine = _engine()
+    now = datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc)
+    with engine.begin() as conn:
+        angie = conn.execute(
+            insert(intraday_candidate_snapshots).values(
+                snapshot_at=now,
+                bar_close_at=now,
+                symbol="ANGI",
+                nightly_score=0.3375,
+                nightly_bias="long",
+                is_held=False,
+                bid=5.26,
+                ask=5.27,
+                last_price=5.145,
+                spread_bps=19.03,
+                dollar_volume_today=1_162_570.77,
+                trend_5m_pct=1.2658,
+                trend_15m_pct=1.4634,
+                distance_from_vwap_bps=76.81,
+                intraday_range_position=1.0,
+                status="ok",
+                details={},
+            )
+        ).inserted_primary_key[0]
+        weak = conn.execute(
+            insert(intraday_candidate_snapshots).values(
+                snapshot_at=now,
+                bar_close_at=now,
+                symbol="CSCO",
+                nightly_score=-0.0013,
+                nightly_bias="short",
+                is_held=False,
+                spread_bps=3.04,
+                dollar_volume_today=231_575_952.46,
+                status="ok",
+                details={},
+            )
+        ).inserted_primary_key[0]
+        conn.execute(
+            insert(intraday_promotion_log),
+            [
+                {
+                    "logged_at": now,
+                    "snapshot_id": angie,
+                    "symbol": "ANGI",
+                    "verdict": "watch",
+                    "promotion_score": 0.4175,
+                    "contributing": [
+                        "long_trend_5m_positive",
+                        "long_trend_15m_positive",
+                        "long_above_vwap_floor",
+                        "long_range_position_confirmed",
+                        "long_market_aligned",
+                    ],
+                },
+                {
+                    "logged_at": now,
+                    "snapshot_id": weak,
+                    "symbol": "CSCO",
+                    "verdict": "watch",
+                    "promotion_score": 0.0013,
+                    "contributing": [
+                        "short_trend_15m_negative",
+                        "short_below_vwap_ceiling",
+                        "short_range_position_confirmed",
+                        "short_market_aligned",
+                    ],
+                },
+            ],
+        )
+
+    candidates = latest_flat_account_fallback_candidates(
+        engine=engine,
+        config=AutoOpenConfig(flat_account_fallback_min_score=0.40),
+    )
+
+    assert [candidate["symbol"] for candidate in candidates] == ["ANGI"]
+    assert candidates[0]["details"]["flat_account_fallback"] is True
+
+
+def test_auto_open_uses_reduced_size_for_flat_account_fallback():
+    engine = _engine()
+    client = FakeClient()
+
+    result = apply_auto_open(
+        [_fallback_candidate("ANGI")],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, flat_account_fallback_size_multiplier=0.50),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["symbol"] == "ANGI"
+    assert client.orders[0]["notional"] == "50.0"
+    assert "ANGI:fallback_opened:order-ANGI" in result["autopilot_open_notes"]
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["size_usd"] == 50
+    assert row["details"]["flat_account_fallback"] is True
+
+
+def test_auto_open_fallback_requires_flat_account():
+    engine = _engine()
+    client = FakeClient()
+
+    result = apply_auto_open(
+        [_fallback_candidate("ANGI")],
+        [{"symbol": "CCOI"}],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert result["autopilot_open_notes"] == "ANGI:blocked:fallback_requires_flat_account"
+    assert client.orders == []
 
 
 def test_auto_open_skips_held_symbols_and_opens_next_candidate():
@@ -238,6 +383,37 @@ def test_paper_autopilot_tick_invokes_auto_open_when_idle(monkeypatch, tmp_path)
 
     assert calls and calls[0][0][0]["symbol"] == "CSTL"
     assert calls[0][2] == "paper_autopilot"
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_open_submitted"] == 1
+
+
+def test_paper_autopilot_tick_uses_flat_fallback_when_account_is_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([]).to_csv(tracking, index=False)
+    pd.DataFrame([]).to_csv(positions, index=False)
+    calls = []
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [],
+        fallback_candidate_loader=lambda: [_fallback_candidate("ANGI")],
+        auto_open_applier=lambda candidates, open_positions, mode: calls.append((candidates, open_positions, mode))
+        or {
+            "autopilot_open_attempted": 1,
+            "autopilot_open_submitted": 1,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "ANGI:fallback_opened:order-ANGI",
+        },
+    )
+
+    assert calls and calls[0][0][0]["symbol"] == "ANGI"
+    assert calls[0][1] == []
     assert state["phase"] == "waiting_for_fills"
     assert state["autopilot_open_submitted"] == 1
 

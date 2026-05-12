@@ -34,6 +34,10 @@ class AutoOpenConfig:
     max_single_position_pct_of_equity: float = 0.20
     default_position_pct_of_equity: float = 0.10
     default_position_value_cap_usd: float = 200.0
+    flat_account_fallback_enabled: bool = True
+    flat_account_fallback_min_score: float = 0.40
+    flat_account_fallback_max_per_day: int = 1
+    flat_account_fallback_size_multiplier: float = 0.50
 
 
 def _aware(value: datetime | None = None) -> datetime:
@@ -71,6 +75,10 @@ def _default_payload() -> dict[str, Any]:
             "max_single_position_pct_of_equity": 0.20,
             "default_position_pct_of_equity": 0.10,
             "default_position_value_cap_usd": 200,
+            "flat_account_fallback_enabled": True,
+            "flat_account_fallback_min_score": 0.40,
+            "flat_account_fallback_max_per_day": 1,
+            "flat_account_fallback_size_multiplier": 0.50,
         },
     }
 
@@ -92,6 +100,10 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         max_single_position_pct_of_equity=float(section.get("max_single_position_pct_of_equity", 0.20)),
         default_position_pct_of_equity=float(section.get("default_position_pct_of_equity", 0.10)),
         default_position_value_cap_usd=float(section.get("default_position_value_cap_usd", 200)),
+        flat_account_fallback_enabled=bool(section.get("flat_account_fallback_enabled", True)),
+        flat_account_fallback_min_score=float(section.get("flat_account_fallback_min_score", 0.40)),
+        flat_account_fallback_max_per_day=int(section.get("flat_account_fallback_max_per_day", 1)),
+        flat_account_fallback_size_multiplier=float(section.get("flat_account_fallback_size_multiplier", 0.50)),
     )
 
 
@@ -147,6 +159,71 @@ def latest_strong_candidates(*, engine: Engine | None = None, limit: int = 20) -
     return [dict(row) for row in rows]
 
 
+def latest_flat_account_fallback_candidates(*, engine: Engine | None = None, config: AutoOpenConfig | None = None, limit: int = 5) -> list[dict[str, Any]]:
+    cfg = config or load_auto_open_config()
+    if not cfg.flat_account_fallback_enabled:
+        return []
+    db = engine or get_engine(required=True)
+    full_long_confirmation = {
+        "long_trend_5m_positive",
+        "long_trend_15m_positive",
+        "long_above_vwap_floor",
+        "long_range_position_confirmed",
+        "long_market_aligned",
+    }
+    full_short_confirmation = {
+        "short_trend_5m_negative",
+        "short_trend_15m_negative",
+        "short_below_vwap_ceiling",
+        "short_range_position_confirmed",
+        "short_market_aligned",
+    }
+    with db.connect() as conn:
+        latest_tick = conn.execute(select(func.max(intraday_candidate_snapshots.c.snapshot_at))).scalar()
+        if latest_tick is None:
+            return []
+        joined = intraday_promotion_log.join(
+            intraday_candidate_snapshots,
+            intraday_promotion_log.c.snapshot_id == intraday_candidate_snapshots.c.id,
+        )
+        rows = conn.execute(
+            select(
+                intraday_promotion_log.c.symbol,
+                intraday_promotion_log.c.promotion_score,
+                intraday_promotion_log.c.contributing,
+                intraday_candidate_snapshots.c.nightly_bias,
+                intraday_candidate_snapshots.c.is_held,
+                intraday_candidate_snapshots.c.spread_bps,
+                intraday_candidate_snapshots.c.dollar_volume_today,
+                intraday_candidate_snapshots.c.details,
+            )
+            .select_from(joined)
+            .where(intraday_candidate_snapshots.c.snapshot_at == latest_tick)
+            .where(intraday_promotion_log.c.verdict == "watch")
+            .where(intraday_promotion_log.c.block_reason.is_(None))
+            .where(intraday_promotion_log.c.promotion_score >= cfg.flat_account_fallback_min_score)
+            .where(intraday_candidate_snapshots.c.spread_bps <= 25)
+            .where(intraday_candidate_snapshots.c.dollar_volume_today >= 500_000)
+            .order_by(intraday_promotion_log.c.promotion_score.desc(), intraday_promotion_log.c.symbol.asc())
+            .limit(limit * 3)
+        ).mappings().all()
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        payload = dict(row)
+        contributing = set(payload.get("contributing") or [])
+        bias = str(payload.get("nightly_bias") or "").lower()
+        required = full_short_confirmation if bias == "short" else full_long_confirmation
+        if not required.issubset(contributing):
+            continue
+        details = dict(payload.get("details") or {})
+        details.update({"flat_account_fallback": True, "fallback_reason": "flat_account_no_strong_promotions"})
+        payload["details"] = details
+        candidates.append(payload)
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
 def _todays_open_count(engine: Engine, now: datetime) -> int:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     with engine.connect() as conn:
@@ -158,6 +235,17 @@ def _todays_open_count(engine: Engine, now: datetime) -> int:
             ).scalar()
             or 0
         )
+
+
+def _todays_fallback_open_count(engine: Engine, now: datetime) -> int:
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(autopilot_open_log.c.details)
+            .where(autopilot_open_log.c.logged_at >= start)
+            .where(autopilot_open_log.c.verdict == "opened")
+        ).scalars().all()
+    return sum(1 for details in rows if isinstance(details, dict) and details.get("flat_account_fallback") is True)
 
 
 def _record_open(
@@ -245,20 +333,37 @@ def apply_auto_open(
         if not symbol or symbol in held or bool(candidate.get("is_held")):
             continue
         details = candidate.get("details") or {}
+        is_fallback = bool(details.get("flat_account_fallback"))
+        order_size = round(size * cfg.flat_account_fallback_size_multiplier, 2) if is_fallback else size
+        if is_fallback and open_positions:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_requires_flat_account", details=details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:fallback_requires_flat_account")
+            continue
+        if is_fallback and _todays_fallback_open_count(db, stamp) >= cfg.flat_account_fallback_max_per_day:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_daily_cap_reached", details=details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:fallback_daily_cap_reached")
+            continue
+        if order_size < cfg.min_position_value_usd:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_size_below_min" if is_fallback else "position_size_below_min", details=details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:position_size_below_min")
+            continue
         if details.get("is_first_15_min") or details.get("is_last_30_min"):
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=size, verdict="blocked", block_reason="near_open_close", details=details, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="near_open_close", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:near_open_close")
             continue
         side = "sell" if str(candidate.get("nightly_bias") or "").lower() == "short" else "buy"
         if side == "sell" and not trade_cfg.allow_short_selling:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=size, verdict="blocked", block_reason="shorting_disabled", details=details, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="shorting_disabled", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:shorting_disabled")
             continue
         order = {
             "symbol": symbol,
-            "notional": str(round(size, 2)),
+            "notional": str(round(order_size, 2)),
             "side": side,
             "type": "market",
             "time_in_force": "day",
@@ -268,30 +373,31 @@ def apply_auto_open(
         validation = validate_order_payload(order, max_order_notional=trade_cfg.max_notional_per_order)
         if not validation.valid:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=size, verdict="blocked", block_reason=validation.reason, details={"order": order}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=validation.reason, details={**details, "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:{validation.reason}")
             continue
         if not trade_cfg.submit_orders:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=size, verdict="blocked", block_reason="submit_orders_disabled", details={"order": order}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="submit_orders_disabled", details={**details, "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:submit_orders_disabled")
             continue
         try:
             paper_only_guard(live_trading_enabled=trade_cfg.live_trading_enabled)
             response = submit_paper_order_payload(order, config=trade_cfg, client=broker)
             order_id = str(response.get("id") or "")
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=size, verdict="opened", order_id=order_id, details={"order": order, "response": response}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="opened", order_id=order_id, details={**details, "order": order, "response": response}, engine=db, now=stamp)
             opened += 1
             held.add(symbol)
             slots -= 1
-            notes.append(f"{symbol}:opened:{order_id or 'submitted'}")
+            prefix = "fallback_opened" if is_fallback else "opened"
+            notes.append(f"{symbol}:{prefix}:{order_id or 'submitted'}")
         except AlpacaAPIError as exc:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=size, verdict="failed", block_reason="alpaca_api_error", details={**exc.as_dict(), "order": order}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="failed", block_reason="alpaca_api_error", details={**details, **exc.as_dict(), "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:failed:alpaca_api_error")
         except Exception as exc:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=size, verdict="failed", block_reason="submit_exception", details={"error": str(exc), "order": order}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="failed", block_reason="submit_exception", details={**details, "error": str(exc), "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:failed:submit_exception")
     return {
         "autopilot_open_attempted": opened + blocked,

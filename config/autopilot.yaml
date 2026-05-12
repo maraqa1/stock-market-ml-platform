@@ -9,3 +9,7 @@ autopilot:
   max_single_position_pct_of_equity: 0.20
   default_position_pct_of_equity: 0.10
   default_position_value_cap_usd: 200
+  flat_account_fallback_enabled: true
+  flat_account_fallback_min_score: 0.40
+  flat_account_fallback_max_per_day: 1
+  flat_account_fallback_size_multiplier: 0.50
