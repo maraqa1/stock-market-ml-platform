@@ -147,6 +147,10 @@ def banner_for_state(state: str, *, trim_count: int = 0, flatten_count: int = 0,
         return f"EOD trim: closing {trim_count} weak/stale positions."
     if state == "flatten":
         return f"EOD flatten in progress: closing {flatten_count} positions."
+    if state == "verify" and flatten_count > 0:
+        return f"EOD verify: closing {flatten_count} positions still open."
+    if state == "postclose" and flatten_count > 0:
+        return f"Post-close rescue flatten: closing {flatten_count} remaining positions."
     if state == "postclose" and remaining_count > 0:
         return f"Held overnight: {remaining_count} positions did not flatten."
     if state == "postclose":
@@ -178,7 +182,7 @@ def run_eod_tick(
     symbols_to_close: list[str] = []
     if stage == "trim" and cfg.trim_weak_at_t_minus_15:
         symbols_to_close = [row["symbol"] for row in dispositions if row["disposition"] in {"weak", "stale"}]
-    elif stage == "flatten" and cfg.flatten_all_at_t_minus_5:
+    elif stage in {"flatten", "verify", "postclose"} and cfg.flatten_all_at_t_minus_5:
         symbols_to_close = [
             row["symbol"]
             for row in dispositions

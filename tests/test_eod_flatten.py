@@ -96,6 +96,34 @@ def test_t_minus_5_flatten_closes_winners_by_default_and_honors_holdover_toggle(
     assert holdover["eod_holdover_allowed"] is True
 
 
+def test_verify_and_postclose_rescue_flatten_remaining_positions():
+    positions = pd.DataFrame([{"symbol": "ANGI", "unrealized_plpc": 0.0, "age_days": 0}])
+    calls = []
+
+    verify = run_eod_tick(
+        positions,
+        now=datetime(2026, 5, 12, 15, 59, tzinfo=ET),
+        state={},
+        config=EODConfig(holdover_allowed=False),
+        close_func=lambda symbol, action: calls.append(("verify", symbol, action)) or {"status": "submitted", "message": "ok"},
+    )
+    postclose = run_eod_tick(
+        positions,
+        now=datetime(2026, 5, 12, 16, 1, tzinfo=ET),
+        state={},
+        config=EODConfig(holdover_allowed=False),
+        close_func=lambda symbol, action: calls.append(("postclose", symbol, action)) or {"status": "submitted", "message": "ok"},
+    )
+
+    assert verify["eod_state"] == "verify"
+    assert verify["eod_flatten_submitted"] == 1
+    assert verify["eod_banner"] == "EOD verify: closing 1 positions still open."
+    assert postclose["eod_state"] == "postclose"
+    assert postclose["eod_flatten_submitted"] == 1
+    assert postclose["eod_banner"] == "Post-close rescue flatten: closing 1 remaining positions."
+    assert calls == [("verify", "ANGI", "close"), ("postclose", "ANGI", "close")]
+
+
 def test_eod_skips_new_closes_when_orders_are_already_in_flight():
     positions = pd.DataFrame([{"symbol": "WEAK", "unrealized_plpc": -0.02, "age_days": 2}])
 
