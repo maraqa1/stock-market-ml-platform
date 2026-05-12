@@ -94,6 +94,28 @@ def test_scope_rows_include_shortlist_metadata_and_open_positions():
     assert by_symbol["AAPL"]["is_held"] is True
 
 
+def test_scope_rows_prefer_latest_broad_shortlist_over_one_row_artifact():
+    db = engine()
+    with db.begin() as conn:
+        conn.execute(insert(pipeline_runs).values(run_id="broad-run", started_at=NOW - timedelta(minutes=30), status="success"))
+        conn.execute(insert(pipeline_runs).values(run_id="single-run", started_at=NOW, status="success"))
+        conn.execute(
+            insert(shortlist_snapshots),
+            [
+                {"run_id": "broad-run", "rank": rank, "symbol": f"SYM{rank:02d}", "bias": "long", "score": 1 - rank / 100, "in_basket": rank <= 5}
+                for rank in range(1, 31)
+            ],
+        )
+        conn.execute(insert(shortlist_snapshots).values(run_id="single-run", rank=1, symbol="ONLY", bias="long", score=0.9, in_basket=True))
+
+    rows = scope_rows_for_today(NOW.date(), engine=db)
+
+    symbols = {row["symbol"] for row in rows}
+    assert len(rows) == 30
+    assert "ONLY" not in symbols
+    assert "SYM01" in symbols
+
+
 def test_build_snapshot_computes_intraday_fields_from_quote_and_bars():
     provider = FakeProvider()
     row = {"symbol": "TSLA", "bias": "long", "score": 0.8, "is_held": True, "avg_dollar_volume_20d": 1_000_000}

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 
 from stockml.common.paths import PROJECT_ROOT
@@ -14,6 +14,7 @@ from stockml.db.schema import pipeline_runs, shortlist_snapshots
 
 
 PositionLoader = Callable[[], list[dict[str, Any]]]
+MIN_SCOPE_SHORTLIST_ROWS = 25
 
 
 def _symbol(value: Any) -> str:
@@ -32,6 +33,19 @@ def _latest_file(root: Path, area: str, pattern: str) -> Path | None:
     return matches[0] if matches else None
 
 
+def _latest_broad_file(root: Path, area: str, pattern: str, *, min_rows: int = MIN_SCOPE_SHORTLIST_ROWS) -> Path | None:
+    base = root / "data" / area
+    if not base.exists():
+        return None
+    matches = sorted(base.glob(pattern), key=lambda path: path.stat().st_mtime, reverse=True)
+    fallback = matches[0] if matches else None
+    for path in matches:
+        frame = _safe_read_csv(path, nrows=min_rows)
+        if len(frame) >= min_rows:
+            return path
+    return fallback
+
+
 def _safe_read_csv(path: Path | None, *, nrows: int | None = None) -> pd.DataFrame:
     if path is None or not path.exists():
         return pd.DataFrame()
@@ -41,36 +55,44 @@ def _safe_read_csv(path: Path | None, *, nrows: int | None = None) -> pd.DataFra
         return pd.DataFrame()
 
 
-def _latest_shortlist_symbols_from_db(engine: Engine, selected: date) -> set[str]:
+def _latest_broad_shortlist_run_from_db(engine: Engine, selected: date, *, min_rows: int = MIN_SCOPE_SHORTLIST_ROWS) -> str | None:
     start = datetime.combine(selected, time.min, tzinfo=timezone.utc)
     end = datetime.combine(selected, time.max, tzinfo=timezone.utc)
     with engine.connect() as conn:
-        run = conn.execute(
+        run_ids = conn.execute(
             select(pipeline_runs.c.run_id)
             .where(pipeline_runs.c.started_at >= start)
             .where(pipeline_runs.c.started_at <= end)
             .order_by(pipeline_runs.c.started_at.desc(), pipeline_runs.c.run_id.desc())
-            .limit(1)
-        ).scalar()
-        if not run:
-            return set()
+        ).scalars().all()
+        fallback = run_ids[0] if run_ids else None
+        for run_id in run_ids:
+            row_count = conn.execute(
+                select(func.count()).select_from(shortlist_snapshots).where(shortlist_snapshots.c.run_id == run_id)
+            ).scalar()
+            if int(row_count or 0) >= min_rows:
+                return str(run_id)
+    return str(fallback) if fallback else None
+
+
+def _latest_shortlist_symbols_from_db(engine: Engine, selected: date) -> set[str]:
+    # Intraday evaluation needs the latest broad nightly universe, not a later
+    # one-row operational artifact produced after the basket has been acted on.
+    run = _latest_broad_shortlist_run_from_db(engine, selected)
+    if not run:
+        return set()
+    with engine.connect() as conn:
         rows = conn.execute(select(shortlist_snapshots.c.symbol).where(shortlist_snapshots.c.run_id == run)).all()
     return {_symbol(row[0]) for row in rows if _symbol(row[0])}
 
 
 def _latest_shortlist_rows_from_db(engine: Engine, selected: date) -> list[dict[str, Any]]:
-    start = datetime.combine(selected, time.min, tzinfo=timezone.utc)
-    end = datetime.combine(selected, time.max, tzinfo=timezone.utc)
+    # Intraday evaluation needs the latest broad nightly universe, not a later
+    # one-row operational artifact produced after the basket has been acted on.
+    run = _latest_broad_shortlist_run_from_db(engine, selected)
+    if not run:
+        return []
     with engine.connect() as conn:
-        run = conn.execute(
-            select(pipeline_runs.c.run_id)
-            .where(pipeline_runs.c.started_at >= start)
-            .where(pipeline_runs.c.started_at <= end)
-            .order_by(pipeline_runs.c.started_at.desc(), pipeline_runs.c.run_id.desc())
-            .limit(1)
-        ).scalar()
-        if not run:
-            return []
         rows = conn.execute(
             select(
                 shortlist_snapshots.c.symbol,
@@ -97,7 +119,7 @@ def _latest_shortlist_rows_from_db(engine: Engine, selected: date) -> list[dict[
 
 
 def _latest_shortlist_symbols_from_artifacts(root: Path) -> set[str]:
-    path = _latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
+    path = _latest_broad_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
     frame = _safe_read_csv(path, nrows=1000)
     if frame.empty:
         return set()
@@ -108,7 +130,7 @@ def _latest_shortlist_symbols_from_artifacts(root: Path) -> set[str]:
 
 
 def _latest_shortlist_rows_from_artifacts(root: Path) -> list[dict[str, Any]]:
-    path = _latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
+    path = _latest_broad_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
     frame = _safe_read_csv(path, nrows=1000)
     if frame.empty:
         return []
