@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -13,6 +14,7 @@ from stockml.trading.config import AlpacaConfig, alpaca_config
 
 
 ALPACA_DATA_BASE_URL = "https://data.alpaca.markets"
+MARKET_TZ = ZoneInfo("America/New_York")
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,33 @@ def _parse_dt(value: Any) -> datetime | None:
         return parsed
     except Exception:
         return None
+
+
+def _parse_calendar_dt(selected: date, value: Any) -> datetime | None:
+    """Parse Alpaca calendar times.
+
+    The calendar endpoint commonly returns market-local strings such as
+    "09:30" and "16:00". Treat those as America/New_York times for the
+    selected session date, then convert to UTC for all worker comparisons.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    if "T" in text or "+" in text or text.endswith("Z"):
+        parsed = _parse_dt(text)
+        if parsed is None:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=MARKET_TZ).astimezone(timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    try:
+        parsed_time = datetime.strptime(text, "%H:%M").time()
+    except ValueError:
+        try:
+            parsed_time = datetime.strptime(text, "%H:%M:%S").time()
+        except ValueError:
+            return None
+    return datetime.combine(selected, parsed_time, tzinfo=MARKET_TZ).astimezone(timezone.utc)
 
 
 def _float(value: Any) -> float | None:
@@ -171,7 +200,6 @@ class IntradayProvider:
             endpoint="calendar",
         )
         row = payload[0] if isinstance(payload, list) and payload else {}
-        open_at = _parse_dt(row.get("open"))
-        close_at = _parse_dt(row.get("close"))
+        open_at = _parse_calendar_dt(selected, row.get("open"))
+        close_at = _parse_calendar_dt(selected, row.get("close"))
         return MarketCalendar(open_at=open_at, close_at=close_at, is_open=bool(row and open_at and close_at))
-

@@ -99,6 +99,21 @@ def test_provider_fetches_quote_bars_and_calendar_read_only():
     assert {payload["endpoint"] for _, payload in calls} == {"latest_quote", "bars", "calendar"}
 
 
+def test_provider_calendar_parses_market_local_times_to_utc():
+    class CalendarSession(FakeSession):
+        def get(self, url, headers=None, params=None, timeout=None):
+            self.calls.append({"url": url, "headers": headers, "params": params, "timeout": timeout})
+            return FakeResponse([{"open": "09:30", "close": "16:00"}])
+
+    provider = IntradayProvider(cfg(), session=CalendarSession(), logger=lambda event, payload: None)
+
+    calendar = provider.fetch_market_calendar(date(2026, 5, 12))
+
+    assert calendar.is_open is True
+    assert calendar.open_at == datetime(2026, 5, 12, 13, 30, tzinfo=timezone.utc)
+    assert calendar.close_at == datetime(2026, 5, 12, 20, 0, tzinfo=timezone.utc)
+
+
 def test_independent_reference_provider_is_disabled_hook():
     provider = IndependentReferenceProvider()
 
