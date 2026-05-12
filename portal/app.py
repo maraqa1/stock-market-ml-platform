@@ -40,7 +40,7 @@ from stockml.intraday.promotion import latest_evaluation
 from stockml.safety.live_disabled import assert_live_disabled
 from stockml.services.events import record_event_safely
 from stockml.autopilot.rotate import confirm_rotation, override_rotation
-from stockml.autopilot.open import set_auto_open_enabled
+from stockml.autopilot.open import set_auto_open_enabled, set_auto_open_max_per_day
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
 from stockml.reports.daily import dashboard_report_card, get_or_build_report, report_csv, report_index
@@ -244,6 +244,18 @@ def create_app(root: Path | None = None) -> Flask:
         enabled = str(request.form.get("enabled", "")).lower() in {"1", "true", "yes", "on"}
         config = set_auto_open_enabled(enabled, root=root_path())
         payload = {"status": "ok", "auto_open_enabled": config.open_enabled}
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(payload)
+        return redirect(url_for("trading", _anchor="paper-autopilot"))
+
+    @app.route("/trading/autopilot/feature/auto-open-cap", methods=["POST"])
+    def trading_autopilot_auto_open_cap():
+        try:
+            max_per_day = int(request.form.get("max_auto_opens_per_day", 3))
+        except (TypeError, ValueError):
+            max_per_day = 3
+        config = set_auto_open_max_per_day(max_per_day, root=root_path())
+        payload = {"status": "ok", "auto_open_max_per_day": config.max_auto_opens_per_day}
         if request.accept_mimetypes.best == "application/json":
             return jsonify(payload)
         return redirect(url_for("trading", _anchor="paper-autopilot"))

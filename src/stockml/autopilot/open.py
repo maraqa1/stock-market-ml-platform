@@ -123,6 +123,23 @@ def set_auto_open_enabled(enabled: bool, *, root: Path | str | None = None, path
     return load_auto_open_config(config_path)
 
 
+def set_auto_open_max_per_day(max_per_day: int, *, root: Path | str | None = None, path: Path | str | None = None) -> AutoOpenConfig:
+    config_path = Path(path) if path is not None else auto_open_config_path(root)
+    payload = _default_payload()
+    if config_path.exists():
+        stored = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if isinstance(stored, dict):
+            payload.update(stored)
+            section = stored.get("autopilot")
+            if isinstance(section, dict):
+                payload["autopilot"].update(section)
+    clean = max(0, min(int(max_per_day), 20))
+    payload["autopilot"]["max_auto_opens_per_day"] = clean
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return load_auto_open_config(config_path)
+
+
 def position_size_usd(account_equity: float, config: AutoOpenConfig) -> float:
     if account_equity < config.min_account_equity_usd:
         return 0.0

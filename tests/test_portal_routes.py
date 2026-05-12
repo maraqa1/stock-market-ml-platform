@@ -199,6 +199,7 @@ def test_trading_paper_autopilot_controls(client):
     assert b"Auto Rotate" in response.data
     assert b"Enable Auto Open" in response.data
     assert b"Auto open" in response.data
+    assert b"Auto opens/day" in response.data
     assert b"Start Paper Autopilot" in response.data
     assert b"Recent Autopilot Ticks" in response.data
 
@@ -227,6 +228,17 @@ def test_trading_paper_autopilot_auto_open_button_persists_config(client):
     disable = client.post("/trading/autopilot/feature/auto-open", data={"enabled": "false"})
     assert disable.status_code == 302
     assert "open_enabled: false" in config_path.read_text(encoding="utf-8")
+
+
+def test_trading_paper_autopilot_auto_open_cap_persists_config(client):
+    post = client.post("/trading/autopilot/feature/auto-open-cap", data={"max_auto_opens_per_day": "7"})
+    assert post.status_code == 302
+    config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
+    assert "max_auto_opens_per_day: 7" in config_path.read_text(encoding="utf-8")
+
+    page = client.get("/trading")
+    assert b'name="max_auto_opens_per_day"' in page.data
+    assert b'value="7"' in page.data
 
 
 def test_trading_positions_zone_shows_eod_banner():

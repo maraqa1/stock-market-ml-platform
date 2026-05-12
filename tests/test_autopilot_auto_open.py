@@ -12,6 +12,7 @@ from stockml.autopilot.open import (
     load_auto_open_config,
     position_size_usd,
     set_auto_open_enabled,
+    set_auto_open_max_per_day,
 )
 from stockml.db.schema import autopilot_open_log, create_all, intraday_candidate_snapshots, intraday_promotion_log, kill_switch_events
 from stockml.trading import paper_autopilot
@@ -104,6 +105,17 @@ def test_auto_open_feature_toggle_persists_to_root_config(tmp_path):
 
     assert disabled.open_enabled is False
     assert load_auto_open_config(root=tmp_path).open_enabled is False
+
+
+def test_auto_open_daily_cap_persists_to_root_config(tmp_path):
+    config = set_auto_open_max_per_day(8, root=tmp_path)
+
+    assert config.max_auto_opens_per_day == 8
+    assert load_auto_open_config(root=tmp_path).max_auto_opens_per_day == 8
+
+    clamped = set_auto_open_max_per_day(99, root=tmp_path)
+
+    assert clamped.max_auto_opens_per_day == 20
 
 
 def test_auto_open_is_disabled_by_default_and_writes_no_order():
