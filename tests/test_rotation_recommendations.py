@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import create_engine, insert, select
 
 from portal.app import create_app
+from scripts import run_rotation_recommendations
 from stockml.autopilot.rotate import (
     RotationConfig,
     confirm_rotation,
@@ -176,3 +178,11 @@ def test_rotation_apply_route_blocks_without_open_path(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert response.get_json()["status"] == "blocked"
+
+
+def test_rotation_runner_treats_empty_positions_file_as_flat_account(monkeypatch, tmp_path):
+    positions_file = tmp_path / "08_alpaca_paper_positions_1.csv"
+    positions_file.write_text("")
+    monkeypatch.setattr(run_rotation_recommendations, "PORTAL_OUTPUTS_DIR", Path(tmp_path))
+
+    assert run_rotation_recommendations._latest_positions() == []

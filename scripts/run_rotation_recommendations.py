@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 from stockml.autopilot.rotate import latest_promoted_candidates, write_rotation_recommendations
 from stockml.common.paths import PORTAL_OUTPUTS_DIR
@@ -12,7 +13,10 @@ def _latest_positions() -> list[dict]:
     files = sorted(PORTAL_OUTPUTS_DIR.glob("08_alpaca_paper_positions_*.csv"), key=lambda path: path.stat().st_mtime)
     if not files:
         return []
-    frame = pd.read_csv(files[-1], low_memory=False)
+    try:
+        frame = pd.read_csv(files[-1], low_memory=False)
+    except EmptyDataError:
+        return []
     if frame.empty:
         return []
     frame["position_id"] = frame.get("symbol", pd.Series("", index=frame.index)).fillna("").astype(str).str.upper().map(lambda symbol: f"paper:{symbol}")
