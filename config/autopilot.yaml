@@ -1,7 +1,7 @@
 version: 1
 autopilot:
   open_enabled: false
-  rotate_enabled: false
+  rotate_enabled: true
   max_auto_opens_per_day: 3
   max_positions: 5
   min_account_equity_usd: 250

@@ -263,6 +263,76 @@ def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch,
     assert "AAA:trailing_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
 
 
+def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabled(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "autopilot.yaml").write_text(
+        "version: 1\nautopilot:\n  open_enabled: false\n  rotate_enabled: true\n",
+        encoding="utf-8",
+    )
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1}, {"symbol": "BBB", "qty": 1}]).to_csv(positions, index=False)
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"symbol": "AAA", "decision": "replace", "decision_reason": "signal_stale|replacement_rank_improvement", "replacement_symbol": "CCC"},
+            {"symbol": "BBB", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": -0.010},
+        ]
+    ).to_csv(decisions / "position_decisions_1.csv", index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            state=state,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        ),
+    )
+
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_close_submitted"] == 1
+    assert state["autopilot_replace_close_submitted"] == 1
+    assert "AAA:monitor_replace:submitted:auto_close" in state["autopilot_action_notes"]
+
+
+def test_paper_autopilot_does_not_close_replace_when_rotation_disabled(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "autopilot.yaml").write_text(
+        "version: 1\nautopilot:\n  open_enabled: false\n  rotate_enabled: false\n",
+        encoding="utf-8",
+    )
+    positions = pd.DataFrame([{"symbol": "AAA", "qty": 1}])
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame([{"symbol": "AAA", "decision": "replace", "decision_reason": "signal_stale|replacement_rank_improvement"}]).to_csv(
+        decisions / "position_decisions_1.csv",
+        index=False,
+    )
+
+    result = paper_autopilot.apply_paper_autopilot_decisions(
+        tmp_path,
+        positions,
+        state=paper_autopilot.load_state(tmp_path),
+        action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+    )
+
+    assert result["autopilot_actions"] == 0
+    assert result["autopilot_close_submitted"] == 0
+
+
 def test_paper_assist_does_not_auto_close_close_decisions(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)

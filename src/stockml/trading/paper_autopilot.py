@@ -78,6 +78,7 @@ TICK_LOG_COLUMNS = [
     "autopilot_defensive_close_submitted",
     "autopilot_hard_stop_submitted",
     "autopilot_trailing_close_submitted",
+    "autopilot_replace_close_submitted",
     "autopilot_action_notes",
     "autopilot_open_attempted",
     "autopilot_open_submitted",
@@ -146,6 +147,7 @@ def _default_state() -> dict[str, Any]:
         "autopilot_defensive_close_submitted": 0,
         "autopilot_hard_stop_submitted": 0,
         "autopilot_trailing_close_submitted": 0,
+        "autopilot_replace_close_submitted": 0,
         "autopilot_action_notes": "",
         "autopilot_open_attempted": 0,
         "autopilot_open_submitted": 0,
@@ -250,8 +252,8 @@ def capability_rows() -> list[dict[str, Any]]:
             "operator_review": False,
             "auto_close": True,
             "auto_open": True,
-            "auto_rotate": False,
-            "description": "Can submit guarded paper close orders and config-gated paper opens.",
+            "auto_rotate": True,
+            "description": "Can submit guarded paper close orders, replacement closes, and config-gated paper opens.",
         },
         {
             "mode": "ai_gated_paper",
@@ -301,8 +303,8 @@ def rule_rows() -> list[dict[str, Any]]:
         {
             "rule": "Rotation",
             "trigger": "A better candidate exists than a current holding.",
-            "action": "Review only",
-            "active_in": "No automatic mode",
+            "action": "Close current paper position when rotate is enabled; replacement open waits for guarded auto-open",
+            "active_in": "Paper Autopilot",
         },
     ]
 
@@ -476,6 +478,7 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
     peaks = (state or {}).get("position_peak_plpc") if isinstance((state or {}).get("position_peak_plpc"), dict) else {}
     frame["__peak_plpc"] = frame["__symbol"].map(lambda symbol: float((peaks or {}).get(symbol, frame.loc[frame["__symbol"] == symbol, "__plpc"].iloc[-1])))
     explicit_close = frame["__decision"] == "close"
+    replace_close = frame["__decision"].isin(["replace", "rotate"])
     hard_stop = frame["__plpc"] <= HARD_STOP_LOSS_THRESHOLD
     defensive_stale_loss = (
         (frame["__decision"] == "watch")
@@ -488,8 +491,10 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
         & (frame["__peak_plpc"] >= TRAILING_PROFIT_MIN)
         & ((frame["__peak_plpc"] - frame["__plpc"]) >= TRAILING_GIVEBACK_THRESHOLD)
     )
-    out = frame[(explicit_close | hard_stop | defensive_stale_loss | trailing_profit) & frame["__symbol"].isin(open_symbols)].copy()
+    rotate_enabled = load_auto_open_config(root=root).rotate_enabled
+    out = frame[(explicit_close | hard_stop | defensive_stale_loss | trailing_profit | (replace_close & rotate_enabled)) & frame["__symbol"].isin(open_symbols)].copy()
     out["__autopilot_close_reason"] = "monitor_close"
+    out.loc[(replace_close & rotate_enabled).reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "monitor_replace"
     out.loc[hard_stop.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "hard_stop_loss"
     out.loc[defensive_stale_loss.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "defensive_stale_loss"
     out.loc[trailing_profit.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "trailing_profit_giveback"
@@ -507,8 +512,9 @@ def apply_paper_autopilot_decisions(
     """Apply the first narrow Paper Autopilot authority slice.
 
     Paper Autopilot may submit paper close orders for monitor close decisions,
-    hard stop-loss breaches, stale losing positions, and stale winners that
-    give back too much profit. It deliberately does not auto-open or auto-rotate.
+    monitor replace recommendations, hard stop-loss breaches, stale losing
+    positions, and stale winners that give back too much profit. Replacement
+    opens remain delegated to the guarded auto-open path.
     """
     candidates = _auto_close_candidates(root, positions, state)
     if candidates.empty:
@@ -518,6 +524,7 @@ def apply_paper_autopilot_decisions(
             "autopilot_defensive_close_submitted": 0,
             "autopilot_hard_stop_submitted": 0,
             "autopilot_trailing_close_submitted": 0,
+            "autopilot_replace_close_submitted": 0,
             "autopilot_action_notes": "",
             "autopilot_open_attempted": 0,
             "autopilot_open_submitted": 0,
@@ -531,6 +538,7 @@ def apply_paper_autopilot_decisions(
     defensive_submitted = 0
     hard_stop_submitted = 0
     trailing_submitted = 0
+    replace_submitted = 0
     actions = 0
     seen: set[str] = set()
     for row in candidates.fillna("").to_dict("records"):
@@ -551,6 +559,8 @@ def apply_paper_autopilot_decisions(
                 hard_stop_submitted += 1
             elif reason == "trailing_profit_giveback":
                 trailing_submitted += 1
+            elif reason == "monitor_replace":
+                replace_submitted += 1
         close_reason = str(row.get("__autopilot_close_reason") or "monitor_close")
         notes.append(f"{symbol}:{close_reason}:{status or 'unknown'}:{message or 'no_message'}")
     return {
@@ -559,6 +569,7 @@ def apply_paper_autopilot_decisions(
         "autopilot_defensive_close_submitted": defensive_submitted,
         "autopilot_hard_stop_submitted": hard_stop_submitted,
         "autopilot_trailing_close_submitted": trailing_submitted,
+        "autopilot_replace_close_submitted": replace_submitted,
         "autopilot_action_notes": "; ".join(notes[:10]),
     }
 
@@ -641,6 +652,7 @@ def tick(
             "autopilot_defensive_close_submitted": 0,
             "autopilot_hard_stop_submitted": 0,
             "autopilot_trailing_close_submitted": 0,
+            "autopilot_replace_close_submitted": 0,
             "autopilot_action_notes": "",
             "autopilot_open_attempted": 0,
             "autopilot_open_submitted": 0,

@@ -77,6 +77,7 @@ marked as reconstructed.
 | PA-5 | Trader-style exits | implemented | `9f0a172 Add trader-style paper autopilot exits`; `f347104 Fix paper autopilot decision applier signature` | Adds hard stop and trailing-profit protection. |
 | PA-6 | Capability table | implemented | `f5588ac Show autopilot capability table` | Portal explains mode capabilities and limits. |
 | PA-7 | Block regular basket submission while Paper Autopilot runs | implemented | `src/stockml/trading/autopilot_guard.py`; `tests/test_position_event_wiring.py` | Regular paper trader basket submission is refused when `paper_autopilot_state.json` has `mode=paper_autopilot` and `status=running`. Tracking-only remains allowed. |
+| PA-8 | Paper Autopilot replacement close authority | implemented | `src/stockml/trading/paper_autopilot.py`; `tests/test_paper_autopilot.py` | When `autopilot.rotate_enabled` is true, Paper Autopilot can submit a paper close for monitor `replace`/`rotate` recommendations. Replacement opens remain gated by the auto-open path. |
 
 ## SPEC 44-51 Automation Completion Pack
 
