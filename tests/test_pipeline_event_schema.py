@@ -2,6 +2,7 @@ import pytest
 from pathlib import Path
 from sqlalchemy import inspect
 from sqlalchemy import create_engine, insert, select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 
 from stockml.db.schema import (
@@ -78,6 +79,22 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert rotation_recommendation_log.primary_key.columns.keys() == ["id"]
     assert autopilot_open_log.primary_key.columns.keys() == ["id"]
     assert daily_report_runs.primary_key.columns.keys() == ["session_date"]
+
+
+def test_intraday_promotion_contributing_binds_as_postgres_text_array():
+    compiled = str(
+        insert(intraday_promotion_log)
+        .values(
+            snapshot_id=1,
+            symbol="AAPL",
+            verdict="watch",
+            contributing=["status_ok"],
+        )
+        .compile(dialect=postgresql.dialect())
+    )
+
+    assert "contributing" in compiled
+    assert "::JSON" not in compiled
 
 
 def test_pipeline_and_position_tables_create_query_and_drop_self_contained():
