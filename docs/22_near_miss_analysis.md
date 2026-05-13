@@ -92,7 +92,7 @@ Paper Autopilot can use near-miss rows as a guarded paper-only open source. It r
 The fallback is controlled in `config/autopilot.yaml`:
 
 - `near_miss_fallback_enabled`: enables the paper-only fallback.
-- `near_miss_fallback_requires_flat_account`: only allow it when no positions are open.
+- `near_miss_fallback_requires_flat_account`: optionally require no positions to be open. The default is `false` so near-miss candidates can fill remaining slots while another position is held.
 - `near_miss_fallback_max_per_day`: caps paper opens from near-miss rows.
 - `near_miss_fallback_size_multiplier`: reduces order size versus normal auto-open sizing.
 - `near_miss_fallback_max_distance_pct`: maximum threshold miss distance.

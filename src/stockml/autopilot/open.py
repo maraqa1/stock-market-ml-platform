@@ -40,7 +40,7 @@ class AutoOpenConfig:
     flat_account_fallback_max_per_day: int = 1
     flat_account_fallback_size_multiplier: float = 0.50
     near_miss_fallback_enabled: bool = True
-    near_miss_fallback_requires_flat_account: bool = True
+    near_miss_fallback_requires_flat_account: bool = False
     near_miss_fallback_max_per_day: int = 5
     near_miss_fallback_size_multiplier: float = 0.50
     near_miss_fallback_max_distance_pct: float = 0.10
@@ -91,7 +91,7 @@ def _default_payload() -> dict[str, Any]:
             "flat_account_fallback_max_per_day": 1,
             "flat_account_fallback_size_multiplier": 0.50,
             "near_miss_fallback_enabled": True,
-            "near_miss_fallback_requires_flat_account": True,
+            "near_miss_fallback_requires_flat_account": False,
             "near_miss_fallback_max_per_day": 5,
             "near_miss_fallback_size_multiplier": 0.50,
             "near_miss_fallback_max_distance_pct": 0.10,
@@ -141,7 +141,7 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         flat_account_fallback_max_per_day=int(section.get("flat_account_fallback_max_per_day", 1)),
         flat_account_fallback_size_multiplier=float(section.get("flat_account_fallback_size_multiplier", 0.50)),
         near_miss_fallback_enabled=bool(section.get("near_miss_fallback_enabled", True)),
-        near_miss_fallback_requires_flat_account=bool(section.get("near_miss_fallback_requires_flat_account", True)),
+        near_miss_fallback_requires_flat_account=bool(section.get("near_miss_fallback_requires_flat_account", False)),
         near_miss_fallback_max_per_day=int(section.get("near_miss_fallback_max_per_day", 5)),
         near_miss_fallback_size_multiplier=float(section.get("near_miss_fallback_size_multiplier", 0.50)),
         near_miss_fallback_max_distance_pct=float(section.get("near_miss_fallback_max_distance_pct", 0.10)),

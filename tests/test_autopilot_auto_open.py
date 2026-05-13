@@ -363,6 +363,56 @@ def test_auto_open_uses_smaller_size_for_near_miss_fallback():
     assert row["details"]["near_miss_fallback"] is True
 
 
+def test_auto_open_near_miss_can_fill_remaining_slot_when_position_is_open():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("GLIBK")
+    candidate["details"] = {
+        "near_miss_fallback": True,
+        "fallback_reason": "near_miss_diagnostic_candidate",
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [{"symbol": "ANGI"}],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, near_miss_fallback_requires_flat_account=False, near_miss_fallback_size_multiplier=0.50),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["symbol"] == "GLIBK"
+    assert "GLIBK:near_miss_opened:order-GLIBK" in result["autopilot_open_notes"]
+
+
+def test_auto_open_near_miss_can_still_require_flat_account_when_configured():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("GLIBK")
+    candidate["details"] = {"near_miss_fallback": True}
+
+    result = apply_auto_open(
+        [candidate],
+        [{"symbol": "ANGI"}],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, near_miss_fallback_requires_flat_account=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert result["autopilot_open_notes"] == "GLIBK:blocked:near_miss_requires_flat_account"
+    assert client.orders == []
+
+
 def test_auto_open_fallback_requires_flat_account():
     engine = _engine()
     client = FakeClient()
