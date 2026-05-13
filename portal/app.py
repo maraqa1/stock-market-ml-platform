@@ -107,6 +107,7 @@ def trading_snapshot_csv(root: Path) -> str:
     positions = positions_context(root)
     queue = action_queue_context(root)
     promotions = intraday_promotion_context(root)
+    near_miss = near_miss_context(root)
     rows: list[dict] = []
 
     pools = [
@@ -116,6 +117,7 @@ def trading_snapshot_csv(root: Path) -> str:
         ("open_positions", positions.get("positions", []), positions.get("refreshed_at", ""), "broker_positions"),
         ("action_queue", queue.get("items", []), queue.get("generated_at", ""), "monitor_and_operator_queue"),
         ("intraday_promotion", promotions.get("rows", []), promotions.get("latest_tick", ""), "promotion_log"),
+        ("near_miss", near_miss.get("rows", []), near_miss.get("file_name", ""), "near_miss_analysis"),
     ]
     for pool, pool_rows, generated_at, source in pools:
         for row in pool_rows or []:

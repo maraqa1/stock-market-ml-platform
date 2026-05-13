@@ -35,7 +35,10 @@ def symbol_client():
     )
     write_csv(
         root / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_1.csv",
-        [{"candidate_rank": 7, "symbol": "TSLA", "company": "Tesla, Inc.", "sector": "Consumer Cyclical", "trade_action": "Long", "risk_adjusted_score": 0.71, "expected_trade_return": 0.016, "order_eligible": True}],
+        [
+            {"candidate_rank": 7, "symbol": "TSLA", "company": "Tesla, Inc.", "sector": "Consumer Cyclical", "trade_action": "Long", "risk_adjusted_score": 0.71, "expected_trade_return": 0.016, "order_eligible": True},
+            {"candidate_rank": 8, "symbol": "NMS", "company": "Near Miss Inc.", "sector": "Technology", "trade_action": "Long", "trade_quality_status": "rejected", "trade_quality_reason": "Expected return below threshold", "risk_adjusted_score": 0.01, "expected_trade_return": 0.0019, "current_price": 10, "market_cap": 1_000_000_000, "avg_dollar_volume_20d": 50_000_000, "volatility_20d": 0.03, "order_eligible": False},
+        ],
     )
     app = create_app(root)
     app.config.update(TESTING=True)
@@ -462,6 +465,7 @@ def test_trading_snapshot_csv_exports_current_pools(symbol_client):
     assert "snapshot_at,pool,generated_at,symbol,side,rank,status,action,verdict,score,notional,quantity,reason,source,raw_json" in text
     assert "model_shortlist" in text
     assert "open_positions" in text
+    assert "near_miss" in text
     assert "TSLA" in text
 
 

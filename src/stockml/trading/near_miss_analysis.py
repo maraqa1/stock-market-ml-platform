@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from stockml.common.paths import TRADING_DIR, timestamp
-from stockml.decisions.reason_formatter import format_reasons
+from stockml.decisions.reason_formatter import REASON_LABELS, format_reasons
 from stockml.intraday.promotion_gate import load_promotion_config
 from stockml.trading.config import AlpacaConfig, alpaca_config
 
@@ -64,6 +64,12 @@ GATE_LABELS = {
     "unknown": "Unknown reason",
 }
 
+READABLE_GATE_LABELS = {
+    label.lower(): code
+    for code, label in {**REASON_LABELS, **GATE_LABELS}.items()
+    if code in SUPPORTED_GATES
+}
+
 
 @dataclass(frozen=True)
 class GateCheck:
@@ -102,6 +108,13 @@ def _reason_parts(row: dict[str, Any]) -> list[str]:
         if clean and clean.lower() not in {"approved", "reduced"}:
             parts.append(clean)
     return list(dict.fromkeys(parts))
+
+
+def _reason_gate(reason: str) -> str | None:
+    clean = reason.strip()
+    if clean in SUPPORTED_GATES:
+        return clean
+    return READABLE_GATE_LABELS.get(clean.lower())
 
 
 def _absolute_edge(row: dict[str, Any]) -> float | None:
@@ -192,7 +205,7 @@ def near_miss_rows(frames: list[pd.DataFrame], config: AlpacaConfig | None = Non
             continue
         for row in frame.fillna("").to_dict("records"):
             reasons = _reason_parts(row)
-            gates = [reason for reason in reasons if reason in SUPPORTED_GATES]
+            gates = [gate for reason in reasons if (gate := _reason_gate(reason))]
             status = _text(row.get("trade_quality_status") or row.get("status") or row.get("basket_status")).lower()
             eligible = _text(row.get("order_eligible")).lower()
             if not gates and reasons:

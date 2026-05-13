@@ -73,6 +73,16 @@ def test_expected_return_far_below_threshold_is_hard_fail():
     assert row["severity"] == "hard_fail"
 
 
+def test_readable_reasons_are_mapped_to_supported_gates():
+    frame = pd.DataFrame([base_row(expected_trade_return=0.0019, trade_quality_reason="Expected return below threshold")])
+
+    result = near_miss_rows([frame], config())
+
+    row = result.iloc[0]
+    assert row["failed_gate"] == "expected_trade_return_below_threshold"
+    assert row["severity"] == "near_miss"
+
+
 def test_risk_adjusted_score_just_below_threshold_is_near_miss():
     frame = pd.DataFrame([base_row(risk_adjusted_score=0.00475, trade_quality_reason="risk_adjusted_score_below_threshold")])
 
