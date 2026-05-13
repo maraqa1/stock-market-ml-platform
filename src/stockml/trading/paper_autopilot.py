@@ -614,7 +614,7 @@ def tick(
     auto_open_applier: Callable[[list[dict[str, Any]], list[dict[str, Any]], str], dict[str, Any]] | None = None,
     strong_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_strong_candidates,
     fallback_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_flat_account_fallback_candidates,
-    near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_near_miss_fallback_candidates,
+    near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -697,7 +697,10 @@ def tick(
             positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
             candidates = strong_candidate_loader()
             if not candidates and open_positions == 0:
-                candidates = near_miss_candidate_loader()
+                if near_miss_candidate_loader is not None:
+                    candidates = near_miss_candidate_loader()
+                else:
+                    candidates = latest_near_miss_fallback_candidates(root=root)
             if not candidates and open_positions == 0:
                 candidates = fallback_candidate_loader()
             if auto_open_applier is not None:
