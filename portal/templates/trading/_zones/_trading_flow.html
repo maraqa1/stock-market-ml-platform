@@ -1,0 +1,38 @@
+<section class="zone trading-zone trading-flow-zone" data-zone="trading-flow" id="trading-flow">
+  <div class="zone__header">
+    <span>Trading Flow</span>
+    <span class="zone__header-meta">UTC timers &middot; nightly pool to intraday loop</span>
+  </div>
+  <div class="zone__body">
+    <div class="flow-strip" aria-label="Trading pool synchronization">
+      <div class="flow-step">
+        <strong>Model Shortlist</strong>
+        <span>Nightly ranked pool from the research pipeline.</span>
+        <small>04:30 UTC then plan-only refresh</small>
+      </div>
+      <div class="flow-step">
+        <strong>Today's Basket</strong>
+        <span>Trade-quality filtered plan and paper order lifecycle.</span>
+        <small>after nightly, then tracking updates</small>
+      </div>
+      <div class="flow-step">
+        <strong>Intraday Promotion</strong>
+        <span>Live quote, spread, liquidity, trend, and VWAP filter.</span>
+        <small>target every 5 minutes</small>
+      </div>
+      <div class="flow-step">
+        <strong>Action Queue</strong>
+        <span>Monitor, rotation, close, open, and operator review queue.</span>
+        <small>monitor every 30 seconds</small>
+      </div>
+      <div class="flow-step">
+        <strong>Open Positions</strong>
+        <span>Broker state loops back into monitor, promotion, and EOD checks.</span>
+        <small>UI refresh every few seconds</small>
+      </div>
+    </div>
+    <p class="zone__description zone__description--last">
+      Synchronization rule: the nightly shortlist seeds the daily pool; intraday refresh filters that pool into promotions; promotions and open positions feed the action queue and Paper Autopilot; broker positions loop back into the next monitor and promotion tick.
+    </p>
+  </div>
+</section>

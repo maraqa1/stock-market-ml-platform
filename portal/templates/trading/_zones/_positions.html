@@ -6,6 +6,7 @@
     <span class="zone__header-meta" data-position-staleness>live, refreshed {{ positions_api.refreshed_at or "not available" }}</span>
   </div>
   <div class="zone__body">
+    <p class="zone__description">Current broker paper positions. This state is the feedback loop for monitor decisions, rotation comparisons, auto-close/EOD checks, and held-symbol filtering.</p>
     <div class="kpi-row positions-summary" aria-label="Open positions money summary">
       <article class="kpi-card">
         <span class="kpi-card__label">Open Value</span>

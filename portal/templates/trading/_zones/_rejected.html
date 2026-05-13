@@ -7,6 +7,7 @@
     <span class="zone__header-meta">{{ rejected_trimmed_count }} rows</span>
   </div>
   <div class="zone__body">
+    <p class="zone__description">Audit trail for names filtered out, reduced, rejected, or blocked by guardrails. Use this to see why a model candidate did not become a paper order or promotion.</p>
     <details data-key="rejected-trimmed" {% if rejected_trimmed_rows %}open{% endif %}>
       <summary class="details-summary">Show guardrail and broker decisions</summary>
       {{ table_toolbar("Filter rejected and trimmed") }}

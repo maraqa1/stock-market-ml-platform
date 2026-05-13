@@ -7,6 +7,7 @@
     <span class="zone__header-meta">{{ orders_planned }} planned · {{ orders_submitted }} submitted · {{ filled_orders }} filled</span>
   </div>
   <div class="zone__body">
+    <p class="zone__description">Today's order-plan lifecycle. The nightly plan-only refresh creates this pool without broker submission; later tracking updates attach paper order and fill state.</p>
     {{ table_toolbar("Filter today's basket") }}
     <div class="table-scroll">
     <table class="data basket-table" data-table="todays-basket">

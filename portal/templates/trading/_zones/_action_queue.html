@@ -7,6 +7,7 @@
     <span class="zone__header-meta">from monitor at {{ action_queue.generated_at or "not available" }}</span>
   </div>
   <div class="zone__body">
+    <p class="zone__description">Monitor output for decisions that need action or review. It is downstream of open positions, intraday promotions, rotation checks, and Paper Autopilot rules.</p>
     {% if not action_queue["items"] %}
       <div class="empty small">Nothing to review.</div>
     {% else %}

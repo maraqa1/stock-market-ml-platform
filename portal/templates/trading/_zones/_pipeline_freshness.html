@@ -4,6 +4,7 @@
     <span class="zone__header-meta">refreshes {{ trading_cadence.pipeline_refresh_label or "every 60s" }}</span>
   </div>
   <div class="zone__body" data-pipeline-strip>
+    <p class="zone__description">Freshness view for upstream data and model stages. A green nightly chain should be followed by a fresh plan-only candidate pool for the trading console.</p>
     <div class="stale-banner" data-pipeline-stale-banner hidden>Pipeline freshness may be stale.</div>
     {% include "trading/_partials/pipeline_strip.html" %}
   </div>

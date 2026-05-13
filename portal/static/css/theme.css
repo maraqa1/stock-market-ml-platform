@@ -546,6 +546,73 @@ th.numeric {
   background: var(--bg-surface);
 }
 
+.zone__description {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  line-height: 1.45;
+}
+
+.zone__description--last {
+  border-bottom: 0;
+}
+
+.flow-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.flow-step {
+  position: relative;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface-raised);
+}
+
+.flow-step + .flow-step::before {
+  content: ">";
+  position: absolute;
+  left: calc(var(--space-2) * -1);
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+
+.flow-step strong,
+.flow-step span,
+.flow-step small {
+  display: block;
+  min-width: 0;
+}
+
+.flow-step strong {
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+}
+
+.flow-step span {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  line-height: 1.35;
+}
+
+.flow-step small {
+  margin-top: var(--space-2);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+
 .table-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -1680,6 +1747,7 @@ dialog {
 @media (max-width: 780px) {
   .header-strip,
   .cadence-strip,
+  .flow-strip,
   .kpi-row,
   .pipeline-strip,
   .basket-integrity {
@@ -1690,6 +1758,14 @@ dialog {
   .pipeline-strip {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .flow-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-step + .flow-step::before {
+    content: "";
   }
 
   .styleguide-grid {

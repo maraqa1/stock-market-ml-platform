@@ -413,6 +413,7 @@ def test_trading_page_renders_spec07_zone_skeleton(client):
     expected_order = [
         b'data-zone="header"',
         b'data-zone="cadence"',
+        b'data-zone="trading-flow"',
         b'data-zone="pipeline-freshness"',
         b'data-zone="kpi-row"',
         b'data-zone="basket-integrity"',
@@ -435,6 +436,19 @@ def test_trading_page_renders_spec07_zone_skeleton(client):
     assert b"Cost Basis" in response.data
     assert b"Money Made" in response.data
     assert b"Return" in response.data
+
+
+def test_trading_page_explains_pool_flow_and_zone_purpose(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Trading Flow" in response.data
+    assert b"nightly shortlist seeds the daily pool" in response.data
+    assert b"Monitor output for decisions that need action or review" in response.data
+    assert b"Current broker paper positions" in response.data
+    assert b"Live market filter over the daily shortlist" in response.data
+    assert b"Today's order-plan lifecycle" in response.data
+    assert b"Audit trail for names filtered out" in response.data
+    assert b"Nightly model-ranked source pool" in response.data
 
 
 def test_trading_page_renders_intraday_promotion_zone(client):
