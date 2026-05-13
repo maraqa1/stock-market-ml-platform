@@ -696,7 +696,7 @@ def tick(
         if state.get("mode") == "paper_autopilot" and open_orders == 0 and eod_state == "inactive":
             positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
             candidates = strong_candidate_loader()
-            if not candidates and open_positions == 0:
+            if not candidates:
                 if near_miss_candidate_loader is not None:
                     candidates = near_miss_candidate_loader()
                 else:

@@ -614,6 +614,38 @@ def test_paper_autopilot_tick_prefers_near_miss_before_flat_fallback(monkeypatch
     assert state["autopilot_open_submitted"] == 1
 
 
+def test_paper_autopilot_tick_uses_near_miss_when_position_is_open(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "ANGI", "qty": 10, "unrealized_plpc": 0.0}]).to_csv(positions, index=False)
+    calls = []
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [],
+        fallback_candidate_loader=lambda: [_fallback_candidate("ANGI")],
+        near_miss_candidate_loader=lambda: [_candidate("GLIBK")],
+        auto_open_applier=lambda candidates, open_positions, mode: calls.append((candidates, open_positions, mode))
+        or {
+            "autopilot_open_attempted": 1,
+            "autopilot_open_submitted": 1,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "GLIBK:near_miss_opened:order-GLIBK",
+        },
+    )
+
+    assert calls and calls[0][0][0]["symbol"] == "GLIBK"
+    assert calls[0][1][0]["symbol"] == "ANGI"
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_open_submitted"] == 1
+
+
 def test_paper_autopilot_tick_refreshes_positions_after_auto_open_fill(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
     paper_autopilot.start(tmp_path)
