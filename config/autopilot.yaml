@@ -16,9 +16,17 @@ autopilot:
   near_miss_fallback_enabled: true
   near_miss_fallback_requires_flat_account: false
   near_miss_fallback_max_per_day: 5
-  near_miss_fallback_size_multiplier: 0.50
-  near_miss_fallback_max_distance_pct: 0.10
+  near_miss_fallback_size_multiplier: 0.75
+  near_miss_fallback_max_distance_pct: 0.25
+  near_miss_fallback_allowed_severities:
+  - near_miss
+  - moderate_gap
   near_miss_fallback_allowed_gates:
   - risk_adjusted_score_below_threshold
   - market_cap_below_minimum
+  - volatility_extreme
+  near_miss_fallback_block_hard_fail_gates:
+  - price_below_minimum
+  - market_cap_below_minimum
+  - liquidity_below_minimum
   - volatility_extreme

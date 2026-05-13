@@ -42,11 +42,18 @@ class AutoOpenConfig:
     near_miss_fallback_enabled: bool = True
     near_miss_fallback_requires_flat_account: bool = False
     near_miss_fallback_max_per_day: int = 5
-    near_miss_fallback_size_multiplier: float = 0.50
-    near_miss_fallback_max_distance_pct: float = 0.10
+    near_miss_fallback_size_multiplier: float = 0.75
+    near_miss_fallback_max_distance_pct: float = 0.25
+    near_miss_fallback_allowed_severities: tuple[str, ...] = ("near_miss", "moderate_gap")
     near_miss_fallback_allowed_gates: tuple[str, ...] = (
         "risk_adjusted_score_below_threshold",
         "market_cap_below_minimum",
+        "volatility_extreme",
+    )
+    near_miss_fallback_block_hard_fail_gates: tuple[str, ...] = (
+        "price_below_minimum",
+        "market_cap_below_minimum",
+        "liquidity_below_minimum",
         "volatility_extreme",
     )
 
@@ -93,11 +100,18 @@ def _default_payload() -> dict[str, Any]:
             "near_miss_fallback_enabled": True,
             "near_miss_fallback_requires_flat_account": False,
             "near_miss_fallback_max_per_day": 5,
-            "near_miss_fallback_size_multiplier": 0.50,
-            "near_miss_fallback_max_distance_pct": 0.10,
+            "near_miss_fallback_size_multiplier": 0.75,
+            "near_miss_fallback_max_distance_pct": 0.25,
+            "near_miss_fallback_allowed_severities": ["near_miss", "moderate_gap"],
             "near_miss_fallback_allowed_gates": [
                 "risk_adjusted_score_below_threshold",
                 "market_cap_below_minimum",
+                "volatility_extreme",
+            ],
+            "near_miss_fallback_block_hard_fail_gates": [
+                "price_below_minimum",
+                "market_cap_below_minimum",
+                "liquidity_below_minimum",
                 "volatility_extreme",
             ],
         },
@@ -126,6 +140,20 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         allowed_gate_values = tuple(str(part).strip() for part in allowed_gates if str(part).strip())
     else:
         allowed_gate_values = AutoOpenConfig.near_miss_fallback_allowed_gates
+    allowed_severities = section.get("near_miss_fallback_allowed_severities")
+    if isinstance(allowed_severities, str):
+        allowed_severity_values = tuple(part.strip().lower() for part in allowed_severities.split(",") if part.strip())
+    elif isinstance(allowed_severities, list):
+        allowed_severity_values = tuple(str(part).strip().lower() for part in allowed_severities if str(part).strip())
+    else:
+        allowed_severity_values = AutoOpenConfig.near_miss_fallback_allowed_severities
+    hard_fail_gates = section.get("near_miss_fallback_block_hard_fail_gates")
+    if isinstance(hard_fail_gates, str):
+        hard_fail_gate_values = tuple(part.strip() for part in hard_fail_gates.split(",") if part.strip())
+    elif isinstance(hard_fail_gates, list):
+        hard_fail_gate_values = tuple(str(part).strip() for part in hard_fail_gates if str(part).strip())
+    else:
+        hard_fail_gate_values = AutoOpenConfig.near_miss_fallback_block_hard_fail_gates
     return AutoOpenConfig(
         open_enabled=bool(section.get("open_enabled", False)),
         rotate_enabled=bool(section.get("rotate_enabled", False)),
@@ -143,9 +171,11 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         near_miss_fallback_enabled=bool(section.get("near_miss_fallback_enabled", True)),
         near_miss_fallback_requires_flat_account=bool(section.get("near_miss_fallback_requires_flat_account", False)),
         near_miss_fallback_max_per_day=int(section.get("near_miss_fallback_max_per_day", 5)),
-        near_miss_fallback_size_multiplier=float(section.get("near_miss_fallback_size_multiplier", 0.50)),
-        near_miss_fallback_max_distance_pct=float(section.get("near_miss_fallback_max_distance_pct", 0.10)),
+        near_miss_fallback_size_multiplier=float(section.get("near_miss_fallback_size_multiplier", 0.75)),
+        near_miss_fallback_max_distance_pct=float(section.get("near_miss_fallback_max_distance_pct", 0.25)),
+        near_miss_fallback_allowed_severities=allowed_severity_values,
         near_miss_fallback_allowed_gates=allowed_gate_values,
+        near_miss_fallback_block_hard_fail_gates=hard_fail_gate_values,
     )
 
 
@@ -314,21 +344,31 @@ def latest_near_miss_fallback_candidates(
     if frame.empty:
         return []
     allowed_gates = {str(gate).strip() for gate in cfg.near_miss_fallback_allowed_gates if str(gate).strip()}
+    allowed_severities = {str(severity).strip().lower() for severity in cfg.near_miss_fallback_allowed_severities if str(severity).strip()}
+    hard_fail_gates = {str(gate).strip() for gate in cfg.near_miss_fallback_block_hard_fail_gates if str(gate).strip()}
     frame = frame.copy()
     frame["__severity"] = frame.get("severity", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
     frame["__status"] = frame.get("status", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
     frame["__gate"] = frame.get("failed_gate", pd.Series("", index=frame.index)).fillna("").astype(str)
     frame["__distance_pct"] = pd.to_numeric(frame.get("distance_pct", pd.Series(index=frame.index)), errors="coerce")
     frame["__symbol"] = frame.get("symbol", pd.Series("", index=frame.index)).fillna("").astype(str).str.upper()
+    hard_fail_symbols = set(
+        frame[
+            frame["__symbol"].ne("")
+            & frame["__severity"].eq("hard_fail")
+            & frame["__gate"].isin(hard_fail_gates)
+        ]["__symbol"].tolist()
+    )
     eligible = (
         frame["__symbol"].ne("")
-        & frame["__severity"].eq("near_miss")
+        & frame["__severity"].isin(allowed_severities)
         & frame["__status"].isin(["rejected", "trimmed", "block"])
         & frame["__gate"].isin(allowed_gates)
         & frame["__distance_pct"].notna()
         & (frame["__distance_pct"] <= cfg.near_miss_fallback_max_distance_pct)
+        & ~frame["__symbol"].isin(hard_fail_symbols)
     )
-    selected = frame[eligible].sort_values(["__distance_pct", "__gate", "__symbol"]).head(limit)
+    selected = frame[eligible].sort_values(["__distance_pct", "__severity", "__gate", "__symbol"]).drop_duplicates("__symbol").head(limit)
     candidates: list[dict[str, Any]] = []
     for row in selected.fillna("").to_dict("records"):
         side_text = str(row.get("side") or row.get("trade_action") or "").lower()

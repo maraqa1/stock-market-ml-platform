@@ -307,6 +307,60 @@ def test_near_miss_fallback_candidates_select_configured_near_misses(tmp_path):
     assert candidates[0]["details"]["failed_gate"] == "risk_adjusted_score_below_threshold"
 
 
+def test_near_miss_fallback_candidates_include_moderate_gaps_without_hard_safety_fails(tmp_path):
+    directory = tmp_path / "data" / "trading" / "near_miss"
+    directory.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "DOO",
+                "side": "buy",
+                "status": "rejected",
+                "failed_gate": "risk_adjusted_score_below_threshold",
+                "failed_gate_label": "Risk-adjusted score below threshold",
+                "actual_value": 0.0042,
+                "required_value": 0.005,
+                "distance_to_pass": 0.0008,
+                "distance_pct": 0.16,
+                "severity": "moderate_gap",
+                "reason": "Risk-adjusted score below threshold",
+                "risk_adjusted_score": 0.0042,
+            },
+            {
+                "symbol": "EMBC",
+                "side": "buy",
+                "status": "rejected",
+                "failed_gate": "volatility_extreme",
+                "failed_gate_label": "Volatility extreme",
+                "actual_value": 0.13,
+                "required_value": 0.12,
+                "distance_pct": 0.08,
+                "severity": "near_miss",
+                "reason": "Price below minimum; Volatility extreme",
+                "risk_adjusted_score": 0.22,
+            },
+            {
+                "symbol": "EMBC",
+                "side": "buy",
+                "status": "rejected",
+                "failed_gate": "price_below_minimum",
+                "failed_gate_label": "Price below minimum",
+                "actual_value": 3.41,
+                "required_value": 5.0,
+                "distance_pct": 0.32,
+                "severity": "hard_fail",
+                "reason": "Price below minimum; Volatility extreme",
+                "risk_adjusted_score": 0.22,
+            },
+        ]
+    ).to_csv(directory / "near_miss_20260513_180202.csv", index=False)
+
+    candidates = latest_near_miss_fallback_candidates(root=tmp_path, config=AutoOpenConfig(near_miss_fallback_enabled=True))
+
+    assert [candidate["symbol"] for candidate in candidates] == ["DOO"]
+    assert candidates[0]["details"]["severity"] == "moderate_gap"
+
+
 def test_auto_open_uses_reduced_size_for_flat_account_fallback():
     engine = _engine()
     client = FakeClient()

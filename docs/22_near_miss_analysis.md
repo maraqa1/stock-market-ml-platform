@@ -96,6 +96,8 @@ The fallback is controlled in `config/autopilot.yaml`:
 - `near_miss_fallback_max_per_day`: caps paper opens from near-miss rows.
 - `near_miss_fallback_size_multiplier`: reduces order size versus normal auto-open sizing.
 - `near_miss_fallback_max_distance_pct`: maximum threshold miss distance.
+- `near_miss_fallback_allowed_severities`: severity allow-list for fallback candidates.
 - `near_miss_fallback_allowed_gates`: explicit gate allow-list.
+- `near_miss_fallback_block_hard_fail_gates`: hard-fail gates that disqualify an entire symbol even when another gate is close.
 
-The default gate allow-list excludes `price_below_minimum`, `liquidity_below_minimum`, `probability_edge_below_threshold`, and `side_probability_below_threshold`. The default near-miss cap is 5 per day, with half-size orders. Live trading remains disabled; the path submits only guarded paper orders when Paper Autopilot auto-open is enabled.
+The default gate allow-list excludes `price_below_minimum`, `liquidity_below_minimum`, `probability_edge_below_threshold`, and `side_probability_below_threshold`. The fallback allows `near_miss` and `moderate_gap` rows up to 25% from threshold, but symbols with hard failures in price, market cap, liquidity, or volatility are still excluded. The default near-miss cap is 5 per day, with 75% size orders. Live trading remains disabled; the path submits only guarded paper orders when Paper Autopilot auto-open is enabled.
