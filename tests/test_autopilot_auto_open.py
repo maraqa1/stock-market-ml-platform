@@ -108,6 +108,17 @@ def test_auto_open_feature_toggle_persists_to_root_config(tmp_path):
     assert load_auto_open_config(root=tmp_path).open_enabled is False
 
 
+def test_auto_open_config_handles_malformed_yaml_without_crashing(tmp_path):
+    path = tmp_path / "config" / "autopilot.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text("version: 1\n<<<<<<< Updated upstream\n", encoding="utf-8")
+
+    config = load_auto_open_config(root=tmp_path)
+
+    assert config.open_enabled is False
+    assert config.near_miss_fallback_enabled is True
+
+
 def test_auto_open_daily_cap_persists_to_root_config(tmp_path):
     config = set_auto_open_max_per_day(8, root=tmp_path)
 
