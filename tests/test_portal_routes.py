@@ -449,6 +449,19 @@ def test_trading_page_explains_pool_flow_and_zone_purpose(client):
     assert b"Today's order-plan lifecycle" in response.data
     assert b"Audit trail for names filtered out" in response.data
     assert b"Nightly model-ranked source pool" in response.data
+    assert b"/trading/snapshot.csv" in response.data
+
+
+def test_trading_snapshot_csv_exports_current_pools(symbol_client):
+    response = symbol_client.get("/trading/snapshot.csv")
+    assert response.status_code == 200
+    assert response.mimetype == "text/csv"
+    assert "trading_snapshot_" in response.headers["Content-Disposition"]
+    text = response.data.decode("utf-8")
+    assert "snapshot_at,pool,generated_at,symbol,side,rank,status,action,verdict,score,notional,quantity,reason,source,raw_json" in text
+    assert "model_shortlist" in text
+    assert "open_positions" in text
+    assert "TSLA" in text
 
 
 def test_trading_page_renders_intraday_promotion_zone(client):
