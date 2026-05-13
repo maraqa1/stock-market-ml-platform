@@ -60,13 +60,14 @@ The output schema is stable:
 - `probability_edge_below_threshold`
 - `side_probability_below_threshold`
 
-Unknown rejection reasons are preserved as diagnostic hard failures so new guardrails do not break the report.
+Unknown rejection reasons are preserved with `unknown` severity so new guardrails do not break the report or pretend an unmeasured gap is measurable.
 
 ## Severity
 
 - `near_miss`: candidate is within 10% of the required threshold.
 - `moderate_gap`: candidate is within 25% of the required threshold.
-- `hard_fail`: candidate is more than 25% away from passing, or the reason cannot be measured.
+- `hard_fail`: candidate is more than 25% away from passing.
+- `unknown`: the reason, actual value, or required threshold is unavailable.
 
 For minimum thresholds, distance is `required - actual`. For maximum thresholds such as spread and volatility, distance is `actual - required`.
 
@@ -74,10 +75,12 @@ For minimum thresholds, distance is `required - actual`. For maximum thresholds 
 
 The `/trading` page includes a **Near Misses** zone. It shows summary cards for:
 
+- total rejected or trimmed diagnostic candidates
 - total near misses
+- total moderate gaps
 - hard fails
 - most common failed gate
-- number of gate types close to passing
 
-The table shows symbol, failed gate, actual value, required value, distance, severity, and readable reason.
+The table shows symbol, status, failed gate, actual value, required value, distance, severity, and readable reason.
 
+Near misses are diagnostic only. They are not automatically promoted to trades.

@@ -63,6 +63,26 @@ def test_expected_return_near_threshold_is_near_miss():
     assert round(float(row["distance_pct"]), 4) == 0.075
 
 
+def test_expected_return_far_below_threshold_is_hard_fail():
+    frame = pd.DataFrame([base_row(expected_trade_return=0.001, trade_quality_reason="expected_trade_return_below_threshold")])
+
+    result = near_miss_rows([frame], config())
+
+    row = result.iloc[0]
+    assert row["failed_gate"] == "expected_trade_return_below_threshold"
+    assert row["severity"] == "hard_fail"
+
+
+def test_risk_adjusted_score_just_below_threshold_is_near_miss():
+    frame = pd.DataFrame([base_row(risk_adjusted_score=0.00475, trade_quality_reason="risk_adjusted_score_below_threshold")])
+
+    result = near_miss_rows([frame], config())
+
+    row = result.iloc[0]
+    assert row["failed_gate"] == "risk_adjusted_score_below_threshold"
+    assert row["severity"] == "near_miss"
+
+
 def test_risk_adjusted_score_far_below_threshold_is_hard_fail():
     frame = pd.DataFrame([base_row(risk_adjusted_score=0.001, trade_quality_reason="risk_adjusted_score_below_threshold")])
 
@@ -92,7 +112,43 @@ def test_unknown_reason_is_safely_handled():
     assert row["symbol"] == "UNK"
     assert row["failed_gate"] == "unknown"
     assert row["failed_gate_label"] == "Unknown reason"
+    assert row["severity"] == "unknown"
+
+
+def test_price_far_below_threshold_is_hard_fail():
+    frame = pd.DataFrame([base_row(current_price=2.5, trade_quality_reason="price_below_minimum")])
+
+    result = near_miss_rows([frame], config())
+
+    row = result.iloc[0]
+    assert row["failed_gate"] == "price_below_minimum"
     assert row["severity"] == "hard_fail"
+
+
+def test_missing_actual_or_required_values_produce_unknown_severity():
+    frame = pd.DataFrame([base_row(current_price="", trade_quality_reason="price_below_minimum")])
+
+    result = near_miss_rows([frame], config())
+
+    row = result.iloc[0]
+    assert row["failed_gate"] == "price_below_minimum"
+    assert row["actual_value"] is None
+    assert row["severity"] == "unknown"
+
+
+def test_near_miss_analysis_never_marks_candidates_trade_eligible():
+    frame = pd.DataFrame(
+        [
+            base_row(symbol="APP", trade_quality_status="approved", order_eligible=True, trade_quality_reason="approved"),
+            base_row(symbol="REJ", trade_quality_status="rejected", order_eligible=False, trade_quality_reason="price_below_minimum", current_price=4.5),
+        ]
+    )
+
+    result = near_miss_rows([frame], config())
+
+    assert "order_eligible" not in result.columns
+    assert result["symbol"].tolist() == ["REJ"]
+    assert result.iloc[0]["status"] == "rejected"
 
 
 def test_output_schema_is_stable(tmp_path: Path):
@@ -106,4 +162,3 @@ def test_output_schema_is_stable(tmp_path: Path):
     written = pd.read_csv(path)
     assert list(written.columns) == OUTPUT_COLUMNS
     assert path.name == "near_miss_20260513_120000.csv"
-

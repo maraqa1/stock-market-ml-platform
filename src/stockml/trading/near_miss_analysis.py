@@ -52,7 +52,7 @@ SUPPORTED_GATES = {
 }
 
 GATE_LABELS = {
-    "expected_trade_return_below_threshold": "Expected trade return below threshold",
+    "expected_trade_return_below_threshold": "Expected return below threshold",
     "risk_adjusted_score_below_threshold": "Risk-adjusted score below threshold",
     "market_cap_below_minimum": "Market cap below minimum",
     "price_below_minimum": "Price below minimum",
@@ -144,7 +144,7 @@ def _distance(check: GateCheck | None) -> tuple[float | None, float | None]:
 
 def _severity(distance_pct: float | None) -> str:
     if distance_pct is None:
-        return "hard_fail"
+        return "unknown"
     if distance_pct <= 0.10:
         return "near_miss"
     if distance_pct <= 0.25:
@@ -193,8 +193,14 @@ def near_miss_rows(frames: list[pd.DataFrame], config: AlpacaConfig | None = Non
         for row in frame.fillna("").to_dict("records"):
             reasons = _reason_parts(row)
             gates = [reason for reason in reasons if reason in SUPPORTED_GATES]
+            status = _text(row.get("trade_quality_status") or row.get("status") or row.get("basket_status")).lower()
+            eligible = _text(row.get("order_eligible")).lower()
             if not gates and reasons:
                 gates = ["unknown"]
+            if not gates and status in {"rejected", "trimmed", "block"}:
+                gates = ["unknown"]
+            if eligible == "true" or status in {"approved", "open", "filled"}:
+                continue
             for gate in gates:
                 symbol = _text(row.get("symbol") or row.get("ticker")).upper()
                 key = (symbol, gate)
@@ -213,4 +219,3 @@ def write_near_miss_analysis(frame: pd.DataFrame, output_dir: Path | None = None
     path = directory / f"near_miss_{stamp or timestamp()}.csv"
     frame.reindex(columns=OUTPUT_COLUMNS).to_csv(path, index=False)
     return path
-

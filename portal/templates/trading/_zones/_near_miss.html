@@ -6,27 +6,32 @@
     <span class="zone__header-meta">diagnostic only &middot; {{ near_miss.file_name or "not generated" }}</span>
   </div>
   <div class="zone__body">
-    <p class="zone__description">Rejected candidate threshold-distance analysis. This panel explains how close failed candidates were to passing; it does not recommend trades and does not feed execution.</p>
+    <p class="zone__description">Near misses are diagnostic only. They are not automatically promoted to trades.</p>
     <div class="kpi-row positions-summary" aria-label="Near miss summary">
+      <article class="kpi-card">
+        <span class="kpi-card__label">Rejected / Trimmed</span>
+        <strong class="kpi-card__value">{{ number(near_miss.summary.total_rejected_trimmed or 0, 0) }}</strong>
+        <small class="kpi-card__detail">diagnostic rows measured</small>
+      </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Total Near Misses</span>
         <strong class="kpi-card__value">{{ number(near_miss.summary.total_near_misses or 0, 0) }}</strong>
         <small class="kpi-card__detail">within 10% of threshold</small>
       </article>
       <article class="kpi-card">
+        <span class="kpi-card__label">Moderate Gaps</span>
+        <strong class="kpi-card__value">{{ number(near_miss.summary.total_moderate_gaps or 0, 0) }}</strong>
+        <small class="kpi-card__detail">within 25% of threshold</small>
+      </article>
+      <article class="kpi-card">
         <span class="kpi-card__label">Hard Fails</span>
-        <strong class="kpi-card__value">{{ number(near_miss.summary.hard_fails or 0, 0) }}</strong>
+        <strong class="kpi-card__value">{{ number(near_miss.summary.total_hard_fails or near_miss.summary.hard_fails or 0, 0) }}</strong>
         <small class="kpi-card__detail">outside 25% of threshold</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Most Common Gate</span>
         <strong class="kpi-card__value">{{ near_miss.summary.most_common_failed_gate or "None" }}</strong>
         <small class="kpi-card__detail">among diagnostic failures</small>
-      </article>
-      <article class="kpi-card">
-        <span class="kpi-card__label">Near Miss Gates</span>
-        <strong class="kpi-card__value">{{ number((near_miss.summary.near_misses_by_gate or {})|length, 0) }}</strong>
-        <small class="kpi-card__detail">gate types close to passing</small>
       </article>
     </div>
     {{ table_toolbar("Filter near misses") }}
@@ -35,6 +40,7 @@
         <thead>
           <tr>
             <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
+            <th>Status</th>
             <th>Failed Gate</th>
             <th class="num" data-sortable data-sort-key="actual" data-sort-type="number">Actual</th>
             <th class="num" data-sortable data-sort-key="required" data-sort-type="number">Required</th>
@@ -46,12 +52,13 @@
         <tbody>
           {% if not near_miss.rows %}
             <tr>
-              <td colspan="7" class="empty small">No near-miss analysis rows yet. Generate a candidate pool or basket to create diagnostic rows.</td>
+              <td colspan="8" class="empty small">No near-miss analysis rows yet. Generate a candidate pool or basket to create diagnostic rows.</td>
             </tr>
           {% else %}
             {% for row in near_miss.rows %}
               <tr>
                 <td class="num-l col-pinned" data-sort-value="{{ row.symbol }}"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                <td>{{ row.status or "-" }}</td>
                 <td>{{ row.failed_gate_label }}</td>
                 <td class="num" data-sort-value="{{ row.actual_value or 0 }}">{{ number(row.actual_value, 4) if row.actual_value != "" else "-" }}</td>
                 <td class="num" data-sort-value="{{ row.required_value or 0 }}">{{ number(row.required_value, 4) if row.required_value != "" else "-" }}</td>

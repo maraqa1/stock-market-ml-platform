@@ -588,7 +588,7 @@ def test_trading_page_renders_near_miss_panel(client):
     assert response.status_code == 200
     assert b"Near Misses" in response.data
     assert b"diagnostic only" in response.data
-    assert b"Expected trade return below threshold" in response.data
+    assert b"Expected return below threshold" in response.data
     assert b"Near Miss" in response.data
 
 

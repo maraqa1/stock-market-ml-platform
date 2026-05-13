@@ -11,7 +11,7 @@ from portal.services.trading_service import trading_context
 from stockml.trading.near_miss_analysis import OUTPUT_COLUMNS, near_miss_rows, write_near_miss_analysis
 
 
-SEVERITY_ORDER = {"near_miss": 0, "moderate_gap": 1, "hard_fail": 2}
+SEVERITY_ORDER = {"near_miss": 0, "moderate_gap": 1, "hard_fail": 2, "unknown": 3}
 
 
 def _near_miss_output_dir(root: Path) -> Path:
@@ -38,7 +38,11 @@ def _input_frames(root: Path) -> list[pd.DataFrame]:
 def _summary(frame: pd.DataFrame) -> dict[str, Any]:
     if frame.empty:
         return {
+            "total_rejected_trimmed": 0,
             "total_near_misses": 0,
+            "total_moderate_gaps": 0,
+            "total_hard_fails": 0,
+            "unknowns": 0,
             "hard_fails": 0,
             "near_misses_by_gate": {},
             "most_common_failed_gate": "None",
@@ -46,9 +50,14 @@ def _summary(frame: pd.DataFrame) -> dict[str, Any]:
     near = frame[frame["severity"] == "near_miss"]
     gate_counts = near["failed_gate_label"].value_counts().to_dict() if not near.empty else {}
     all_gate_counts = frame["failed_gate_label"].value_counts()
+    hard_fails = int((frame["severity"] == "hard_fail").sum())
     return {
+        "total_rejected_trimmed": int(len(frame)),
         "total_near_misses": int(len(near)),
-        "hard_fails": int((frame["severity"] == "hard_fail").sum()),
+        "total_moderate_gaps": int((frame["severity"] == "moderate_gap").sum()),
+        "total_hard_fails": hard_fails,
+        "unknowns": int((frame["severity"] == "unknown").sum()),
+        "hard_fails": hard_fails,
         "near_misses_by_gate": gate_counts,
         "most_common_failed_gate": str(all_gate_counts.index[0]) if not all_gate_counts.empty else "None",
     }
@@ -88,4 +97,3 @@ def latest_near_miss_context(root: Path | None = None, *, limit: int = 25) -> di
         "columns": OUTPUT_COLUMNS,
         "summary": _summary(frame),
     }
-
