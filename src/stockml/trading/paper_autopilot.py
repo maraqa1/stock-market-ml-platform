@@ -697,9 +697,9 @@ def tick(
             positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
             candidates = strong_candidate_loader()
             if not candidates and open_positions == 0:
-                candidates = fallback_candidate_loader()
-            if not candidates and open_positions == 0:
                 candidates = near_miss_candidate_loader()
+            if not candidates and open_positions == 0:
+                candidates = fallback_candidate_loader()
             if auto_open_applier is not None:
                 auto_open_result = auto_open_applier(candidates, positions_records, str(state.get("mode") or "observe"))
             else:

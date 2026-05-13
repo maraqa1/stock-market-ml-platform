@@ -520,7 +520,7 @@ def test_paper_autopilot_tick_uses_flat_fallback_when_account_is_empty(monkeypat
     assert state["autopilot_open_submitted"] == 1
 
 
-def test_paper_autopilot_tick_uses_near_miss_fallback_after_other_loaders_empty(monkeypatch, tmp_path):
+def test_paper_autopilot_tick_prefers_near_miss_before_flat_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
@@ -535,7 +535,7 @@ def test_paper_autopilot_tick_uses_near_miss_fallback_after_other_loaders_empty(
         refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
         broker_open_orders_func=lambda cfg: 0,
         strong_candidate_loader=lambda: [],
-        fallback_candidate_loader=lambda: [],
+        fallback_candidate_loader=lambda: [_fallback_candidate("ANGI")],
         near_miss_candidate_loader=lambda: [_candidate("GLIBK")],
         auto_open_applier=lambda candidates, open_positions, mode: calls.append((candidates, open_positions, mode))
         or {
@@ -547,6 +547,7 @@ def test_paper_autopilot_tick_uses_near_miss_fallback_after_other_loaders_empty(
     )
 
     assert calls and calls[0][0][0]["symbol"] == "GLIBK"
+    assert all(candidate["symbol"] != "ANGI" for candidate in calls[0][0])
     assert calls[0][1] == []
     assert state["phase"] == "waiting_for_fills"
     assert state["autopilot_open_submitted"] == 1

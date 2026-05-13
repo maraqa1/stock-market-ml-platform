@@ -13,10 +13,10 @@ autopilot:
   flat_account_fallback_min_score: 0.40
   flat_account_fallback_max_per_day: 1
   flat_account_fallback_size_multiplier: 0.50
-  near_miss_fallback_enabled: false
+  near_miss_fallback_enabled: true
   near_miss_fallback_requires_flat_account: true
-  near_miss_fallback_max_per_day: 1
-  near_miss_fallback_size_multiplier: 0.25
+  near_miss_fallback_max_per_day: 5
+  near_miss_fallback_size_multiplier: 0.50
   near_miss_fallback_max_distance_pct: 0.10
   near_miss_fallback_allowed_gates:
   - risk_adjusted_score_below_threshold

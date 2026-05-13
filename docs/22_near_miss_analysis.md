@@ -87,7 +87,7 @@ Near misses are diagnostic only. They are not automatically promoted to trades.
 
 ## Paper Autopilot Fallback
 
-Paper Autopilot can optionally use near-miss rows as a last-resort paper-only open source. This is disabled by default and runs only after strong intraday candidates and the flat-account fallback return no candidates.
+Paper Autopilot can use near-miss rows as a guarded paper-only open source. It runs after strong intraday candidates and before the broader flat-account fallback so cleaner near misses are not skipped in favor of weaker watch-list names.
 
 The fallback is controlled in `config/autopilot.yaml`:
 
@@ -98,4 +98,4 @@ The fallback is controlled in `config/autopilot.yaml`:
 - `near_miss_fallback_max_distance_pct`: maximum threshold miss distance.
 - `near_miss_fallback_allowed_gates`: explicit gate allow-list.
 
-The default gate allow-list excludes `price_below_minimum`, `liquidity_below_minimum`, `probability_edge_below_threshold`, and `side_probability_below_threshold`. Live trading remains disabled; the path submits only guarded paper orders when Paper Autopilot auto-open is enabled.
+The default gate allow-list excludes `price_below_minimum`, `liquidity_below_minimum`, `probability_edge_below_threshold`, and `side_probability_below_threshold`. The default near-miss cap is 5 per day, with half-size orders. Live trading remains disabled; the path submits only guarded paper orders when Paper Autopilot auto-open is enabled.
