@@ -24,6 +24,7 @@ DATA_DIRS = {
     "candidate_evaluations": "data/trading/candidate_evaluations",
     "execution_reports": "data/trading/execution_reports",
     "operator_actions": "data/trading/operator_actions",
+    "near_miss": "data/trading/near_miss",
 }
 
 

@@ -27,6 +27,7 @@ DATASETS = [
     {"key": "candidate_pool", "label": "Paper Candidate Pool", "kind": "trading", "file_key": "portal_outputs", "pattern": "08_alpaca_paper_candidate_pool_*.csv", "db_table": "shortlist_snapshots"},
     {"key": "order_plan", "label": "Paper Order Plan", "kind": "trading", "file_key": "portal_outputs", "pattern": "08_alpaca_paper_order_plan_*.csv"},
     {"key": "positions", "label": "Paper Positions", "kind": "trading", "file_key": "portal_outputs", "pattern": "08_alpaca_paper_positions_*.csv"},
+    {"key": "near_miss", "label": "Near Miss Analysis", "kind": "diagnostic", "file_key": "near_miss", "pattern": "near_miss_*.csv"},
 ]
 
 

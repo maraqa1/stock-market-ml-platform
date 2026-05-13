@@ -15,6 +15,7 @@ from portal.services.data_estate import data_estate_context
 from portal.services.data_quality_service import data_quality_context
 from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
+from portal.services.near_miss_service import near_miss_context
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
 from portal.services.intraday import decisions_csv as intraday_decisions_csv
@@ -304,6 +305,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "action_queue": action_queue_context(root),
                 "positions_api": positions_context(root),
                 "intraday_promotion": intraday_promotion_context(root),
+                "near_miss": near_miss_context(root),
                 "timer_settings": timer_settings_context(root),
                 "paper_autopilot": autopilot_context(root),
             }

@@ -424,6 +424,7 @@ def test_trading_page_renders_spec07_zone_skeleton(client):
         b'data-zone="run-summary"',
         b'data-zone="todays-basket"',
         b'data-zone="rejected-trimmed"',
+        b'data-zone="near-misses"',
         b'data-zone="model-shortlist"',
         b'data-zone="diagnostics"',
     ]
@@ -563,6 +564,32 @@ def test_trading_page_renders_rejected_trimmed_table(client):
     assert b"Source" in response.data
     assert b"Reason" in response.data
     assert b"Planned" in response.data
+
+
+def test_trading_page_renders_near_miss_panel(client):
+    write_csv(
+        Path("_tmp_portal_routes") / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_1.csv",
+        [
+            {
+                "symbol": "NMS",
+                "trade_action": "Long",
+                "trade_quality_status": "rejected",
+                "trade_quality_reason": "expected_trade_return_below_threshold",
+                "expected_trade_return": 0.0019,
+                "risk_adjusted_score": 0.01,
+                "current_price": 10,
+                "market_cap": 1_000_000_000,
+                "avg_dollar_volume_20d": 50_000_000,
+                "volatility_20d": 0.03,
+            }
+        ],
+    )
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Near Misses" in response.data
+    assert b"diagnostic only" in response.data
+    assert b"Expected trade return below threshold" in response.data
+    assert b"Near Miss" in response.data
 
 
 def test_trading_page_renders_model_shortlist_filters(client):
