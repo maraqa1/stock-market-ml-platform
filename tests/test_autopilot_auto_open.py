@@ -9,6 +9,7 @@ from stockml.autopilot.open import (
     AutoOpenConfig,
     apply_auto_open,
     latest_flat_account_fallback_candidates,
+    latest_near_miss_fallback_candidates,
     load_auto_open_config,
     position_size_usd,
     set_auto_open_enabled,
@@ -245,6 +246,56 @@ def test_flat_account_fallback_candidates_select_best_confirmed_watch():
     assert candidates[0]["details"]["flat_account_fallback"] is True
 
 
+def test_near_miss_fallback_candidates_select_configured_near_misses(tmp_path):
+    directory = tmp_path / "data" / "trading" / "near_miss"
+    directory.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "GLIBK",
+                "side": "buy",
+                "status": "rejected",
+                "failed_gate": "risk_adjusted_score_below_threshold",
+                "failed_gate_label": "Risk-adjusted score below threshold",
+                "actual_value": 0.00499,
+                "required_value": 0.005,
+                "distance_to_pass": 0.00001,
+                "distance_pct": 0.002,
+                "severity": "near_miss",
+                "reason": "Risk-adjusted score below threshold",
+                "risk_adjusted_score": 0.00499,
+            },
+            {
+                "symbol": "FIP",
+                "side": "buy",
+                "status": "rejected",
+                "failed_gate": "price_below_minimum",
+                "failed_gate_label": "Price below minimum",
+                "distance_pct": 0.02,
+                "severity": "near_miss",
+            },
+            {
+                "symbol": "ANGI",
+                "side": "buy",
+                "status": "rejected",
+                "failed_gate": "market_cap_below_minimum",
+                "failed_gate_label": "Market cap below minimum",
+                "distance_pct": 0.30,
+                "severity": "hard_fail",
+            },
+        ]
+    ).to_csv(directory / "near_miss_20260513_105212.csv", index=False)
+
+    candidates = latest_near_miss_fallback_candidates(
+        root=tmp_path,
+        config=AutoOpenConfig(near_miss_fallback_enabled=True),
+    )
+
+    assert [candidate["symbol"] for candidate in candidates] == ["GLIBK"]
+    assert candidates[0]["details"]["near_miss_fallback"] is True
+    assert candidates[0]["details"]["failed_gate"] == "risk_adjusted_score_below_threshold"
+
+
 def test_auto_open_uses_reduced_size_for_flat_account_fallback():
     engine = _engine()
     client = FakeClient()
@@ -268,6 +319,37 @@ def test_auto_open_uses_reduced_size_for_flat_account_fallback():
         row = conn.execute(select(autopilot_open_log)).mappings().one()
     assert row["size_usd"] == 50
     assert row["details"]["flat_account_fallback"] is True
+
+
+def test_auto_open_uses_smaller_size_for_near_miss_fallback():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("GLIBK")
+    candidate["details"] = {
+        "near_miss_fallback": True,
+        "fallback_reason": "near_miss_diagnostic_candidate",
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, near_miss_fallback_size_multiplier=0.50),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["symbol"] == "GLIBK"
+    assert client.orders[0]["notional"] == "50.0"
+    assert "GLIBK:near_miss_opened:order-GLIBK" in result["autopilot_open_notes"]
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["details"]["near_miss_fallback"] is True
 
 
 def test_auto_open_fallback_requires_flat_account():
@@ -433,6 +515,38 @@ def test_paper_autopilot_tick_uses_flat_fallback_when_account_is_empty(monkeypat
     )
 
     assert calls and calls[0][0][0]["symbol"] == "ANGI"
+    assert calls[0][1] == []
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_open_submitted"] == 1
+
+
+def test_paper_autopilot_tick_uses_near_miss_fallback_after_other_loaders_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([]).to_csv(tracking, index=False)
+    pd.DataFrame([]).to_csv(positions, index=False)
+    calls = []
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [],
+        fallback_candidate_loader=lambda: [],
+        near_miss_candidate_loader=lambda: [_candidate("GLIBK")],
+        auto_open_applier=lambda candidates, open_positions, mode: calls.append((candidates, open_positions, mode))
+        or {
+            "autopilot_open_attempted": 1,
+            "autopilot_open_submitted": 1,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "GLIBK:near_miss_opened:order-GLIBK",
+        },
+    )
+
+    assert calls and calls[0][0][0]["symbol"] == "GLIBK"
     assert calls[0][1] == []
     assert state["phase"] == "waiting_for_fills"
     assert state["autopilot_open_submitted"] == 1

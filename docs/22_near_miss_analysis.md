@@ -84,3 +84,18 @@ The `/trading` page includes a **Near Misses** zone. It shows summary cards for:
 The table shows symbol, status, failed gate, actual value, required value, distance, severity, and readable reason.
 
 Near misses are diagnostic only. They are not automatically promoted to trades.
+
+## Paper Autopilot Fallback
+
+Paper Autopilot can optionally use near-miss rows as a last-resort paper-only open source. This is disabled by default and runs only after strong intraday candidates and the flat-account fallback return no candidates.
+
+The fallback is controlled in `config/autopilot.yaml`:
+
+- `near_miss_fallback_enabled`: enables the paper-only fallback.
+- `near_miss_fallback_requires_flat_account`: only allow it when no positions are open.
+- `near_miss_fallback_max_per_day`: caps paper opens from near-miss rows.
+- `near_miss_fallback_size_multiplier`: reduces order size versus normal auto-open sizing.
+- `near_miss_fallback_max_distance_pct`: maximum threshold miss distance.
+- `near_miss_fallback_allowed_gates`: explicit gate allow-list.
+
+The default gate allow-list excludes `price_below_minimum`, `liquidity_below_minimum`, `probability_edge_below_threshold`, and `side_probability_below_threshold`. Live trading remains disabled; the path submits only guarded paper orders when Paper Autopilot auto-open is enabled.

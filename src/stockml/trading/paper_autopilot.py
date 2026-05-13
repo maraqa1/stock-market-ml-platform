@@ -12,6 +12,7 @@ from stockml.autopilot.eod import run_eod_tick
 from stockml.autopilot.open import (
     apply_auto_open,
     latest_flat_account_fallback_candidates,
+    latest_near_miss_fallback_candidates,
     latest_strong_candidates,
     load_auto_open_config,
 )
@@ -613,6 +614,7 @@ def tick(
     auto_open_applier: Callable[[list[dict[str, Any]], list[dict[str, Any]], str], dict[str, Any]] | None = None,
     strong_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_strong_candidates,
     fallback_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_flat_account_fallback_candidates,
+    near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_near_miss_fallback_candidates,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -696,6 +698,8 @@ def tick(
             candidates = strong_candidate_loader()
             if not candidates and open_positions == 0:
                 candidates = fallback_candidate_loader()
+            if not candidates and open_positions == 0:
+                candidates = near_miss_candidate_loader()
             if auto_open_applier is not None:
                 auto_open_result = auto_open_applier(candidates, positions_records, str(state.get("mode") or "observe"))
             else:

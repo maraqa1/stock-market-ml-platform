@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+import pandas as pd
 from sqlalchemy import func, insert, select
 from sqlalchemy.engine import Engine
 
-from stockml.common.paths import PROJECT_ROOT
+from stockml.common.paths import PROJECT_ROOT, TRADING_DIR
 from stockml.db.connection import get_engine
 from stockml.db.schema import autopilot_open_log, intraday_candidate_snapshots, intraday_promotion_log
 from stockml.intraday import kill_switch
@@ -38,6 +39,16 @@ class AutoOpenConfig:
     flat_account_fallback_min_score: float = 0.40
     flat_account_fallback_max_per_day: int = 1
     flat_account_fallback_size_multiplier: float = 0.50
+    near_miss_fallback_enabled: bool = False
+    near_miss_fallback_requires_flat_account: bool = True
+    near_miss_fallback_max_per_day: int = 1
+    near_miss_fallback_size_multiplier: float = 0.25
+    near_miss_fallback_max_distance_pct: float = 0.10
+    near_miss_fallback_allowed_gates: tuple[str, ...] = (
+        "risk_adjusted_score_below_threshold",
+        "market_cap_below_minimum",
+        "volatility_extreme",
+    )
 
 
 def _aware(value: datetime | None = None) -> datetime:
@@ -79,6 +90,16 @@ def _default_payload() -> dict[str, Any]:
             "flat_account_fallback_min_score": 0.40,
             "flat_account_fallback_max_per_day": 1,
             "flat_account_fallback_size_multiplier": 0.50,
+            "near_miss_fallback_enabled": False,
+            "near_miss_fallback_requires_flat_account": True,
+            "near_miss_fallback_max_per_day": 1,
+            "near_miss_fallback_size_multiplier": 0.25,
+            "near_miss_fallback_max_distance_pct": 0.10,
+            "near_miss_fallback_allowed_gates": [
+                "risk_adjusted_score_below_threshold",
+                "market_cap_below_minimum",
+                "volatility_extreme",
+            ],
         },
     }
 
@@ -90,6 +111,13 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     section = payload.get("autopilot") if isinstance(payload, dict) else {}
     section = section if isinstance(section, dict) else {}
+    allowed_gates = section.get("near_miss_fallback_allowed_gates")
+    if isinstance(allowed_gates, str):
+        allowed_gate_values = tuple(part.strip() for part in allowed_gates.split(",") if part.strip())
+    elif isinstance(allowed_gates, list):
+        allowed_gate_values = tuple(str(part).strip() for part in allowed_gates if str(part).strip())
+    else:
+        allowed_gate_values = AutoOpenConfig.near_miss_fallback_allowed_gates
     return AutoOpenConfig(
         open_enabled=bool(section.get("open_enabled", False)),
         rotate_enabled=bool(section.get("rotate_enabled", False)),
@@ -104,6 +132,12 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         flat_account_fallback_min_score=float(section.get("flat_account_fallback_min_score", 0.40)),
         flat_account_fallback_max_per_day=int(section.get("flat_account_fallback_max_per_day", 1)),
         flat_account_fallback_size_multiplier=float(section.get("flat_account_fallback_size_multiplier", 0.50)),
+        near_miss_fallback_enabled=bool(section.get("near_miss_fallback_enabled", False)),
+        near_miss_fallback_requires_flat_account=bool(section.get("near_miss_fallback_requires_flat_account", True)),
+        near_miss_fallback_max_per_day=int(section.get("near_miss_fallback_max_per_day", 1)),
+        near_miss_fallback_size_multiplier=float(section.get("near_miss_fallback_size_multiplier", 0.25)),
+        near_miss_fallback_max_distance_pct=float(section.get("near_miss_fallback_max_distance_pct", 0.10)),
+        near_miss_fallback_allowed_gates=allowed_gate_values,
     )
 
 
@@ -241,6 +275,82 @@ def latest_flat_account_fallback_candidates(*, engine: Engine | None = None, con
     return candidates
 
 
+def _near_miss_dir(root: Path | str | None = None) -> Path:
+    if root is None:
+        return TRADING_DIR / "near_miss"
+    return Path(root) / "data" / "trading" / "near_miss"
+
+
+def _latest_near_miss_file(root: Path | str | None = None) -> Path | None:
+    directory = _near_miss_dir(root)
+    if not directory.exists():
+        return None
+    matches = sorted(directory.glob("near_miss_*.csv"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return matches[0] if matches else None
+
+
+def latest_near_miss_fallback_candidates(
+    *,
+    root: Path | str | None = None,
+    config: AutoOpenConfig | None = None,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    cfg = config or load_auto_open_config(root=root)
+    if not cfg.near_miss_fallback_enabled:
+        return []
+    path = _latest_near_miss_file(root)
+    if path is None:
+        return []
+    try:
+        frame = pd.read_csv(path, low_memory=False)
+    except Exception:
+        return []
+    if frame.empty:
+        return []
+    allowed_gates = {str(gate).strip() for gate in cfg.near_miss_fallback_allowed_gates if str(gate).strip()}
+    frame = frame.copy()
+    frame["__severity"] = frame.get("severity", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+    frame["__status"] = frame.get("status", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+    frame["__gate"] = frame.get("failed_gate", pd.Series("", index=frame.index)).fillna("").astype(str)
+    frame["__distance_pct"] = pd.to_numeric(frame.get("distance_pct", pd.Series(index=frame.index)), errors="coerce")
+    frame["__symbol"] = frame.get("symbol", pd.Series("", index=frame.index)).fillna("").astype(str).str.upper()
+    eligible = (
+        frame["__symbol"].ne("")
+        & frame["__severity"].eq("near_miss")
+        & frame["__status"].isin(["rejected", "trimmed", "block"])
+        & frame["__gate"].isin(allowed_gates)
+        & frame["__distance_pct"].notna()
+        & (frame["__distance_pct"] <= cfg.near_miss_fallback_max_distance_pct)
+    )
+    selected = frame[eligible].sort_values(["__distance_pct", "__gate", "__symbol"]).head(limit)
+    candidates: list[dict[str, Any]] = []
+    for row in selected.fillna("").to_dict("records"):
+        side_text = str(row.get("side") or row.get("trade_action") or "").lower()
+        bias = "short" if side_text in {"sell", "short"} or "short" in side_text else "long"
+        details = {
+            "near_miss_fallback": True,
+            "fallback_reason": "near_miss_diagnostic_candidate",
+            "failed_gate": row.get("failed_gate"),
+            "failed_gate_label": row.get("failed_gate_label"),
+            "distance_pct": _float(row.get("distance_pct")),
+            "distance_to_pass": _float(row.get("distance_to_pass")),
+            "severity": row.get("severity"),
+            "reason": row.get("reason"),
+            "is_first_15_min": False,
+            "is_last_30_min": False,
+        }
+        candidates.append(
+            {
+                "symbol": row.get("__symbol"),
+                "promotion_score": _float(row.get("risk_adjusted_score") or row.get("actual_value")),
+                "nightly_bias": bias,
+                "is_held": False,
+                "details": details,
+            }
+        )
+    return candidates
+
+
 def _todays_open_count(engine: Engine, now: datetime) -> int:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     with engine.connect() as conn:
@@ -254,7 +364,7 @@ def _todays_open_count(engine: Engine, now: datetime) -> int:
         )
 
 
-def _todays_fallback_open_count(engine: Engine, now: datetime) -> int:
+def _todays_detail_open_count(engine: Engine, now: datetime, detail_key: str) -> int:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     with engine.connect() as conn:
         rows = conn.execute(
@@ -262,7 +372,15 @@ def _todays_fallback_open_count(engine: Engine, now: datetime) -> int:
             .where(autopilot_open_log.c.logged_at >= start)
             .where(autopilot_open_log.c.verdict == "opened")
         ).scalars().all()
-    return sum(1 for details in rows if isinstance(details, dict) and details.get("flat_account_fallback") is True)
+    return sum(1 for details in rows if isinstance(details, dict) and details.get(detail_key) is True)
+
+
+def _todays_fallback_open_count(engine: Engine, now: datetime) -> int:
+    return _todays_detail_open_count(engine, now, "flat_account_fallback")
+
+
+def _todays_near_miss_open_count(engine: Engine, now: datetime) -> int:
+    return _todays_detail_open_count(engine, now, "near_miss_fallback")
 
 
 def _record_open(
@@ -351,20 +469,37 @@ def apply_auto_open(
             continue
         details = candidate.get("details") or {}
         is_fallback = bool(details.get("flat_account_fallback"))
-        order_size = round(size * cfg.flat_account_fallback_size_multiplier, 2) if is_fallback else size
+        is_near_miss = bool(details.get("near_miss_fallback"))
+        if is_near_miss:
+            order_size = round(size * cfg.near_miss_fallback_size_multiplier, 2)
+        elif is_fallback:
+            order_size = round(size * cfg.flat_account_fallback_size_multiplier, 2)
+        else:
+            order_size = size
         if is_fallback and open_positions:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_requires_flat_account", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:fallback_requires_flat_account")
+            continue
+        if is_near_miss and cfg.near_miss_fallback_requires_flat_account and open_positions:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="near_miss_requires_flat_account", details=details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:near_miss_requires_flat_account")
             continue
         if is_fallback and _todays_fallback_open_count(db, stamp) >= cfg.flat_account_fallback_max_per_day:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_daily_cap_reached", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:fallback_daily_cap_reached")
             continue
+        if is_near_miss and _todays_near_miss_open_count(db, stamp) >= cfg.near_miss_fallback_max_per_day:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="near_miss_daily_cap_reached", details=details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:near_miss_daily_cap_reached")
+            continue
         if order_size < cfg.min_position_value_usd:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_size_below_min" if is_fallback else "position_size_below_min", details=details, engine=db, now=stamp)
+            size_reason = "near_miss_size_below_min" if is_near_miss else ("fallback_size_below_min" if is_fallback else "position_size_below_min")
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=size_reason, details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:position_size_below_min")
             continue
         if details.get("is_first_15_min") or details.get("is_last_30_min"):
@@ -406,7 +541,7 @@ def apply_auto_open(
             opened += 1
             held.add(symbol)
             slots -= 1
-            prefix = "fallback_opened" if is_fallback else "opened"
+            prefix = "near_miss_opened" if is_near_miss else ("fallback_opened" if is_fallback else "opened")
             notes.append(f"{symbol}:{prefix}:{order_id or 'submitted'}")
         except AlpacaAPIError as exc:
             blocked += 1
