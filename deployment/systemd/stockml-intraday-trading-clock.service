@@ -1,0 +1,14 @@
+[Unit]
+Description=Run StockML synchronized intraday trading clock
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/massa/stock-market-ml-platform
+EnvironmentFile=-/home/massa/stock-market-ml-platform/.env
+EnvironmentFile=-/etc/stockml/stockml.env
+Environment=PYTHONPATH=src
+ExecStart=/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_intraday_trading_clock.py
+User=root
+Group=root

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from stockml.db.connection import _hydrate_environment
+from stockml.trading.autopilot_guard import AUTOPILOT_BASKET_BLOCK_REASON
 from stockml.trading.paper_trader import refresh_order_tracking, run_paper_trading
 
 
@@ -37,26 +38,39 @@ def _within_auto_trade_window(now: Optional[datetime] = None) -> bool:
 def run_auto_trader(signal_file: Optional[Path] = None, force: bool = False) -> dict:
     enabled = auto_trading_enabled()
     in_window = _within_auto_trade_window()
-    if not enabled and not force:
+    mode = "order_run" if enabled or force else "dry_run_only"
+    try:
+        if not enabled and not force:
+            result = run_paper_trading(signal_file)
+            return {
+                **result,
+                "auto_trade_enabled": False,
+                "auto_trade_mode": mode,
+                "message": "STOCKML_ALPACA_AUTOTRADE_ENABLED is false; wrote a dry-run plan only.",
+            }
+        if not in_window and not force:
+            tracking = refresh_order_tracking()
+            return {
+                **tracking,
+                "auto_trade_enabled": enabled,
+                "auto_trade_mode": "tracking_only",
+                "message": "Outside configured auto-trade UTC window; refreshed tracking only.",
+            }
         result = run_paper_trading(signal_file)
         return {
             **result,
-            "auto_trade_enabled": False,
-            "auto_trade_mode": "dry_run_only",
-            "message": "STOCKML_ALPACA_AUTOTRADE_ENABLED is false; wrote a dry-run plan only.",
+            "auto_trade_enabled": enabled,
+            "auto_trade_mode": mode,
+            "message": "Auto-trader completed order run. Submission still depends on STOCKML_ALPACA_SUBMIT_ORDERS.",
         }
-    if not in_window and not force:
+    except RuntimeError as exc:
+        if str(exc) != AUTOPILOT_BASKET_BLOCK_REASON:
+            raise
         tracking = refresh_order_tracking()
         return {
             **tracking,
             "auto_trade_enabled": enabled,
-            "auto_trade_mode": "tracking_only",
-            "message": "Outside configured auto-trade UTC window; refreshed tracking only.",
+            "auto_trade_mode": "blocked_by_paper_autopilot",
+            "block_reason": AUTOPILOT_BASKET_BLOCK_REASON,
+            "message": "Paper Autopilot is running; skipped legacy basket submission and refreshed tracking only.",
         }
-    result = run_paper_trading(signal_file)
-    return {
-        **result,
-        "auto_trade_enabled": enabled,
-        "auto_trade_mode": "order_run",
-        "message": "Auto-trader completed order run. Submission still depends on STOCKML_ALPACA_SUBMIT_ORDERS.",
-    }
