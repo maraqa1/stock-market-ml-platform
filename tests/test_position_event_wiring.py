@@ -168,6 +168,57 @@ def test_paper_trader_blocks_basket_submission_when_paper_autopilot_running(monk
     assert client_calls == []
 
 
+def test_paper_trader_plan_only_writes_artifacts_without_submitting(monkeypatch):
+    events = []
+    client_calls = []
+    plan = pd.DataFrame(
+        [
+            {
+                "symbol": "FLEX",
+                "client_order_id": "stockml-FLEX-buy",
+                "side": "buy",
+                "type": "market",
+                "time_in_force": "day",
+                "extended_hours": False,
+                "trade_action": "Long",
+                "trade_quality_status": "approved",
+                "trade_quality_reason": "",
+                "order_eligible": True,
+                "suggested_quantity": 2,
+                "notional": 200,
+            }
+        ]
+    )
+
+    class TrackingClient(FakeClient):
+        def submit_order(self, request):
+            client_calls.append(request)
+            return super().submit_order(request)
+
+    TEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(paper_trader, "PORTAL_OUTPUTS_DIR", TEST_OUTPUT_DIR)
+    monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
+    monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (True, "paper_autopilot_running_blocks_basket_submission"))
+    monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "FLEX"}]))
+    monkeypatch.setattr(paper_trader, "build_candidate_pool", lambda signals, cfg: pd.DataFrame([{"symbol": "FLEX"}]))
+    monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: plan)
+    monkeypatch.setattr(paper_trader, "AlpacaPaperClient", lambda cfg: TrackingClient())
+    monkeypatch.setattr(paper_trader, "record_event_safely", lambda *args, **kwargs: events.append((args, kwargs)) or True)
+
+    result = paper_trader.run_paper_trading(plan_only=True)
+
+    assert result["plan_only"] is True
+    assert result["dry_run"] is True
+    assert result["orders_submitted"] == 0
+    assert client_calls == []
+    assert result["candidate_pool_path"].exists()
+    assert result["plan_path"].exists()
+    results = pd.read_csv(result["result_path"])
+    assert results.iloc[0]["status"] == "dry_run"
+    assert results.iloc[0]["message"] == "plan_only: no broker submission"
+    assert [event[0][1] for event in events] == ["selected"]
+
+
 def test_paper_trader_stamps_client_order_ids_per_run():
     plan = pd.DataFrame(
         [

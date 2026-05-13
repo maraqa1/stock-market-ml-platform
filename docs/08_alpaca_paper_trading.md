@@ -59,6 +59,16 @@ Review the latest run in the portal:
 curl http://127.0.0.1:8091/trading
 ```
 
+## Daily Candidate Refresh
+
+The full nightly systemd service runs the research pipeline and then refreshes the paper candidate pool with:
+
+```bash
+/opt/jupyter-env/bin/python3 scripts/run_alpaca_paper_trader.py --plan-only
+```
+
+`--plan-only` writes fresh `08_alpaca_paper_candidate_pool_*`, order plan, result, tracking, and position artifacts for the portal, but it never submits broker orders, even when `STOCKML_ALPACA_SUBMIT_ORDERS=true`.
+
 ## Track Orders
 
 After a dry run or a paper submission run, refresh the latest tracking snapshot:

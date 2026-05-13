@@ -10,4 +10,4 @@ Environment=PYTHONPATH=/home/massa/stock-market-ml-platform/src
 Environment=STOCKML_PROFILE=nasdaq_500
 Environment=STOCKML_WRITE_DATABASE=0
 EnvironmentFile=-/etc/stockml/stockml.env
-ExecStart=/bin/bash -lc '/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_profile_pipeline.py --profile "${STOCKML_PROFILE}" $([[ "${STOCKML_WRITE_DATABASE}" == "1" ]] && echo "--write-database")'
+ExecStart=/bin/bash -lc '/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_profile_pipeline.py --profile "${STOCKML_PROFILE}" $([[ "${STOCKML_WRITE_DATABASE}" == "1" ]] && echo "--write-database") && /opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_alpaca_paper_trader.py --plan-only'

@@ -122,12 +122,12 @@ def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple
     return tracking_path, positions_path
 
 
-def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | int | bool]:
+def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = False) -> dict[str, Path | int | bool]:
     ensure_data_dirs()
     config = alpaca_config()
     paper_only_guard(live_trading_enabled=config.live_trading_enabled)
     blocked, block_reason = autopilot_blocks_basket_submission()
-    if blocked and config.submit_orders:
+    if blocked and config.submit_orders and not plan_only:
         raise RuntimeError(block_reason)
     signals = latest_signal_table(signal_file)
     candidate_pool = build_candidate_pool(signals, config)
@@ -159,7 +159,7 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
             )
 
     result_rows = []
-    can_submit = config.submit_orders and config.paper_trading_enabled and not config.live_trading_enabled
+    can_submit = config.submit_orders and not plan_only and config.paper_trading_enabled and not config.live_trading_enabled
     if config.submit_orders and config.live_trading_enabled:
         raise RuntimeError("Live trading is disabled by policy for this platform")
     if can_submit and not plan.empty:
@@ -264,7 +264,8 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
                     {"symbol": order.get("symbol", ""), "reason": message, "stage": "trade_quality_gate"},
                 )
             else:
-                result_rows.append(_result_row(order, "dry_run", message="STOCKML_ALPACA_SUBMIT_ORDERS is false"))
+                message = "plan_only: no broker submission" if plan_only else "STOCKML_ALPACA_SUBMIT_ORDERS is false"
+                result_rows.append(_result_row(order, "dry_run", message=message))
 
     results = pd.DataFrame(result_rows)
     results.to_csv(result_path, index=False)
@@ -276,7 +277,8 @@ def run_paper_trading(signal_file: Optional[Path] = None) -> dict[str, Path | in
         "orders_approved": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower().isin(["approved", "reduced"])).sum()) if not plan.empty else 0,
         "orders_rejected": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower() == "rejected").sum()) if not plan.empty else 0,
         "orders_submitted": sum(1 for row in result_rows if row["status"] == "submitted"),
-        "dry_run": not config.submit_orders,
+        "dry_run": plan_only or not config.submit_orders,
+        "plan_only": plan_only,
         "shorting_enabled": config.allow_short_selling,
         "paper_trading_enabled": config.paper_trading_enabled,
         "live_trading_enabled": config.live_trading_enabled,
