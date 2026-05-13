@@ -57,3 +57,23 @@ This installs `stockml-position-monitor.timer`, which runs every 30 seconds duri
 - position decisions under `data/trading/agent_decisions/`
 
 The monitor does not submit new entry orders and does not close positions by itself. It creates the review layer needed before adding an automatic close/rebalance executor.
+
+## Scheduler Synchronization
+
+The paper lifecycle has two coordinated clocks:
+
+- Daily research clock: builds the universe, prices, metadata, features, sentiment, Gold dataset, model outputs, and then a plan-only paper candidate pool for the portal.
+- Intraday trading clock: refreshes candidate snapshots, scores promotions, writes rotation recommendations, and ticks Paper Autopilot.
+
+Use explicit UTC for every production systemd timer. The market-session jobs already use UTC; nightly timers should also use UTC so their behavior is independent of the server timezone.
+
+The intraday trading clock should run as a single sequential service every 5 minutes during market hours:
+
+```bash
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/run_intraday_candidate_refresh.py
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/run_intraday_promotion_scoring.py
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/run_rotation_recommendations.py
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/run_paper_autopilot.py tick
+```
+
+Do not schedule those four commands as unrelated timers. The later stages depend on fresh rows from the earlier stages, and independent timers can leave the portal showing stale candidates, stale promotions, or delayed auto-open/EOD state.

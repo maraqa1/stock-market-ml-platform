@@ -69,6 +69,31 @@ The full nightly systemd service runs the research pipeline and then refreshes t
 
 `--plan-only` writes fresh `08_alpaca_paper_candidate_pool_*`, order plan, result, tracking, and position artifacts for the portal, but it never submits broker orders, even when `STOCKML_ALPACA_SUBMIT_ORDERS=true`.
 
+## Production Timer Design
+
+All production timers should use explicit `UTC` in `OnCalendar` values. Market timers already do this, and nightly data jobs should follow the same convention so server timezone or daylight-saving changes do not move the trading workflow.
+
+Recommended scheduler layout:
+
+- Nightly universe: `02:10 UTC`.
+- Nightly price history: `03:10 UTC`.
+- Full research pipeline: `04:30 UTC`.
+- Daily paper candidate refresh: chained immediately after the full research pipeline with `--plan-only`.
+- Intraday trading chain: every 5 minutes during regular US market coverage, roughly `14:30-21:05 UTC`.
+- Position monitor: every 30 seconds during market coverage.
+- Tracking refresh: hourly during market coverage; this is useful but secondary once the autopilot tick is refreshing state.
+
+The intraday trading chain should run as one synchronized service, not as independent timers:
+
+```bash
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/run_intraday_candidate_refresh.py
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/run_intraday_promotion_scoring.py
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/run_rotation_recommendations.py
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/run_paper_autopilot.py tick
+```
+
+That order matters: candidate snapshots feed promotion scoring, promotion scoring feeds rotation and auto-open decisions, and the paper autopilot tick applies guarded paper actions and EOD handling.
+
 ## Track Orders
 
 After a dry run or a paper submission run, refresh the latest tracking snapshot:
