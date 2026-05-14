@@ -20,6 +20,13 @@ def test_intraday_trading_clock_script_runs_pipeline_in_order():
     refresh_index = script.index("candidate_refresh_tick")
     scoring_index = script.index("score_unscored_snapshots")
     rotation_index = script.index("run_rotation_recommendations()")
-    autopilot_index = script.index('autopilot_action("tick")')
+    autopilot_index = script.index("state = autopilot_tick")
 
     assert refresh_index < scoring_index < rotation_index < autopilot_index
+
+
+def test_intraday_trading_clock_disables_auto_open_when_refresh_skips():
+    script = (ROOT / "scripts" / "run_intraday_trading_clock.py").read_text(encoding="utf-8")
+
+    assert 'allow_auto_open = refresh.get("status") == "ok"' in script
+    assert "autopilot_tick(allow_auto_open=allow_auto_open)" in script

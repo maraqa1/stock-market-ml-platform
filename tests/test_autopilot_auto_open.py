@@ -700,6 +700,31 @@ def test_paper_autopilot_tick_uses_near_miss_when_position_is_open(monkeypatch, 
     assert state["autopilot_open_submitted"] == 1
 
 
+def test_paper_autopilot_tick_skips_auto_open_when_market_closed(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([]).to_csv(tracking, index=False)
+    pd.DataFrame([]).to_csv(positions, index=False)
+    calls = []
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [_candidate("GLIBK")],
+        fallback_candidate_loader=lambda: [_fallback_candidate("ANGI")],
+        auto_open_applier=lambda candidates, open_positions, mode: calls.append((candidates, open_positions, mode)),
+        allow_auto_open=False,
+    )
+
+    assert calls == []
+    assert state["autopilot_open_submitted"] == 0
+    assert state["autopilot_open_notes"] == "auto_open_skipped_market_closed"
+
+
 def test_paper_autopilot_tick_refreshes_positions_after_auto_open_fill(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
     paper_autopilot.start(tmp_path)

@@ -13,7 +13,7 @@ if str(SRC) not in sys.path:
 
 from stockml.intraday.refresh import candidate_refresh_tick, prune_old_snapshots
 from stockml.intraday.promotion_score import score_unscored_snapshots
-from stockml.trading.paper_autopilot import action as autopilot_action
+from stockml.trading.paper_autopilot import tick as autopilot_tick
 
 from scripts.run_rotation_recommendations import main as run_rotation_recommendations
 
@@ -33,7 +33,11 @@ def main() -> int:
 
     run_rotation_recommendations()
 
-    state = autopilot_action("tick")
+    allow_auto_open = refresh.get("status") == "ok"
+    if not allow_auto_open:
+        print("auto_open_gate:", f"skipped_{refresh.get('reason') or refresh.get('status')}")
+
+    state = autopilot_tick(allow_auto_open=allow_auto_open)
     print("paper_autopilot_mode:", state.get("mode"))
     print("paper_autopilot_status:", state.get("status"))
     print("paper_autopilot_phase:", state.get("phase"))

@@ -615,6 +615,7 @@ def tick(
     strong_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_strong_candidates,
     fallback_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_flat_account_fallback_candidates,
     near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
+    allow_auto_open: bool = True,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
 
@@ -693,7 +694,9 @@ def tick(
             "autopilot_open_notes": "",
         }
         eod_state = str(eod_result.get("eod_state") or "inactive")
-        if state.get("mode") == "paper_autopilot" and open_orders == 0 and eod_state == "inactive":
+        if not allow_auto_open:
+            auto_open_result["autopilot_open_notes"] = "auto_open_skipped_market_closed"
+        elif state.get("mode") == "paper_autopilot" and open_orders == 0 and eod_state == "inactive":
             positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
             candidates = strong_candidate_loader()
             if not candidates:
