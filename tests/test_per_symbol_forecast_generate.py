@@ -30,6 +30,7 @@ def test_forecast_rows_schema_is_stable():
     assert bool(frame.iloc[0]["diagnostic_only"]) is True
     assert frame.iloc[0]["tier_c_status"] == "uncalibrated"
     assert frame.iloc[0]["forecast_confirmation"] in {"confirmed", "weak_confirm", "conflicted", "insufficient_data"}
+    assert frame.iloc[0]["expected_move_bps_calibrated"] <= frame.iloc[0]["expected_move_bps"]
 
 
 def test_generate_per_symbol_forecast_writes_append_only_artifact(tmp_path: Path):
@@ -45,3 +46,41 @@ def test_generate_per_symbol_forecast_writes_append_only_artifact(tmp_path: Path
     assert output.name == "per_symbol_forecast_20260514_120001.csv"
     assert list(written.columns) == OUTPUT_COLUMNS
     assert written["symbol"].tolist() == ["AAPL", "MSFT"]
+
+
+def test_forecast_rows_include_open_positions_beyond_candidate_limit():
+    candidates = pd.DataFrame([_candidate("AAPL"), _candidate("MSFT", candidate_rank=2)])
+    positions = pd.DataFrame(
+        [
+            {
+                "symbol": "HELD",
+                "side": "long",
+                "qty": 4,
+                "avg_entry_price": 20,
+                "current_price": 21,
+                "unrealized_plpc": 0.05,
+            }
+        ]
+    )
+
+    frame = forecast_rows(candidates, positions=positions, generated_at="2026-05-14T12:00:00+00:00", limit=1)
+
+    assert frame["symbol"].tolist() == ["AAPL", "HELD"]
+    held = frame[frame["symbol"] == "HELD"].iloc[0]
+    assert held["forecast_scope"] == "open_position"
+    assert bool(held["is_open_position"]) is True
+    assert held["position_qty"] == 4
+    assert held["position_entry_price"] == 20
+    assert held["position_unrealized_plpc"] == 0.05
+
+
+def test_forecast_rows_mark_candidate_and_open_position_overlap():
+    candidates = pd.DataFrame([_candidate("AAPL")])
+    positions = pd.DataFrame([{"symbol": "AAPL", "side": "long", "qty": 2, "avg_entry_price": 90, "current_price": 100, "unrealized_plpc": 0.1}])
+
+    frame = forecast_rows(candidates, positions=positions, generated_at="2026-05-14T12:00:00+00:00")
+
+    row = frame.iloc[0]
+    assert row["forecast_scope"] == "candidate_and_open_position"
+    assert bool(row["is_open_position"]) is True
+    assert row["position_qty"] == 2

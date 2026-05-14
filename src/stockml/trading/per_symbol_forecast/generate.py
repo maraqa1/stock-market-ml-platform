@@ -32,6 +32,11 @@ def latest_candidate_pool_path(root: Path | None = None) -> Path | None:
     return latest_file(base / "data" / "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
 
 
+def latest_positions_path(root: Path | None = None) -> Path | None:
+    base = Path(root).resolve() if root else PROJECT_ROOT
+    return latest_file(base / "data" / "portal_outputs", "08_alpaca_paper_positions_*.csv")
+
+
 def latest_per_symbol_forecast_path(root: Path | None = None) -> Path | None:
     base = Path(root).resolve() if root else PROJECT_ROOT
     return latest_file(base / "data" / "trading" / OUTPUT_DIR_NAME, f"{OUTPUT_FILE_PREFIX}_*.csv")
@@ -44,15 +49,58 @@ def _candidate_rows(frame: pd.DataFrame, limit: int) -> Iterable[dict[str, objec
     if "candidate_rank" in working.columns:
         working["_forecast_rank_sort"] = pd.to_numeric(working["candidate_rank"], errors="coerce")
         working = working.sort_values("_forecast_rank_sort", na_position="last")
-    return working.head(limit).fillna("").to_dict("records")
+    open_mask = working.get("__is_open_position", pd.Series(False, index=working.index)).fillna(False).astype(bool)
+    selected = pd.concat([working[~open_mask].head(limit), working[open_mask]]).drop_duplicates("symbol", keep="last")
+    return selected.fillna("").to_dict("records")
 
 
-def forecast_rows(candidates: pd.DataFrame, generated_at: str | None = None, limit: int = 100) -> pd.DataFrame:
-    generated_at = generated_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
-    slope_5d = rank_to_return_slope(candidates.rename(columns={"risk_adjusted_score": "model_score"}), "expected_trade_return")
+def _merge_candidate_and_position_rows(candidates: pd.DataFrame, positions: pd.DataFrame | None = None) -> pd.DataFrame:
+    candidates = candidates.copy() if candidates is not None and not candidates.empty else pd.DataFrame()
+    positions = positions.copy() if positions is not None and not positions.empty else pd.DataFrame()
+    if not candidates.empty:
+        candidates["__symbol"] = candidates.get("symbol", pd.Series("", index=candidates.index)).fillna("").astype(str).str.upper()
+        candidates["__forecast_scope"] = "candidate"
+        candidates["__is_open_position"] = False
+    if not positions.empty:
+        positions["__symbol"] = positions.get("symbol", pd.Series("", index=positions.index)).fillna("").astype(str).str.upper()
+        positions["__forecast_scope"] = "open_position"
+        positions["__is_open_position"] = True
+        if "side" in positions.columns:
+            positions["side"] = positions["side"].fillna("").astype(str).str.lower().map({"long": "buy", "short": "sell"}).fillna(positions["side"])
+        if "trade_action" not in positions.columns:
+            positions["trade_action"] = positions.get("side", pd.Series("", index=positions.index)).fillna("").astype(str).str.lower().map({"buy": "Long", "sell": "Short", "long": "Long", "short": "Short"}).fillna("")
+    if candidates.empty:
+        return positions.drop(columns=["__symbol"], errors="ignore")
+    if positions.empty:
+        return candidates.drop(columns=["__symbol"], errors="ignore")
+    pos_by_symbol = {str(row.get("__symbol")): row for row in positions.fillna("").to_dict("records") if row.get("__symbol")}
     records: list[dict[str, object]] = []
     seen: set[str] = set()
-    for row in _candidate_rows(candidates, limit):
+    for row in candidates.fillna("").to_dict("records"):
+        symbol = str(row.get("__symbol") or "")
+        merged = dict(row)
+        if symbol in pos_by_symbol:
+            pos = pos_by_symbol[symbol]
+            for key, value in pos.items():
+                if key not in merged or merged.get(key) in {"", None}:
+                    merged[key] = value
+            merged["__forecast_scope"] = "candidate_and_open_position"
+            merged["__is_open_position"] = True
+        records.append(merged)
+        seen.add(symbol)
+    for symbol, row in pos_by_symbol.items():
+        if symbol not in seen:
+            records.append(dict(row))
+    return pd.DataFrame(records).drop(columns=["__symbol"], errors="ignore")
+
+
+def forecast_rows(candidates: pd.DataFrame, positions: pd.DataFrame | None = None, generated_at: str | None = None, limit: int = 100) -> pd.DataFrame:
+    generated_at = generated_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    slope_5d = rank_to_return_slope(candidates.rename(columns={"risk_adjusted_score": "model_score"}), "expected_trade_return")
+    source_rows = _merge_candidate_and_position_rows(candidates, positions)
+    records: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for row in _candidate_rows(source_rows, limit):
         symbol = canonical_symbol(row)
         if not symbol or symbol in seen:
             continue
@@ -77,12 +125,15 @@ def write_per_symbol_forecast(frame: pd.DataFrame, output_dir: Path | None = Non
 def generate_per_symbol_forecast(root: Path | None = None, limit: int = 100, stamp: str | None = None) -> dict[str, object]:
     base = Path(root).resolve() if root else PROJECT_ROOT
     candidate_path = latest_candidate_pool_path(base)
+    positions_path = latest_positions_path(base)
     candidates = _read_csv(candidate_path)
-    frame = forecast_rows(candidates, limit=limit)
+    positions = _read_csv(positions_path)
+    frame = forecast_rows(candidates, positions=positions, limit=limit)
     output_path = write_per_symbol_forecast(frame, output_dir=base / "data" / "trading" / OUTPUT_DIR_NAME, stamp=stamp)
     return {
         "status": "ok",
         "rows": int(len(frame)),
         "path": str(output_path),
         "source": str(candidate_path or ""),
+        "positions_source": str(positions_path or ""),
     }

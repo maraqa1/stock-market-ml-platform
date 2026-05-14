@@ -37,17 +37,29 @@ flowchart LR
   F --> G
 ```
 
-The full nightly pipeline runs the forecast generation after `run_alpaca_paper_trader.py --plan-only`, so the first forecast file is based on the fresh daily candidate pool and order plan before the market day starts.
+The full nightly pipeline runs the forecast generation after `run_alpaca_paper_trader.py --plan-only`, so the first forecast file is based on the fresh daily candidate pool and order plan before the market day starts. The forecast stage also reads the latest paper positions so held symbols remain visible even when they are no longer in the top candidate display slice.
 
 The synchronized intraday clock runs the forecast generation after candidate refresh and promotion scoring, before rotation recommendations and Paper Autopilot tick. Failure in forecast generation is reported, but it must not create a live trading path.
 
 ## Field Tiers
 
-Tier A fields are derived directly from existing inputs. Examples: symbol, side, current trade action, candidate rank, current price, meta-label probability, spread, and intraday range position.
+Tier A fields are derived directly from existing inputs. Examples: symbol, forecast scope, open-position flag, position entry/P&L fields, side, current trade action, candidate rank, current price, meta-label probability, spread, and intraday range position.
 
 Tier B fields are statistical context. Examples: direction context, direction basis, expected 1-day and 5-day return, expected move in bps, magnitude bucket, downside and upside risk, volatility-adjusted score, penalties, expected profitability score, forecast confirmation, confirmation score, suggested stop and take-profit levels, invalidation level, regime label, and forecast reason.
 
-Direction context is not a calibrated probability. It is derived from candidate side, trade action, or the sign of expected return. Magnitude is bucketed from expected move bps. Expected profitability is an ordinal diagnostic score that combines expected move context with the risk-adjusted forecast score.
+Direction context is not a calibrated probability. It is derived from candidate side, trade action, or the sign of expected return. Raw expected move is retained, but the operator-facing calibrated move is capped by realized volatility so unusually large model-scale values do not dominate the ranking. Expected profitability is an ordinal diagnostic score that combines calibrated move context with risk-adjusted score and risk penalties.
+
+Forecast scope values:
+
+- `candidate`
+- `open_position`
+- `candidate_and_open_position`
+
+Operator priority values:
+
+- `high`
+- `watch`
+- `avoid`
 
 Forecast confirmation is also diagnostic only. It classifies each row as `confirmed`, `weak_confirm`, `conflicted`, or `insufficient_data` using side alignment, expected move, profitability, and risk/reward completeness. It is not allowed to open trades directly.
 

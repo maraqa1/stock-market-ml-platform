@@ -47,13 +47,16 @@
         <thead>
           <tr>
             <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
+            <th>Scope</th>
             <th>Side</th>
             <th>Action</th>
             <th class="num" data-sortable data-sort-key="rank" data-sort-type="number">Rank</th>
             <th>Confirmation</th>
+            <th>Quality</th>
+            <th>Priority</th>
             <th class="num" data-sortable data-sort-key="confirmation_score" data-sort-type="number">Confirm Score</th>
             <th>Direction</th>
-            <th class="num" data-sortable data-sort-key="move" data-sort-type="number">Expected Move</th>
+            <th class="num" data-sortable data-sort-key="move" data-sort-type="number">Calibrated Move</th>
             <th>Magnitude</th>
             <th class="num" data-sortable data-sort-key="profitability" data-sort-type="number">Profitability</th>
             <th class="num" data-sortable data-sort-key="vol_adj" data-sort-type="number">Vol-Adj</th>
@@ -66,19 +69,22 @@
         <tbody>
           {% if not per_symbol_forecast.rows %}
             <tr>
-              <td colspan="15" class="empty small">No per-symbol forecast file yet. Run the per-symbol forecast stage after the shortlist is generated.</td>
+              <td colspan="18" class="empty small">No per-symbol forecast file yet. Run the per-symbol forecast stage after the shortlist is generated.</td>
             </tr>
           {% else %}
             {% for row in per_symbol_forecast.rows %}
               <tr>
                 <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.get('symbol', '') }}">{{ row.get('symbol', '') }}</a></td>
+                <td>{{ (row.get('forecast_scope', '-') or "-")|replace("_", " ")|title }}</td>
                 <td>{{ row.get('side', '-') or "-" }}</td>
                 <td>{{ row.get('current_trade_action', '-') or "-" }}</td>
                 <td class="num" data-sort-value="{{ row.get('candidate_rank', 0) or 0 }}">{{ number(row.get('candidate_rank'), 0) if row.get('candidate_rank', "") != "" else "-" }}</td>
                 <td title="{{ row.get('confirmation_reason', '') }}">{{ (row.get('forecast_confirmation', '-') or "-")|replace("_", " ")|title }}</td>
+                <td>{{ (row.get('confirmation_quality', '-') or "-")|title }}</td>
+                <td>{{ (row.get('operator_priority', '-') or "-")|title }}</td>
                 <td class="num" data-sort-value="{{ row.get('confirmation_score', 0) or 0 }}">{{ number(row.get('confirmation_score'), 0) if row.get('confirmation_score', "") != "" else "-" }}</td>
                 <td title="{{ row.get('direction_basis', '') }}">{{ (row.get('direction_context', '-') or "-")|replace("_", " ")|title }}</td>
-                <td class="num" data-sort-value="{{ row.get('expected_move_bps', 0) or 0 }}">{{ number(row.get('expected_move_bps'), 0) if row.get('expected_move_bps', "") != "" else "-" }} bps</td>
+                <td class="num" data-sort-value="{{ row.get('expected_move_bps_calibrated', 0) or 0 }}" title="Raw: {{ row.get('expected_move_bps', '-') }} bps">{{ number(row.get('expected_move_bps_calibrated'), 0) if row.get('expected_move_bps_calibrated', "") != "" else "-" }} bps</td>
                 <td>{{ (row.get('magnitude_bucket', '-') or "-")|title }}</td>
                 <td class="num" data-sort-value="{{ row.get('expected_profitability_score', 0) or 0 }}">{{ number(row.get('expected_profitability_score'), 2) if row.get('expected_profitability_score', "") != "" else "-" }}</td>
                 <td class="num" data-sort-value="{{ row.get('volatility_adjusted_score', 0) or 0 }}">{{ number(row.get('volatility_adjusted_score'), 3) if row.get('volatility_adjusted_score', "") != "" else "-" }}</td>

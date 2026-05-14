@@ -5,6 +5,11 @@ FORECAST_VERSION = 1
 
 TIER_A_FIELDS = [
     "symbol",
+    "forecast_scope",
+    "is_open_position",
+    "position_qty",
+    "position_entry_price",
+    "position_unrealized_plpc",
     "side",
     "current_trade_action",
     "candidate_rank",
@@ -21,9 +26,11 @@ TIER_A_FIELDS = [
 TIER_B_FIELDS = [
     "direction_context",
     "direction_basis",
+    "expected_5d_return_raw",
     "expected_1d_return",
     "expected_5d_return",
     "expected_move_bps",
+    "expected_move_bps_calibrated",
     "magnitude_bucket",
     "downside_risk_bps",
     "upside_risk_bps",
@@ -32,6 +39,9 @@ TIER_B_FIELDS = [
     "liquidity_penalty",
     "risk_adjusted_forecast_score",
     "expected_profitability_score",
+    "forecast_risk_penalty",
+    "confirmation_quality",
+    "operator_priority",
     "forecast_confirmation",
     "confirmation_score",
     "confirmation_reason",

@@ -9,6 +9,7 @@ from stockml.trading.per_symbol_forecast.derived import current_price, is_short,
 
 DEFAULT_STOP_MULTIPLIER = 1.0
 DEFAULT_TAKE_PROFIT_MULTIPLIER = 1.5
+DEFAULT_MOVE_VOL_MULTIPLIER = 1.5
 
 
 def rank_to_return_slope(history: pd.DataFrame, horizon_col: str = "target_return_5d") -> float:
@@ -95,6 +96,50 @@ def magnitude_bucket(expected_move_bps: float | None) -> str:
     return "large"
 
 
+def calibrated_move_bps(raw_move_bps: float | None, volatility: float | None, multiplier: float = DEFAULT_MOVE_VOL_MULTIPLIER) -> float | None:
+    if raw_move_bps is None:
+        return None
+    if volatility is None or volatility <= 0:
+        return raw_move_bps
+    return min(raw_move_bps, abs(volatility) * 10000.0 * multiplier)
+
+
+def forecast_risk_penalty(row: dict[str, Any], stop_bps: float) -> float:
+    penalty = 0.0
+    volatility = text(row.get("volatility_tier")).lower()
+    liquidity = text(row.get("liquidity_tier")).lower()
+    if volatility == "extreme":
+        penalty -= 40.0
+    elif volatility == "high":
+        penalty -= 20.0
+    if liquidity == "thin":
+        penalty -= 20.0
+    elif liquidity and liquidity not in {"high", "medium"}:
+        penalty -= 30.0
+    if stop_bps >= 1000:
+        penalty -= 20.0
+    elif stop_bps >= 700:
+        penalty -= 10.0
+    return penalty
+
+
+def confirmation_quality(confirmation_score: float | None, risk_penalty: float) -> str:
+    adjusted = (confirmation_score or 0.0) + risk_penalty
+    if adjusted >= 80:
+        return "high"
+    if adjusted >= 55:
+        return "medium"
+    return "low"
+
+
+def operator_priority(quality: str, risk_penalty: float, confirmation: str) -> str:
+    if confirmation == "conflicted" or quality == "low":
+        return "avoid"
+    if quality == "high" and risk_penalty >= -20:
+        return "high"
+    return "watch"
+
+
 def regime_label(row: dict[str, Any]) -> str:
     tier = text(row.get("volatility_tier")).lower()
     if tier == "extreme":
@@ -131,6 +176,7 @@ def statistical_fields(row: dict[str, Any], slope_5d: float = 0.0) -> dict[str, 
     expected_1d = expected_5d / 5.0 if expected_5d is not None else None
     expected_move = abs(expected_5d * 10000.0) if expected_5d is not None else None
     vol_bps = abs(vol or 0.0) * 10000.0
+    calibrated_move = calibrated_move_bps(expected_move, vol)
     stop_bps = vol_bps * DEFAULT_STOP_MULTIPLIER
     take_profit_bps = vol_bps * DEFAULT_TAKE_PROFIT_MULTIPLIER
     price = current_price(row)
@@ -144,14 +190,17 @@ def statistical_fields(row: dict[str, Any], slope_5d: float = 0.0) -> dict[str, 
     spread_adj = spread_penalty(spread)
     liquidity_adj = liquidity_penalty(row)
     risk_adjusted = None if vol_adj is None else vol_adj + spread_adj + liquidity_adj
-    profitability = None if expected_move is None or risk_adjusted is None else expected_move + risk_adjusted
+    risk_penalty = forecast_risk_penalty(row, stop_bps)
+    profitability = None if calibrated_move is None or risk_adjusted is None else calibrated_move + risk_adjusted + risk_penalty
     return {
         "direction_context": direction_context(row, expected_5d),
         "direction_basis": direction_basis(row, expected_5d),
+        "expected_5d_return_raw": expected_5d,
         "expected_1d_return": expected_1d,
         "expected_5d_return": expected_5d,
         "expected_move_bps": expected_move,
-        "magnitude_bucket": magnitude_bucket(expected_move),
+        "expected_move_bps_calibrated": calibrated_move,
+        "magnitude_bucket": magnitude_bucket(calibrated_move),
         "downside_risk_bps": vol_bps,
         "upside_risk_bps": vol_bps,
         "volatility_adjusted_score": vol_adj,
@@ -159,6 +208,7 @@ def statistical_fields(row: dict[str, Any], slope_5d: float = 0.0) -> dict[str, 
         "liquidity_penalty": liquidity_adj,
         "risk_adjusted_forecast_score": risk_adjusted,
         "expected_profitability_score": profitability,
+        "forecast_risk_penalty": risk_penalty,
         "suggested_stop_bps": stop_bps,
         "suggested_take_profit_bps": take_profit_bps,
         "invalidation_level": invalidation,

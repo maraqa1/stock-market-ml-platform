@@ -46,10 +46,11 @@ def side_alignment(record: dict[str, Any]) -> str:
 
 def confirmation_fields(record: dict[str, Any]) -> dict[str, Any]:
     alignment = side_alignment(record)
-    expected_move = _num(record.get("expected_move_bps"))
+    expected_move = _num(record.get("expected_move_bps_calibrated") or record.get("expected_move_bps"))
     profitability = _num(record.get("expected_profitability_score"))
     stop = _num(record.get("suggested_stop_bps"))
     take_profit = _num(record.get("suggested_take_profit_bps"))
+    risk_penalty = _num(record.get("forecast_risk_penalty")) or 0.0
 
     magnitude_ok = expected_move is not None and expected_move >= 50.0
     profitability_ok = profitability is not None and profitability > 0.0
@@ -91,6 +92,19 @@ def confirmation_fields(record: dict[str, Any]) -> dict[str, Any]:
         confirmation = "weak_confirm"
     else:
         confirmation = "insufficient_data"
+    adjusted = score + risk_penalty
+    if adjusted >= 80:
+        quality = "high"
+    elif adjusted >= 55:
+        quality = "medium"
+    else:
+        quality = "low"
+    if confirmation == "conflicted" or quality == "low":
+        priority = "avoid"
+    elif quality == "high" and risk_penalty >= -20:
+        priority = "high"
+    else:
+        priority = "watch"
 
     return {
         "forecast_confirmation": confirmation,
@@ -100,4 +114,6 @@ def confirmation_fields(record: dict[str, Any]) -> dict[str, Any]:
         "magnitude_ok": magnitude_ok,
         "profitability_ok": profitability_ok,
         "risk_reward_ok": risk_reward_ok,
+        "confirmation_quality": quality,
+        "operator_priority": priority,
     }

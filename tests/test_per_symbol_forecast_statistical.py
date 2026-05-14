@@ -1,6 +1,7 @@
 import pandas as pd
 
 from stockml.trading.per_symbol_forecast.statistical import (
+    calibrated_move_bps,
     direction_context,
     magnitude_bucket,
     rank_to_return_slope,
@@ -40,3 +41,8 @@ def test_direction_and_magnitude_context_are_diagnostic_not_probability():
     assert magnitude_bucket(25) == "small"
     assert magnitude_bucket(100) == "medium"
     assert magnitude_bucket(250) == "large"
+
+
+def test_expected_move_is_calibrated_by_volatility_cap():
+    assert calibrated_move_bps(1000, 0.02) == 300
+    assert calibrated_move_bps(100, 0.02) == 100

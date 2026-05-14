@@ -36,9 +36,15 @@ def model_score(row: dict[str, Any]) -> float | None:
 
 
 def derived_fields(row: dict[str, Any], generated_at: str) -> dict[str, Any]:
+    is_open_position = bool(row.get("__is_open_position"))
     return {
         "generated_at": generated_at,
         "symbol": canonical_symbol(row),
+        "forecast_scope": text(row.get("__forecast_scope") or ("open_position" if is_open_position else "candidate")),
+        "is_open_position": is_open_position,
+        "position_qty": num(row.get("qty") or row.get("position_qty")),
+        "position_entry_price": num(row.get("avg_entry_price") or row.get("entry_price") or row.get("position_entry_price")),
+        "position_unrealized_plpc": num(row.get("unrealized_plpc") or row.get("position_unrealized_plpc")),
         "side": text(row.get("side")),
         "current_trade_action": text(row.get("trade_action") or row.get("action") or row.get("candidate_status")),
         "candidate_rank": row.get("candidate_rank") or row.get("rank"),
