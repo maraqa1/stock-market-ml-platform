@@ -34,6 +34,8 @@ def evaluate_meta_label_gate(row: pd.Series, config: MetaLabelGateConfig | None 
     if float(probability) < cfg.min_meta_label_probability:
         return False, "meta_label_probability_below_threshold"
     expected = pd.to_numeric(pd.Series([row.get("expected_trade_return")]), errors="coerce").fillna(0).iloc[0]
+    if action == "short":
+        expected = abs(float(expected))
     cost = float(cfg.transaction_cost_bps) / 10_000.0
     if float(expected) <= cost:
         return False, "expected_trade_return_below_transaction_cost"

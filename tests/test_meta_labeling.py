@@ -83,6 +83,19 @@ def test_high_meta_label_probability_allows_trade_only_if_risk_gate_passes():
     assert evaluate_meta_label_gate(row, MetaLabelGateConfig(), risk_gate_passed=False) == (False, "risk_gate_failed")
 
 
+def test_short_meta_label_gate_uses_directional_expected_return():
+    row = pd.Series(
+        {
+            "trade_action": "Short",
+            "decision_grade": "decision_grade",
+            "meta_label_probability": 0.80,
+            "expected_trade_return": -0.02,
+        }
+    )
+
+    assert evaluate_meta_label_gate(row, MetaLabelGateConfig(), risk_gate_passed=True) == (True, "meta_label_gate_passed")
+
+
 def test_embargoed_validation_prevents_overlap():
     dates = pd.date_range("2026-01-01", periods=40, freq="D")
     splits = walk_forward_meta_splits(dates, embargo_days=5, folds=3)
