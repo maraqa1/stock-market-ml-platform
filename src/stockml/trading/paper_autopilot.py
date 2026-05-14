@@ -13,6 +13,7 @@ from stockml.autopilot.open import (
     apply_auto_open,
     latest_flat_account_fallback_candidates,
     latest_near_miss_fallback_candidates,
+    latest_per_symbol_forecast_fallback_candidates,
     latest_strong_candidates,
     load_auto_open_config,
 )
@@ -615,6 +616,7 @@ def tick(
     strong_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_strong_candidates,
     fallback_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_flat_account_fallback_candidates,
     near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
+    per_symbol_forecast_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
     allow_auto_open: bool = True,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
@@ -699,6 +701,11 @@ def tick(
         elif state.get("mode") == "paper_autopilot" and open_orders == 0 and eod_state == "inactive":
             positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
             candidates = strong_candidate_loader()
+            if not candidates:
+                if per_symbol_forecast_candidate_loader is not None:
+                    candidates = per_symbol_forecast_candidate_loader()
+                else:
+                    candidates = latest_per_symbol_forecast_fallback_candidates(root=root)
             if not candidates:
                 if near_miss_candidate_loader is not None:
                     candidates = near_miss_candidate_loader()

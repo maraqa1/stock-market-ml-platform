@@ -57,6 +57,13 @@ class AutoOpenConfig:
         "liquidity_below_minimum",
         "volatility_extreme",
     )
+    per_symbol_forecast_fallback_enabled: bool = True
+    per_symbol_forecast_fallback_max_per_day: int = 5
+    per_symbol_forecast_fallback_size_multiplier: float = 0.75
+    per_symbol_forecast_fallback_max_file_age_minutes: int = 30
+    per_symbol_forecast_fallback_min_confirmation_score: float = 80.0
+    per_symbol_forecast_fallback_min_profitability_score: float = 0.0
+    per_symbol_forecast_fallback_allowed_confirmations: tuple[str, ...] = ("confirmed",)
 
 
 def _aware(value: datetime | None = None) -> datetime:
@@ -116,6 +123,13 @@ def _default_payload() -> dict[str, Any]:
                 "liquidity_below_minimum",
                 "volatility_extreme",
             ],
+            "per_symbol_forecast_fallback_enabled": True,
+            "per_symbol_forecast_fallback_max_per_day": 5,
+            "per_symbol_forecast_fallback_size_multiplier": 0.75,
+            "per_symbol_forecast_fallback_max_file_age_minutes": 30,
+            "per_symbol_forecast_fallback_min_confirmation_score": 80,
+            "per_symbol_forecast_fallback_min_profitability_score": 0,
+            "per_symbol_forecast_fallback_allowed_confirmations": ["confirmed"],
         },
     }
 
@@ -156,6 +170,13 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         hard_fail_gate_values = tuple(str(part).strip() for part in hard_fail_gates if str(part).strip())
     else:
         hard_fail_gate_values = AutoOpenConfig.near_miss_fallback_block_hard_fail_gates
+    allowed_confirmations = section.get("per_symbol_forecast_fallback_allowed_confirmations")
+    if isinstance(allowed_confirmations, str):
+        allowed_confirmation_values = tuple(part.strip().lower() for part in allowed_confirmations.split(",") if part.strip())
+    elif isinstance(allowed_confirmations, list):
+        allowed_confirmation_values = tuple(str(part).strip().lower() for part in allowed_confirmations if str(part).strip())
+    else:
+        allowed_confirmation_values = AutoOpenConfig.per_symbol_forecast_fallback_allowed_confirmations
     return AutoOpenConfig(
         open_enabled=bool(section.get("open_enabled", False)),
         rotate_enabled=bool(section.get("rotate_enabled", False)),
@@ -179,6 +200,13 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         near_miss_fallback_allowed_severities=allowed_severity_values,
         near_miss_fallback_allowed_gates=allowed_gate_values,
         near_miss_fallback_block_hard_fail_gates=hard_fail_gate_values,
+        per_symbol_forecast_fallback_enabled=bool(section.get("per_symbol_forecast_fallback_enabled", True)),
+        per_symbol_forecast_fallback_max_per_day=int(section.get("per_symbol_forecast_fallback_max_per_day", 5)),
+        per_symbol_forecast_fallback_size_multiplier=float(section.get("per_symbol_forecast_fallback_size_multiplier", 0.75)),
+        per_symbol_forecast_fallback_max_file_age_minutes=int(section.get("per_symbol_forecast_fallback_max_file_age_minutes", 30)),
+        per_symbol_forecast_fallback_min_confirmation_score=float(section.get("per_symbol_forecast_fallback_min_confirmation_score", 80)),
+        per_symbol_forecast_fallback_min_profitability_score=float(section.get("per_symbol_forecast_fallback_min_profitability_score", 0)),
+        per_symbol_forecast_fallback_allowed_confirmations=allowed_confirmation_values,
     )
 
 
@@ -328,6 +356,20 @@ def _latest_near_miss_file(root: Path | str | None = None) -> Path | None:
     return matches[0] if matches else None
 
 
+def _per_symbol_forecast_dir(root: Path | str | None = None) -> Path:
+    if root is None:
+        return TRADING_DIR / "per_symbol_forecast"
+    return Path(root) / "data" / "trading" / "per_symbol_forecast"
+
+
+def _latest_per_symbol_forecast_file(root: Path | str | None = None) -> Path | None:
+    directory = _per_symbol_forecast_dir(root)
+    if not directory.exists():
+        return None
+    matches = sorted(directory.glob("per_symbol_forecast_*.csv"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return matches[0] if matches else None
+
+
 def latest_near_miss_fallback_candidates(
     *,
     root: Path | str | None = None,
@@ -409,6 +451,85 @@ def latest_near_miss_fallback_candidates(
     return candidates
 
 
+def latest_per_symbol_forecast_fallback_candidates(
+    *,
+    root: Path | str | None = None,
+    config: AutoOpenConfig | None = None,
+    limit: int = 5,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    cfg = config or load_auto_open_config(root=root)
+    if not cfg.per_symbol_forecast_fallback_enabled:
+        return []
+    path = _latest_per_symbol_forecast_file(root)
+    if path is None:
+        return []
+    stamp = _aware(now)
+    try:
+        file_stamp = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        return []
+    max_age_seconds = max(0, cfg.per_symbol_forecast_fallback_max_file_age_minutes) * 60
+    if max_age_seconds and (stamp - file_stamp).total_seconds() > max_age_seconds:
+        return []
+    try:
+        frame = pd.read_csv(path, low_memory=False)
+    except Exception:
+        return []
+    if frame.empty:
+        return []
+    allowed = {
+        str(value).strip().lower()
+        for value in cfg.per_symbol_forecast_fallback_allowed_confirmations
+        if str(value).strip()
+    }
+    frame = frame.copy()
+    frame["__symbol"] = frame.get("symbol", pd.Series("", index=frame.index)).fillna("").astype(str).str.upper()
+    frame["__confirmation"] = frame.get("forecast_confirmation", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+    frame["__side_alignment"] = frame.get("side_alignment", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+    frame["__score"] = pd.to_numeric(frame.get("confirmation_score", pd.Series(index=frame.index)), errors="coerce")
+    frame["__profitability"] = pd.to_numeric(frame.get("expected_profitability_score", pd.Series(index=frame.index)), errors="coerce")
+    frame["__risk_reward"] = frame.get("risk_reward_ok", pd.Series(False, index=frame.index)).fillna(False).astype(str).str.lower().isin({"true", "1", "yes"})
+    eligible = (
+        frame["__symbol"].ne("")
+        & frame["__confirmation"].isin(allowed)
+        & frame["__side_alignment"].eq("aligned")
+        & frame["__score"].ge(cfg.per_symbol_forecast_fallback_min_confirmation_score)
+        & frame["__profitability"].ge(cfg.per_symbol_forecast_fallback_min_profitability_score)
+        & frame["__risk_reward"]
+    )
+    selected = frame[eligible].sort_values(["__profitability", "__score", "__symbol"], ascending=[False, False, True]).drop_duplicates("__symbol").head(limit)
+    candidates: list[dict[str, Any]] = []
+    for row in selected.fillna("").to_dict("records"):
+        side_text = str(row.get("side") or row.get("current_trade_action") or "").lower()
+        bias = "short" if side_text in {"sell", "short"} or "short" in side_text else "long"
+        details = {
+            "per_symbol_forecast_fallback": True,
+            "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+            "forecast_confirmation": row.get("forecast_confirmation"),
+            "confirmation_score": _float(row.get("confirmation_score")),
+            "confirmation_reason": row.get("confirmation_reason"),
+            "expected_profitability_score": _float(row.get("expected_profitability_score")),
+            "expected_move_bps": _float(row.get("expected_move_bps")),
+            "magnitude_bucket": row.get("magnitude_bucket"),
+            "direction_context": row.get("direction_context"),
+            "side_alignment": row.get("side_alignment"),
+            "risk_reward_ok": bool(row.get("__risk_reward")),
+            "is_first_15_min": False,
+            "is_last_30_min": False,
+        }
+        candidates.append(
+            {
+                "symbol": row.get("__symbol"),
+                "promotion_score": _float(row.get("expected_profitability_score") or row.get("confirmation_score")),
+                "nightly_bias": bias,
+                "is_held": False,
+                "details": details,
+            }
+        )
+    return candidates
+
+
 def _todays_open_count(engine: Engine, now: datetime) -> int:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     with engine.connect() as conn:
@@ -439,6 +560,10 @@ def _todays_fallback_open_count(engine: Engine, now: datetime) -> int:
 
 def _todays_near_miss_open_count(engine: Engine, now: datetime) -> int:
     return _todays_detail_open_count(engine, now, "near_miss_fallback")
+
+
+def _todays_per_symbol_forecast_open_count(engine: Engine, now: datetime) -> int:
+    return _todays_detail_open_count(engine, now, "per_symbol_forecast_fallback")
 
 
 def _record_open(
@@ -528,7 +653,10 @@ def apply_auto_open(
         details = candidate.get("details") or {}
         is_fallback = bool(details.get("flat_account_fallback"))
         is_near_miss = bool(details.get("near_miss_fallback"))
-        if is_near_miss:
+        is_per_symbol_forecast = bool(details.get("per_symbol_forecast_fallback"))
+        if is_per_symbol_forecast:
+            order_size = round(size * cfg.per_symbol_forecast_fallback_size_multiplier, 2)
+        elif is_near_miss:
             order_size = round(size * cfg.near_miss_fallback_size_multiplier, 2)
         elif is_fallback:
             order_size = round(size * cfg.flat_account_fallback_size_multiplier, 2)
@@ -554,9 +682,14 @@ def apply_auto_open(
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="near_miss_daily_cap_reached", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:near_miss_daily_cap_reached")
             continue
+        if is_per_symbol_forecast and _todays_per_symbol_forecast_open_count(db, stamp) >= cfg.per_symbol_forecast_fallback_max_per_day:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="per_symbol_forecast_daily_cap_reached", details=details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:per_symbol_forecast_daily_cap_reached")
+            continue
         if order_size < cfg.min_position_value_usd:
             blocked += 1
-            size_reason = "near_miss_size_below_min" if is_near_miss else ("fallback_size_below_min" if is_fallback else "position_size_below_min")
+            size_reason = "per_symbol_forecast_size_below_min" if is_per_symbol_forecast else ("near_miss_size_below_min" if is_near_miss else ("fallback_size_below_min" if is_fallback else "position_size_below_min"))
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=size_reason, details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:position_size_below_min")
             continue
@@ -599,7 +732,7 @@ def apply_auto_open(
             opened += 1
             held.add(symbol)
             slots -= 1
-            prefix = "near_miss_opened" if is_near_miss else ("fallback_opened" if is_fallback else "opened")
+            prefix = "per_symbol_forecast_opened" if is_per_symbol_forecast else ("near_miss_opened" if is_near_miss else ("fallback_opened" if is_fallback else "opened"))
             notes.append(f"{symbol}:{prefix}:{order_id or 'submitted'}")
         except AlpacaAPIError as exc:
             blocked += 1

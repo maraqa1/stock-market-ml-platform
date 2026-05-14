@@ -11,6 +11,7 @@ from stockml.autopilot.open import (
     apply_auto_open,
     latest_flat_account_fallback_candidates,
     latest_near_miss_fallback_candidates,
+    latest_per_symbol_forecast_fallback_candidates,
     load_auto_open_config,
     position_size_usd,
     set_auto_open_enabled,
@@ -308,6 +309,63 @@ def test_near_miss_fallback_candidates_select_configured_near_misses(tmp_path):
     assert candidates[0]["details"]["failed_gate"] == "risk_adjusted_score_below_threshold"
 
 
+def test_per_symbol_forecast_fallback_candidates_select_most_profitable_confirmed(tmp_path):
+    directory = tmp_path / "data" / "trading" / "per_symbol_forecast"
+    directory.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "LOWP",
+                "side": "buy",
+                "current_trade_action": "Long",
+                "forecast_confirmation": "confirmed",
+                "confirmation_score": 95,
+                "confirmation_reason": "side_aligned;magnitude_ok;profitability_ok;risk_reward_ok",
+                "side_alignment": "aligned",
+                "expected_profitability_score": 10,
+                "expected_move_bps": 60,
+                "magnitude_bucket": "medium",
+                "direction_context": "long_bias",
+                "risk_reward_ok": True,
+            },
+            {
+                "symbol": "HIGHP",
+                "side": "buy",
+                "current_trade_action": "Long",
+                "forecast_confirmation": "confirmed",
+                "confirmation_score": 90,
+                "confirmation_reason": "side_aligned;magnitude_ok;profitability_ok;risk_reward_ok",
+                "side_alignment": "aligned",
+                "expected_profitability_score": 100,
+                "expected_move_bps": 150,
+                "magnitude_bucket": "large",
+                "direction_context": "long_bias",
+                "risk_reward_ok": True,
+            },
+            {
+                "symbol": "CONFLICT",
+                "side": "buy",
+                "current_trade_action": "Long",
+                "forecast_confirmation": "conflicted",
+                "confirmation_score": 60,
+                "side_alignment": "conflicted",
+                "expected_profitability_score": 200,
+                "risk_reward_ok": True,
+            },
+        ]
+    ).to_csv(directory / "per_symbol_forecast_20260514_120000.csv", index=False)
+
+    candidates = latest_per_symbol_forecast_fallback_candidates(
+        root=tmp_path,
+        config=AutoOpenConfig(per_symbol_forecast_fallback_enabled=True),
+    )
+
+    assert [candidate["symbol"] for candidate in candidates[:2]] == ["HIGHP", "LOWP"]
+    assert candidates[0]["details"]["per_symbol_forecast_fallback"] is True
+    assert candidates[0]["details"]["fallback_reason"] == "per_symbol_forecast_confirmed_candidate"
+    assert candidates[0]["promotion_score"] == 100
+
+
 def test_near_miss_fallback_candidates_include_moderate_gaps_without_hard_safety_fails(tmp_path):
     directory = tmp_path / "data" / "trading" / "near_miss"
     directory.mkdir(parents=True)
@@ -450,6 +508,37 @@ def test_auto_open_uses_smaller_size_for_near_miss_fallback():
     with engine.connect() as conn:
         row = conn.execute(select(autopilot_open_log)).mappings().one()
     assert row["details"]["near_miss_fallback"] is True
+
+
+def test_auto_open_uses_per_symbol_forecast_size_and_log_prefix():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("HIGHP")
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, per_symbol_forecast_fallback_size_multiplier=0.50),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["symbol"] == "HIGHP"
+    assert client.orders[0]["notional"] == "50.0"
+    assert "HIGHP:per_symbol_forecast_opened:order-HIGHP" in result["autopilot_open_notes"]
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["details"]["per_symbol_forecast_fallback"] is True
 
 
 def test_auto_open_near_miss_can_fill_remaining_slot_when_position_is_open():
@@ -699,6 +788,39 @@ def test_paper_autopilot_tick_prefers_near_miss_before_flat_fallback(monkeypatch
     assert calls and calls[0][0][0]["symbol"] == "GLIBK"
     assert all(candidate["symbol"] != "ANGI" for candidate in calls[0][0])
     assert calls[0][1] == []
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_open_submitted"] == 1
+
+
+def test_paper_autopilot_tick_prefers_per_symbol_forecast_before_near_miss(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([]).to_csv(tracking, index=False)
+    pd.DataFrame([]).to_csv(positions, index=False)
+    calls = []
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [],
+        fallback_candidate_loader=lambda: [_fallback_candidate("ANGI")],
+        per_symbol_forecast_candidate_loader=lambda: [_candidate("HIGHP")],
+        near_miss_candidate_loader=lambda: [_candidate("GLIBK")],
+        auto_open_applier=lambda candidates, open_positions, mode: calls.append((candidates, open_positions, mode))
+        or {
+            "autopilot_open_attempted": 1,
+            "autopilot_open_submitted": 1,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "HIGHP:per_symbol_forecast_opened:order-HIGHP",
+        },
+    )
+
+    assert calls and calls[0][0][0]["symbol"] == "HIGHP"
+    assert all(candidate["symbol"] != "GLIBK" for candidate in calls[0][0])
     assert state["phase"] == "waiting_for_fills"
     assert state["autopilot_open_submitted"] == 1
 
