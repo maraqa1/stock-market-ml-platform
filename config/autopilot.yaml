@@ -18,6 +18,7 @@ autopilot:
   near_miss_fallback_max_per_day: 5
   near_miss_fallback_size_multiplier: 0.75
   near_miss_fallback_max_distance_pct: 0.25
+  near_miss_fallback_max_file_age_minutes: 30
   near_miss_fallback_allowed_severities:
   - near_miss
   - moderate_gap

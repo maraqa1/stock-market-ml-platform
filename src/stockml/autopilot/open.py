@@ -44,6 +44,7 @@ class AutoOpenConfig:
     near_miss_fallback_max_per_day: int = 5
     near_miss_fallback_size_multiplier: float = 0.75
     near_miss_fallback_max_distance_pct: float = 0.25
+    near_miss_fallback_max_file_age_minutes: int = 30
     near_miss_fallback_allowed_severities: tuple[str, ...] = ("near_miss", "moderate_gap")
     near_miss_fallback_allowed_gates: tuple[str, ...] = (
         "risk_adjusted_score_below_threshold",
@@ -102,6 +103,7 @@ def _default_payload() -> dict[str, Any]:
             "near_miss_fallback_max_per_day": 5,
             "near_miss_fallback_size_multiplier": 0.75,
             "near_miss_fallback_max_distance_pct": 0.25,
+            "near_miss_fallback_max_file_age_minutes": 30,
             "near_miss_fallback_allowed_severities": ["near_miss", "moderate_gap"],
             "near_miss_fallback_allowed_gates": [
                 "risk_adjusted_score_below_threshold",
@@ -173,6 +175,7 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         near_miss_fallback_max_per_day=int(section.get("near_miss_fallback_max_per_day", 5)),
         near_miss_fallback_size_multiplier=float(section.get("near_miss_fallback_size_multiplier", 0.75)),
         near_miss_fallback_max_distance_pct=float(section.get("near_miss_fallback_max_distance_pct", 0.25)),
+        near_miss_fallback_max_file_age_minutes=int(section.get("near_miss_fallback_max_file_age_minutes", 30)),
         near_miss_fallback_allowed_severities=allowed_severity_values,
         near_miss_fallback_allowed_gates=allowed_gate_values,
         near_miss_fallback_block_hard_fail_gates=hard_fail_gate_values,
@@ -330,12 +333,21 @@ def latest_near_miss_fallback_candidates(
     root: Path | str | None = None,
     config: AutoOpenConfig | None = None,
     limit: int = 5,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     cfg = config or load_auto_open_config(root=root)
     if not cfg.near_miss_fallback_enabled:
         return []
     path = _latest_near_miss_file(root)
     if path is None:
+        return []
+    stamp = _aware(now)
+    try:
+        file_stamp = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        return []
+    max_age_seconds = max(0, cfg.near_miss_fallback_max_file_age_minutes) * 60
+    if max_age_seconds and (stamp - file_stamp).total_seconds() > max_age_seconds:
         return []
     try:
         frame = pd.read_csv(path, low_memory=False)

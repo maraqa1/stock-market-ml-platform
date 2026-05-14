@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 
 import pandas as pd
 from sqlalchemy import create_engine, insert, select
@@ -359,6 +360,40 @@ def test_near_miss_fallback_candidates_include_moderate_gaps_without_hard_safety
 
     assert [candidate["symbol"] for candidate in candidates] == ["DOO"]
     assert candidates[0]["details"]["severity"] == "moderate_gap"
+
+
+def test_near_miss_fallback_ignores_stale_analysis_file(tmp_path):
+    directory = tmp_path / "data" / "trading" / "near_miss"
+    directory.mkdir(parents=True)
+    path = directory / "near_miss_20260513_180202.csv"
+    pd.DataFrame(
+        [
+            {
+                "symbol": "GLIBK",
+                "side": "buy",
+                "status": "rejected",
+                "failed_gate": "risk_adjusted_score_below_threshold",
+                "failed_gate_label": "Risk-adjusted score below threshold",
+                "actual_value": 0.00499,
+                "required_value": 0.005,
+                "distance_to_pass": 0.00001,
+                "distance_pct": 0.002,
+                "severity": "near_miss",
+                "reason": "Risk-adjusted score below threshold",
+                "risk_adjusted_score": 0.00499,
+            },
+        ]
+    ).to_csv(path, index=False)
+    stale_stamp = datetime(2026, 5, 14, 13, 0, tzinfo=timezone.utc).timestamp()
+    os.utime(path, (stale_stamp, stale_stamp))
+
+    candidates = latest_near_miss_fallback_candidates(
+        root=tmp_path,
+        config=AutoOpenConfig(near_miss_fallback_enabled=True, near_miss_fallback_max_file_age_minutes=30),
+        now=datetime(2026, 5, 14, 14, 0, tzinfo=timezone.utc),
+    )
+
+    assert candidates == []
 
 
 def test_auto_open_uses_reduced_size_for_flat_account_fallback():
