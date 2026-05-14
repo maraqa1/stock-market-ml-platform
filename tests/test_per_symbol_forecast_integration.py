@@ -28,6 +28,8 @@ def test_trading_page_renders_per_symbol_forecast_panel(tmp_path: Path):
                 "suggested_stop_bps": 200,
                 "suggested_take_profit_bps": 300,
                 "tier_c_status": "uncalibrated",
+                "forecast_confirmation": "confirmed",
+                "confirmation_score": 100,
             }
         ]
     ).to_csv(path, index=False)
@@ -39,6 +41,7 @@ def test_trading_page_renders_per_symbol_forecast_panel(tmp_path: Path):
     assert response.status_code == 200
     assert b"Per-Symbol Forecasts" in response.data
     assert b"Diagnostic only" in response.data
+    assert b"Confirmed" in response.data
     assert b"AAPL" in response.data
 
 

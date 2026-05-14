@@ -45,9 +45,11 @@ The synchronized intraday clock runs the forecast generation after candidate ref
 
 Tier A fields are derived directly from existing inputs. Examples: symbol, side, current trade action, candidate rank, current price, meta-label probability, spread, and intraday range position.
 
-Tier B fields are statistical context. Examples: direction context, direction basis, expected 1-day and 5-day return, expected move in bps, magnitude bucket, downside and upside risk, volatility-adjusted score, penalties, expected profitability score, suggested stop and take-profit levels, invalidation level, regime label, and forecast reason.
+Tier B fields are statistical context. Examples: direction context, direction basis, expected 1-day and 5-day return, expected move in bps, magnitude bucket, downside and upside risk, volatility-adjusted score, penalties, expected profitability score, forecast confirmation, confirmation score, suggested stop and take-profit levels, invalidation level, regime label, and forecast reason.
 
 Direction context is not a calibrated probability. It is derived from candidate side, trade action, or the sign of expected return. Magnitude is bucketed from expected move bps. Expected profitability is an ordinal diagnostic score that combines expected move context with the risk-adjusted forecast score.
+
+Forecast confirmation is also diagnostic only. It classifies each row as `confirmed`, `weak_confirm`, `conflicted`, or `insufficient_data` using side alignment, expected move, profitability, and risk/reward completeness. It is not allowed to open trades directly.
 
 Tier C fields require calibrated predictive models. In the MVP they are present in the schema but intentionally null, with `tier_c_status=uncalibrated`. They must not be filled by scaling ranking scores into pseudo-probabilities.
 

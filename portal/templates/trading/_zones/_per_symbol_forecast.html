@@ -19,6 +19,17 @@
         <small class="kpi-card__detail">probabilities stay blank until calibrated</small>
       </article>
       <article class="kpi-card">
+        <span class="kpi-card__label">Top Confirmation</span>
+        <strong class="kpi-card__value">
+          {% if per_symbol_forecast.summary.top_confirmations %}
+            {{ per_symbol_forecast.summary.top_confirmations[0].label|replace("_", " ")|title }}
+          {% else %}
+            None
+          {% endif %}
+        </strong>
+        <small class="kpi-card__detail">diagnostic gate only</small>
+      </article>
+      <article class="kpi-card">
         <span class="kpi-card__label">Top Reason</span>
         <strong class="kpi-card__value">
           {% if per_symbol_forecast.summary.top_reasons %}
@@ -39,6 +50,8 @@
             <th>Side</th>
             <th>Action</th>
             <th class="num" data-sortable data-sort-key="rank" data-sort-type="number">Rank</th>
+            <th>Confirmation</th>
+            <th class="num" data-sortable data-sort-key="confirmation_score" data-sort-type="number">Confirm Score</th>
             <th>Direction</th>
             <th class="num" data-sortable data-sort-key="move" data-sort-type="number">Expected Move</th>
             <th>Magnitude</th>
@@ -53,7 +66,7 @@
         <tbody>
           {% if not per_symbol_forecast.rows %}
             <tr>
-              <td colspan="13" class="empty small">No per-symbol forecast file yet. Run the per-symbol forecast stage after the shortlist is generated.</td>
+              <td colspan="15" class="empty small">No per-symbol forecast file yet. Run the per-symbol forecast stage after the shortlist is generated.</td>
             </tr>
           {% else %}
             {% for row in per_symbol_forecast.rows %}
@@ -62,6 +75,8 @@
                 <td>{{ row.get('side', '-') or "-" }}</td>
                 <td>{{ row.get('current_trade_action', '-') or "-" }}</td>
                 <td class="num" data-sort-value="{{ row.get('candidate_rank', 0) or 0 }}">{{ number(row.get('candidate_rank'), 0) if row.get('candidate_rank', "") != "" else "-" }}</td>
+                <td title="{{ row.get('confirmation_reason', '') }}">{{ (row.get('forecast_confirmation', '-') or "-")|replace("_", " ")|title }}</td>
+                <td class="num" data-sort-value="{{ row.get('confirmation_score', 0) or 0 }}">{{ number(row.get('confirmation_score'), 0) if row.get('confirmation_score', "") != "" else "-" }}</td>
                 <td title="{{ row.get('direction_basis', '') }}">{{ (row.get('direction_context', '-') or "-")|replace("_", " ")|title }}</td>
                 <td class="num" data-sort-value="{{ row.get('expected_move_bps', 0) or 0 }}">{{ number(row.get('expected_move_bps'), 0) if row.get('expected_move_bps', "") != "" else "-" }} bps</td>
                 <td>{{ (row.get('magnitude_bucket', '-') or "-")|title }}</td>

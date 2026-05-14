@@ -109,7 +109,7 @@ def trading_snapshot_csv(root: Path) -> str:
     queue = action_queue_context(root)
     promotions = intraday_promotion_context(root)
     near_miss = near_miss_context(root)
-    per_symbol_forecast = per_symbol_forecast_context(root)
+    per_symbol_forecast = per_symbol_forecast_context(root, limit=1000)
     rows: list[dict] = []
 
     pools = [

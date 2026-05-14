@@ -29,6 +29,7 @@ def test_forecast_rows_schema_is_stable():
     assert list(frame.columns) == OUTPUT_COLUMNS
     assert bool(frame.iloc[0]["diagnostic_only"]) is True
     assert frame.iloc[0]["tier_c_status"] == "uncalibrated"
+    assert frame.iloc[0]["forecast_confirmation"] in {"confirmed", "weak_confirm", "conflicted", "insufficient_data"}
 
 
 def test_generate_per_symbol_forecast_writes_append_only_artifact(tmp_path: Path):

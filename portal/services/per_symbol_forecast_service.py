@@ -40,7 +40,7 @@ def _mode_value(frame: pd.DataFrame, column: str, default: str = "") -> str:
     return mode.iat[0] if not mode.empty else default
 
 
-def per_symbol_forecast_context(root: Path | None = None) -> dict[str, Any]:
+def per_symbol_forecast_context(root: Path | None = None, *, limit: int = 25) -> dict[str, Any]:
     resolved = project_root(root)
     path = _latest_forecast_file(resolved)
     frame = safe_read_csv(path)
@@ -49,12 +49,13 @@ def per_symbol_forecast_context(root: Path | None = None) -> dict[str, Any]:
         "file_name": path.name if path else "",
         "file_path": str(path or ""),
         "row_count": row_count,
-        "rows": _display_rows(frame),
+        "rows": _display_rows(frame, limit=limit),
         "summary": {
             "total_rows": row_count,
             "top_sides": _top_counts(frame, "side"),
             "top_regimes": _top_counts(frame, "regime_label"),
             "top_reasons": _top_counts(frame, "forecast_reason"),
+            "top_confirmations": _top_counts(frame, "forecast_confirmation"),
             "tier_c_status": _mode_value(frame, "tier_c_status", "uncalibrated"),
         },
     }

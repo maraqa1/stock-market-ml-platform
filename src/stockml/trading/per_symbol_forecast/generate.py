@@ -7,6 +7,7 @@ from typing import Iterable
 import pandas as pd
 
 from stockml.common.paths import PER_SYMBOL_FORECAST_DIR, PROJECT_ROOT, latest_file, timestamp
+from stockml.trading.per_symbol_forecast.confirmation import confirmation_fields
 from stockml.trading.per_symbol_forecast.derived import canonical_symbol, derived_fields
 from stockml.trading.per_symbol_forecast.model_stub import model_fields
 from stockml.trading.per_symbol_forecast.schema import OUTPUT_COLUMNS, output_record
@@ -59,6 +60,7 @@ def forecast_rows(candidates: pd.DataFrame, generated_at: str | None = None, lim
         record: dict[str, object] = {}
         record.update(derived_fields(row, generated_at=generated_at))
         record.update(statistical_fields(row, slope_5d=slope_5d))
+        record.update(confirmation_fields(record))
         record.update(model_fields())
         records.append(output_record(record))
     return validate_output(pd.DataFrame(records, columns=OUTPUT_COLUMNS))
