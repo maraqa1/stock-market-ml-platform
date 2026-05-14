@@ -773,8 +773,17 @@ def test_paper_autopilot_tick_prefers_near_miss_before_flat_fallback(monkeypatch
         tmp_path,
         refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
         broker_open_orders_func=lambda cfg: 0,
+        eod_runner=lambda frame, current_state, open_orders: {
+            "eod_state": "inactive",
+            "eod_actions": 0,
+            "eod_flatten_submitted": 0,
+            "eod_remaining": len(frame),
+            "eod_banner": "",
+            "eod_action_notes": "",
+        },
         strong_candidate_loader=lambda: [],
         fallback_candidate_loader=lambda: [_fallback_candidate("ANGI")],
+        per_symbol_forecast_candidate_loader=lambda: [],
         near_miss_candidate_loader=lambda: [_candidate("GLIBK")],
         auto_open_applier=lambda candidates, open_positions, mode: calls.append((candidates, open_positions, mode))
         or {
