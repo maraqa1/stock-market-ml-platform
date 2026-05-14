@@ -62,11 +62,11 @@
                 <td>{{ row.side or "-" }}</td>
                 <td>{{ row.current_trade_action or "-" }}</td>
                 <td class="num" data-sort-value="{{ row.candidate_rank or 0 }}">{{ number(row.candidate_rank, 0) if row.candidate_rank != "" else "-" }}</td>
-                <td title="{{ row.direction_basis or '' }}">{{ (row.direction_context or "-")|replace("_", " ")|title }}</td>
-                <td class="num" data-sort-value="{{ row.expected_move_bps or 0 }}">{{ number(row.expected_move_bps, 0) if row.expected_move_bps != "" else "-" }} bps</td>
-                <td>{{ (row.magnitude_bucket or "-")|title }}</td>
-                <td class="num" data-sort-value="{{ row.expected_profitability_score or 0 }}">{{ number(row.expected_profitability_score, 2) if row.expected_profitability_score != "" else "-" }}</td>
-                <td class="num" data-sort-value="{{ row.volatility_adjusted_score or 0 }}">{{ number(row.volatility_adjusted_score, 3) if row.volatility_adjusted_score != "" else "-" }}</td>
+                <td title="{{ row.get('direction_basis', '') }}">{{ (row.get('direction_context', '-') or "-")|replace("_", " ")|title }}</td>
+                <td class="num" data-sort-value="{{ row.get('expected_move_bps', 0) or 0 }}">{{ number(row.get('expected_move_bps'), 0) if row.get('expected_move_bps', "") != "" else "-" }} bps</td>
+                <td>{{ (row.get('magnitude_bucket', '-') or "-")|title }}</td>
+                <td class="num" data-sort-value="{{ row.get('expected_profitability_score', 0) or 0 }}">{{ number(row.get('expected_profitability_score'), 2) if row.get('expected_profitability_score', "") != "" else "-" }}</td>
+                <td class="num" data-sort-value="{{ row.get('volatility_adjusted_score', 0) or 0 }}">{{ number(row.get('volatility_adjusted_score'), 3) if row.get('volatility_adjusted_score', "") != "" else "-" }}</td>
                 <td>{{ row.regime_label or "-" }}</td>
                 <td>{{ (row.forecast_reason or "-")|replace("_", " ")|title }}</td>
                 <td class="num" data-sort-value="{{ row.suggested_stop_bps or 0 }}">
