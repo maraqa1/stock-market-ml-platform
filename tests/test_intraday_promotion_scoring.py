@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, insert, select
 
 from portal.app import create_app
 from stockml.db.schema import create_all, intraday_candidate_snapshots, intraday_promotion_log
-from stockml.intraday.promotion_score import evaluate_snapshot, explain_latest_snapshot, record_promotion_decision, score_unscored_snapshots
+from stockml.intraday.promotion_score import evaluate_snapshot, explain_latest_snapshot, intraday_adjustment, record_promotion_decision, score_unscored_snapshots
 
 
 NOW = datetime(2026, 5, 11, 15, 0, tzinfo=timezone.utc)
@@ -91,7 +91,7 @@ def test_short_confirmation_mirrors_long_direction():
         )
     )
 
-    assert decision.verdict == "promote_to_selection"
+    assert decision.verdict == "promote_to_selection_strong"
     assert "short_trend_5m_negative" in decision.contributing
 
 
@@ -119,6 +119,49 @@ def test_short_promotion_uses_directional_signal_strength():
 
     assert decision.verdict == "promote_to_selection_strong"
     assert decision.promotion_score > 0.6
+
+
+def test_short_intraday_adjustment_rewards_short_direction():
+    adjustment, contributing = intraday_adjustment(
+        row(
+            symbol="SQQQ",
+            nightly_bias="short",
+            trend_5m_pct=-1.2,
+            trend_15m_pct=-2.2,
+            intraday_range_position=0.25,
+            sector_etf_trend_5m_pct=-0.6,
+            distance_from_vwap_bps=-20,
+            details={"volume_ratio": 1.6, "spy_intraday_trend_5m_pct": -0.1, "vix_regime": "normal"},
+        )
+    )
+
+    assert adjustment > 0
+    assert "score_trend_5m_bonus" in contributing
+    assert "score_trend_15m_bonus" in contributing
+    assert "score_range_bonus" in contributing
+    assert "score_sector_bonus" in contributing
+
+
+def test_short_intraday_adjustment_does_not_reward_long_direction():
+    adjustment, contributing = intraday_adjustment(
+        row(
+            symbol="SQQQ",
+            nightly_bias="short",
+            trend_5m_pct=1.2,
+            trend_15m_pct=2.2,
+            intraday_range_position=0.75,
+            sector_etf_trend_5m_pct=0.6,
+            distance_from_vwap_bps=120,
+            details={"volume_ratio": 1.0, "spy_intraday_trend_5m_pct": 0.1, "vix_regime": "normal"},
+        )
+    )
+
+    assert adjustment < 0
+    assert "score_trend_5m_bonus" not in contributing
+    assert "score_trend_15m_bonus" not in contributing
+    assert "score_range_bonus" not in contributing
+    assert "score_sector_bonus" not in contributing
+    assert "score_vwap_penalty" in contributing
 
 
 def test_strong_candidate_gets_limited_spread_relaxation():
@@ -156,6 +199,28 @@ def test_wide_spread_relaxation_requires_strong_candidate_quality():
 
     assert decision.verdict == "block"
     assert decision.block_reason == "wide_spread"
+
+
+def test_short_strong_candidate_gets_limited_spread_relaxation_from_abs_score():
+    decision = evaluate_snapshot(
+        row(
+            symbol="SQQQ",
+            nightly_bias="short",
+            nightly_score=-0.6411,
+            spread_bps=30.26,
+            dollar_volume_today=1_913_491,
+            trend_5m_pct=-0.607,
+            trend_15m_pct=-1.2214,
+            distance_from_vwap_bps=-42.8,
+            intraday_range_position=0.39,
+            sector_etf_trend_5m_pct=0.0,
+            details={"volume_ratio": 1.0, "spy_intraday_trend_5m_pct": -0.1, "vix_regime": "normal"},
+        )
+    )
+
+    assert decision.verdict == "promote_to_selection"
+    assert decision.block_reason is None
+    assert "strong_candidate_spread_relaxed" in decision.contributing
 
 
 def test_nightly_signal_missing_blocks():

@@ -75,6 +75,7 @@ def eligibility_reasons(row: pd.Series, config: AlpacaConfig) -> list[str]:
 
 def quality_reasons(row: pd.Series, config: AlpacaConfig) -> list[str]:
     reasons: list[str] = []
+    action = str(row.get("trade_action", "")).strip().lower()
     price_raw = row.get("current_price")
     price = numeric(price_raw, default=-1)
     open_price = numeric(row.get("open_price"), default=0)
@@ -83,6 +84,9 @@ def quality_reasons(row: pd.Series, config: AlpacaConfig) -> list[str]:
     intraday_return = numeric(row.get("intraday_return_from_open"), default=0)
     expected = numeric(row.get("expected_trade_return"), default=0)
     risk_score = numeric(row.get("risk_adjusted_score"), default=0)
+    if action == "short":
+        expected = abs(expected)
+        risk_score = abs(risk_score)
 
     if _missing(price_raw):
         reasons.append("current_price_missing")
@@ -106,11 +110,15 @@ def quality_reasons(row: pd.Series, config: AlpacaConfig) -> list[str]:
     elif row.get("volatility_tier") == "extreme":
         reasons.append("volatility_extreme")
 
-    if intraday_return < -0.08:
+    if action == "short" and intraday_return > 0.08:
+        reasons.append("intraday_move_extreme_positive")
+    elif action != "short" and intraday_return < -0.08:
         reasons.append("intraday_move_extreme_negative")
     range_width = high - low
     position = (price - low) / range_width if range_width > 0 else 0.5
-    if open_price > 0 and intraday_return < -0.03 and position < 0.20:
+    if action == "short" and open_price > 0 and intraday_return > 0.03 and position > 0.80:
+        reasons.append("top_intraday_range_after_gap_up")
+    elif action != "short" and open_price > 0 and intraday_return < -0.03 and position < 0.20:
         reasons.append("bottom_intraday_range_after_gap_down")
     if expected < config.min_expected_trade_return:
         reasons.append("expected_trade_return_below_threshold")

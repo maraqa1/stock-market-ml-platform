@@ -122,11 +122,24 @@ def _absolute_edge(row: dict[str, Any]) -> float | None:
     return abs(value) if value is not None else None
 
 
+def _is_short(row: dict[str, Any]) -> bool:
+    side = _text(row.get("side")).lower()
+    action = _text(row.get("trade_action")).lower()
+    return side == "sell" or action == "short"
+
+
+def _directional_num(row: dict[str, Any], key: str) -> float | None:
+    value = _num(row.get(key))
+    if value is None:
+        return None
+    return abs(value) if _is_short(row) else value
+
+
 def _gate_check(gate: str, row: dict[str, Any], config: AlpacaConfig) -> GateCheck | None:
     if gate == "expected_trade_return_below_threshold":
-        return GateCheck(_num(row.get("expected_trade_return")), config.min_expected_trade_return)
+        return GateCheck(_directional_num(row, "expected_trade_return"), config.min_expected_trade_return)
     if gate == "risk_adjusted_score_below_threshold":
-        return GateCheck(_num(row.get("risk_adjusted_score")), config.min_risk_adjusted_score)
+        return GateCheck(_directional_num(row, "risk_adjusted_score"), config.min_risk_adjusted_score)
     if gate == "market_cap_below_minimum":
         return GateCheck(_num(row.get("market_cap")), config.min_market_cap)
     if gate == "price_below_minimum":

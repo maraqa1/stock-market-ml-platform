@@ -109,6 +109,52 @@ def test_shorting_disabled_rejects_short():
     assert "shorting_disabled" in row["trade_quality_reason"]
 
 
+def test_short_negative_directional_scores_can_pass_when_shorting_enabled():
+    row = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(
+                    trade_action="Short",
+                    expected_trade_return=-0.02,
+                    risk_adjusted_score=-0.02,
+                    close=100,
+                    open=101,
+                    high=102,
+                    low=99,
+                )
+            ]
+        ),
+        config(allow_short_selling=True),
+    ).iloc[0]
+
+    assert row["trade_quality_status"] == "approved"
+    assert bool(row["order_eligible"]) is True
+    assert row["stop_loss_price"] > row["current_price"]
+    assert row["take_profit_price"] < row["current_price"]
+
+
+def test_short_gap_up_top_range_is_rejected():
+    row = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(
+                    trade_action="Short",
+                    expected_trade_return=-0.02,
+                    risk_adjusted_score=-0.02,
+                    close=105,
+                    open=100,
+                    high=106,
+                    low=99,
+                )
+            ]
+        ),
+        config(allow_short_selling=True),
+    ).iloc[0]
+
+    assert row["trade_quality_status"] == "rejected"
+    assert "top_intraday_range_after_gap_up" in row["trade_quality_reason"]
+
+
 def test_missing_risk_fields_are_enriched_from_feature_snapshot():
     stripped = signal()
     stripped.pop("avg_dollar_volume_20d")

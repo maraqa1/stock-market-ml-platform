@@ -63,6 +63,27 @@ def test_expected_return_near_threshold_is_near_miss():
     assert round(float(row["distance_pct"]), 4) == 0.075
 
 
+def test_short_expected_return_near_threshold_uses_directional_magnitude():
+    frame = pd.DataFrame(
+        [
+            base_row(
+                side="sell",
+                trade_action="Short",
+                expected_trade_return=-0.0019,
+                trade_quality_reason="expected_trade_return_below_threshold",
+            )
+        ]
+    )
+
+    result = near_miss_rows([frame], config())
+
+    row = result.iloc[0]
+    assert row["failed_gate"] == "expected_trade_return_below_threshold"
+    assert row["actual_value"] == 0.0019
+    assert row["severity"] == "near_miss"
+    assert round(float(row["distance_pct"]), 4) == 0.05
+
+
 def test_expected_return_far_below_threshold_is_hard_fail():
     frame = pd.DataFrame([base_row(expected_trade_return=0.001, trade_quality_reason="expected_trade_return_below_threshold")])
 
@@ -90,6 +111,26 @@ def test_risk_adjusted_score_just_below_threshold_is_near_miss():
 
     row = result.iloc[0]
     assert row["failed_gate"] == "risk_adjusted_score_below_threshold"
+    assert row["severity"] == "near_miss"
+
+
+def test_short_risk_adjusted_score_near_threshold_uses_directional_magnitude():
+    frame = pd.DataFrame(
+        [
+            base_row(
+                side="sell",
+                trade_action="Short",
+                risk_adjusted_score=-0.00475,
+                trade_quality_reason="risk_adjusted_score_below_threshold",
+            )
+        ]
+    )
+
+    result = near_miss_rows([frame], config())
+
+    row = result.iloc[0]
+    assert row["failed_gate"] == "risk_adjusted_score_below_threshold"
+    assert row["actual_value"] == 0.00475
     assert row["severity"] == "near_miss"
 
 

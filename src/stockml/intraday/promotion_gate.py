@@ -99,6 +99,8 @@ def _strong_candidate_spread_exception(row: dict[str, Any], cfg: PromotionConfig
     if spread > cfg.strong_candidate_max_spread_bps:
         return False
     score = _float(row, "nightly_score", 0) or 0
+    if bias == "short":
+        score = abs(score)
     dollar_volume = _float(row, "dollar_volume_today", 0) or 0
     trend_5m = _float(row, "trend_5m_pct", 0) or 0
     trend_15m = _float(row, "trend_15m_pct", 0) or 0

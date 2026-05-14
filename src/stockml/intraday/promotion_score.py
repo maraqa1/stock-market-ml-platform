@@ -56,6 +56,7 @@ def intraday_adjustment(row: dict[str, Any]) -> tuple[float, list[str]]:
     adjustment = 0.0
     contributing: list[str] = []
     details = row.get("details") or {}
+    bias = str(row.get("nightly_bias") or "").strip().lower()
     trend_5m = _float(row, "trend_5m_pct")
     trend_15m = _float(row, "trend_15m_pct")
     volume_ratio = _float(details, "volume_ratio")
@@ -64,19 +65,19 @@ def intraday_adjustment(row: dict[str, Any]) -> tuple[float, list[str]]:
     spread_z = _float(details, "spread_bps_zscore_20d")
     distance_vwap = _float(row, "distance_from_vwap_bps")
 
-    if trend_5m > 1:
+    if (bias == "short" and trend_5m < -1) or (bias != "short" and trend_5m > 1):
         adjustment += 0.05
         contributing.append("score_trend_5m_bonus")
-    if trend_15m > 2:
+    if (bias == "short" and trend_15m < -2) or (bias != "short" and trend_15m > 2):
         adjustment += 0.05
         contributing.append("score_trend_15m_bonus")
     if volume_ratio > 1.5:
         adjustment += 0.03
         contributing.append("score_volume_bonus")
-    if range_position > 0.7:
+    if (bias == "short" and range_position < 0.3) or (bias != "short" and range_position > 0.7):
         adjustment += 0.03
         contributing.append("score_range_bonus")
-    if row.get("market_aligned") is True and sector_trend > 0.5:
+    if row.get("market_aligned") is True and ((bias == "short" and sector_trend < -0.5) or (bias != "short" and sector_trend > 0.5)):
         adjustment += 0.02
         contributing.append("score_sector_bonus")
     if bool(row.get("volatility_burst")):
@@ -85,7 +86,7 @@ def intraday_adjustment(row: dict[str, Any]) -> tuple[float, list[str]]:
     if spread_z > 2:
         adjustment -= 0.05
         contributing.append("score_spread_penalty")
-    if distance_vwap < -100:
+    if (bias == "short" and distance_vwap > 100) or (bias != "short" and distance_vwap < -100):
         adjustment -= 0.03
         contributing.append("score_vwap_penalty")
     return _clip(adjustment, -0.2, 0.2), contributing
