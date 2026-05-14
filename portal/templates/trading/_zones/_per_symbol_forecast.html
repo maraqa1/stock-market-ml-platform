@@ -58,25 +58,25 @@
           {% else %}
             {% for row in per_symbol_forecast.rows %}
               <tr>
-                <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
-                <td>{{ row.side or "-" }}</td>
-                <td>{{ row.current_trade_action or "-" }}</td>
-                <td class="num" data-sort-value="{{ row.candidate_rank or 0 }}">{{ number(row.candidate_rank, 0) if row.candidate_rank != "" else "-" }}</td>
+                <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.get('symbol', '') }}">{{ row.get('symbol', '') }}</a></td>
+                <td>{{ row.get('side', '-') or "-" }}</td>
+                <td>{{ row.get('current_trade_action', '-') or "-" }}</td>
+                <td class="num" data-sort-value="{{ row.get('candidate_rank', 0) or 0 }}">{{ number(row.get('candidate_rank'), 0) if row.get('candidate_rank', "") != "" else "-" }}</td>
                 <td title="{{ row.get('direction_basis', '') }}">{{ (row.get('direction_context', '-') or "-")|replace("_", " ")|title }}</td>
                 <td class="num" data-sort-value="{{ row.get('expected_move_bps', 0) or 0 }}">{{ number(row.get('expected_move_bps'), 0) if row.get('expected_move_bps', "") != "" else "-" }} bps</td>
                 <td>{{ (row.get('magnitude_bucket', '-') or "-")|title }}</td>
                 <td class="num" data-sort-value="{{ row.get('expected_profitability_score', 0) or 0 }}">{{ number(row.get('expected_profitability_score'), 2) if row.get('expected_profitability_score', "") != "" else "-" }}</td>
                 <td class="num" data-sort-value="{{ row.get('volatility_adjusted_score', 0) or 0 }}">{{ number(row.get('volatility_adjusted_score'), 3) if row.get('volatility_adjusted_score', "") != "" else "-" }}</td>
-                <td>{{ row.regime_label or "-" }}</td>
-                <td>{{ (row.forecast_reason or "-")|replace("_", " ")|title }}</td>
-                <td class="num" data-sort-value="{{ row.suggested_stop_bps or 0 }}">
-                  {% if row.suggested_stop_bps != "" %}
-                    -{{ number(row.suggested_stop_bps, 0) }} / +{{ number(row.suggested_take_profit_bps, 0) }}
+                <td>{{ row.get('regime_label', '-') or "-" }}</td>
+                <td>{{ (row.get('forecast_reason', '-') or "-")|replace("_", " ")|title }}</td>
+                <td class="num" data-sort-value="{{ row.get('suggested_stop_bps', 0) or 0 }}">
+                  {% if row.get('suggested_stop_bps', "") != "" %}
+                    -{{ number(row.get('suggested_stop_bps'), 0) }} / +{{ number(row.get('suggested_take_profit_bps'), 0) }}
                   {% else %}
                     -
                   {% endif %}
                 </td>
-                <td class="num" data-sort-value="{{ row.direction_probability or 0 }}">{{ number(row.direction_probability, 3) if row.direction_probability != "" else "-" }}</td>
+                <td class="num" data-sort-value="{{ row.get('direction_probability', 0) or 0 }}">{{ number(row.get('direction_probability'), 3) if row.get('direction_probability', "") != "" else "-" }}</td>
               </tr>
             {% endfor %}
           {% endif %}
