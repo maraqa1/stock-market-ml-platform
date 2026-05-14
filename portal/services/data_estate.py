@@ -28,6 +28,7 @@ DATASETS = [
     {"key": "order_plan", "label": "Paper Order Plan", "kind": "trading", "file_key": "portal_outputs", "pattern": "08_alpaca_paper_order_plan_*.csv"},
     {"key": "positions", "label": "Paper Positions", "kind": "trading", "file_key": "portal_outputs", "pattern": "08_alpaca_paper_positions_*.csv"},
     {"key": "near_miss", "label": "Near Miss Analysis", "kind": "diagnostic", "file_key": "near_miss", "pattern": "near_miss_*.csv"},
+    {"key": "per_symbol_forecast", "label": "Per-Symbol Forecast", "kind": "diagnostic", "file_key": "per_symbol_forecast", "pattern": "per_symbol_forecast_*.csv"},
 ]
 
 

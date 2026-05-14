@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 
 from stockml.intraday.refresh import candidate_refresh_tick, prune_old_snapshots
 from stockml.intraday.promotion_score import score_unscored_snapshots
+from stockml.trading.per_symbol_forecast import generate_per_symbol_forecast
 from stockml.trading.paper_autopilot import tick as autopilot_tick
 
 from scripts.run_rotation_recommendations import main as run_rotation_recommendations
@@ -30,6 +31,14 @@ def main() -> int:
     print("intraday_promotion_status:", scoring.get("status"))
     print("snapshots_scored:", scoring.get("snapshots_scored", 0))
     print("verdict_counts:", scoring.get("verdict_counts", {}))
+
+    try:
+        forecast = generate_per_symbol_forecast(ROOT)
+    except Exception as exc:
+        forecast = {"status": "error", "reason": str(exc), "rows": 0, "path": ""}
+    print("per_symbol_forecast_status:", forecast.get("status"))
+    print("per_symbol_forecast_rows:", forecast.get("rows", 0))
+    print("per_symbol_forecast_path:", forecast.get("path", ""))
 
     run_rotation_recommendations()
 

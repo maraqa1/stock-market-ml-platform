@@ -1,0 +1,87 @@
+{% from "_macros/format.html" import number %}
+{% from "_macros/table.html" import table_toolbar %}
+<section class="zone trading-zone" data-zone="per-symbol-forecast" id="per-symbol-forecast">
+  <div class="zone__header">
+    <span>Per-Symbol Forecasts</span>
+    <span class="zone__header-meta">diagnostic only &middot; {{ per_symbol_forecast.file_name or "not generated" }}</span>
+  </div>
+  <div class="zone__body">
+    <p class="zone__description">Diagnostic only. These forecasts are not used for order submission and do not affect Paper Autopilot decisions. Blank model fields are not calibrated yet.</p>
+    <div class="kpi-row positions-summary" aria-label="Per-symbol forecast summary">
+      <article class="kpi-card">
+        <span class="kpi-card__label">Forecast Rows</span>
+        <strong class="kpi-card__value">{{ number(per_symbol_forecast.summary.total_rows or 0, 0) }}</strong>
+        <small class="kpi-card__detail">shortlist symbols translated</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Tier C</span>
+        <strong class="kpi-card__value">{{ per_symbol_forecast.summary.tier_c_status|replace("_", " ")|title }}</strong>
+        <small class="kpi-card__detail">probabilities stay blank until calibrated</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Top Reason</span>
+        <strong class="kpi-card__value">
+          {% if per_symbol_forecast.summary.top_reasons %}
+            {{ per_symbol_forecast.summary.top_reasons[0].label|replace("_", " ")|title }}
+          {% else %}
+            None
+          {% endif %}
+        </strong>
+        <small class="kpi-card__detail">diagnostic context only</small>
+      </article>
+    </div>
+    {{ table_toolbar("Filter per-symbol forecasts") }}
+    <div class="table-scroll">
+      <table class="data" data-table="per-symbol-forecast">
+        <thead>
+          <tr>
+            <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
+            <th>Side</th>
+            <th>Action</th>
+            <th class="num" data-sortable data-sort-key="rank" data-sort-type="number">Rank</th>
+            <th>Direction</th>
+            <th class="num" data-sortable data-sort-key="move" data-sort-type="number">Expected Move</th>
+            <th>Magnitude</th>
+            <th class="num" data-sortable data-sort-key="profitability" data-sort-type="number">Profitability</th>
+            <th class="num" data-sortable data-sort-key="vol_adj" data-sort-type="number">Vol-Adj</th>
+            <th>Regime</th>
+            <th>Reason</th>
+            <th class="num" data-sortable data-sort-key="stop" data-sort-type="number">Stop / TP</th>
+            <th class="num" data-sortable data-sort-key="direction_probability" data-sort-type="number">Direction Prob.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not per_symbol_forecast.rows %}
+            <tr>
+              <td colspan="13" class="empty small">No per-symbol forecast file yet. Run the per-symbol forecast stage after the shortlist is generated.</td>
+            </tr>
+          {% else %}
+            {% for row in per_symbol_forecast.rows %}
+              <tr>
+                <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                <td>{{ row.side or "-" }}</td>
+                <td>{{ row.current_trade_action or "-" }}</td>
+                <td class="num" data-sort-value="{{ row.candidate_rank or 0 }}">{{ number(row.candidate_rank, 0) if row.candidate_rank != "" else "-" }}</td>
+                <td title="{{ row.direction_basis or '' }}">{{ (row.direction_context or "-")|replace("_", " ")|title }}</td>
+                <td class="num" data-sort-value="{{ row.expected_move_bps or 0 }}">{{ number(row.expected_move_bps, 0) if row.expected_move_bps != "" else "-" }} bps</td>
+                <td>{{ (row.magnitude_bucket or "-")|title }}</td>
+                <td class="num" data-sort-value="{{ row.expected_profitability_score or 0 }}">{{ number(row.expected_profitability_score, 2) if row.expected_profitability_score != "" else "-" }}</td>
+                <td class="num" data-sort-value="{{ row.volatility_adjusted_score or 0 }}">{{ number(row.volatility_adjusted_score, 3) if row.volatility_adjusted_score != "" else "-" }}</td>
+                <td>{{ row.regime_label or "-" }}</td>
+                <td>{{ (row.forecast_reason or "-")|replace("_", " ")|title }}</td>
+                <td class="num" data-sort-value="{{ row.suggested_stop_bps or 0 }}">
+                  {% if row.suggested_stop_bps != "" %}
+                    -{{ number(row.suggested_stop_bps, 0) }} / +{{ number(row.suggested_take_profit_bps, 0) }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td class="num" data-sort-value="{{ row.direction_probability or 0 }}">{{ number(row.direction_probability, 3) if row.direction_probability != "" else "-" }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>

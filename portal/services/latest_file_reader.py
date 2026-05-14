@@ -25,6 +25,7 @@ DATA_DIRS = {
     "execution_reports": "data/trading/execution_reports",
     "operator_actions": "data/trading/operator_actions",
     "near_miss": "data/trading/near_miss",
+    "per_symbol_forecast": "data/trading/per_symbol_forecast",
 }
 
 

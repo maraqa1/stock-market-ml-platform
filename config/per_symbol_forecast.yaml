@@ -1,0 +1,10 @@
+version: 1
+per_symbol_forecast:
+  artifact_dir: data/trading/per_symbol_forecast
+  artifact_prefix: per_symbol_forecast
+  diagnostic_only: true
+  max_symbols: 100
+  forecast_horizon_days: 5
+  stop_multiplier: 1.0
+  take_profit_multiplier: 1.5
+  tier_c_enabled: false

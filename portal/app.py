@@ -16,6 +16,7 @@ from portal.services.data_quality_service import data_quality_context
 from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
 from portal.services.near_miss_service import near_miss_context
+from portal.services.per_symbol_forecast_service import per_symbol_forecast_context
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
 from portal.services.intraday import decisions_csv as intraday_decisions_csv
@@ -108,6 +109,7 @@ def trading_snapshot_csv(root: Path) -> str:
     queue = action_queue_context(root)
     promotions = intraday_promotion_context(root)
     near_miss = near_miss_context(root)
+    per_symbol_forecast = per_symbol_forecast_context(root)
     rows: list[dict] = []
 
     pools = [
@@ -118,6 +120,7 @@ def trading_snapshot_csv(root: Path) -> str:
         ("action_queue", queue.get("items", []), queue.get("generated_at", ""), "monitor_and_operator_queue"),
         ("intraday_promotion", promotions.get("rows", []), promotions.get("latest_tick", ""), "promotion_log"),
         ("near_miss", near_miss.get("rows", []), near_miss.get("file_name", ""), "near_miss_analysis"),
+        ("per_symbol_forecast", per_symbol_forecast.get("rows", []), per_symbol_forecast.get("file_name", ""), "per_symbol_forecast"),
     ]
     for pool, pool_rows, generated_at, source in pools:
         for row in pool_rows or []:
@@ -308,6 +311,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "positions_api": positions_context(root),
                 "intraday_promotion": intraday_promotion_context(root),
                 "near_miss": near_miss_context(root),
+                "per_symbol_forecast": per_symbol_forecast_context(root),
                 "timer_settings": timer_settings_context(root),
                 "paper_autopilot": autopilot_context(root),
             }
