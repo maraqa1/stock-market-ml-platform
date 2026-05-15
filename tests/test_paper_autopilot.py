@@ -225,6 +225,42 @@ def test_paper_autopilot_mode_defensively_closes_stale_losers(monkeypatch, tmp_p
     assert "AAA:defensive_stale_loss:submitted:auto_close" in state["autopilot_action_notes"]
 
 
+def test_paper_autopilot_mode_defensively_closes_unknown_signal_losers(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1}, {"symbol": "BBB", "qty": 1}]).to_csv(positions, index=False)
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"symbol": "AAA", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": -0.021},
+            {"symbol": "BBB", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": -0.010},
+        ]
+    ).to_csv(decisions / "position_decisions_1.csv", index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            state=state,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        ),
+    )
+
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_actions"] == 1
+    assert state["autopilot_close_submitted"] == 1
+    assert state["autopilot_defensive_close_submitted"] == 1
+    assert "AAA:defensive_stale_loss:submitted:auto_close" in state["autopilot_action_notes"]
+
+
 def test_paper_autopilot_mode_closes_hard_stop_losers(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)

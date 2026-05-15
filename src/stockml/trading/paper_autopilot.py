@@ -31,6 +31,7 @@ STATE_VERSION = 1
 TERMINAL_ORDER_STATES = {"filled", "canceled", "cancelled", "expired", "rejected"}
 OPEN_ORDER_STATES = {"accepted", "new", "pending_new", "pending_replace", "submitted", "partially_filled", "partial"}
 DEFENSIVE_STALE_LOSS_THRESHOLD = -0.025
+DEFENSIVE_UNKNOWN_LOSS_THRESHOLD = -0.02
 HARD_STOP_LOSS_THRESHOLD = -0.04
 TRAILING_PROFIT_MIN = 0.03
 TRAILING_GIVEBACK_THRESHOLD = 0.015
@@ -292,7 +293,10 @@ def rule_rows() -> list[dict[str, Any]]:
         },
         {
             "rule": "Defensive stale loser",
-            "trigger": f"Signal stale and unrealized return <= {DEFENSIVE_STALE_LOSS_THRESHOLD:.1%}.",
+            "trigger": (
+                f"Signal stale and unrealized return <= {DEFENSIVE_STALE_LOSS_THRESHOLD:.1%}, "
+                f"or signal unknown and unrealized return <= {DEFENSIVE_UNKNOWN_LOSS_THRESHOLD:.1%}."
+            ),
             "action": "Submit paper close order",
             "active_in": "Paper Autopilot",
         },
@@ -488,10 +492,15 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
     explicit_close = frame["__decision"] == "close"
     replace_close = frame["__decision"].isin(["replace", "rotate"])
     hard_stop = frame["__plpc"] <= HARD_STOP_LOSS_THRESHOLD
+    unknown_signal_loss = frame["__reason"].str.contains("latest_signal_unknown", na=False) & (
+        frame["__plpc"] <= DEFENSIVE_UNKNOWN_LOSS_THRESHOLD
+    )
     defensive_stale_loss = (
         (frame["__decision"] == "watch")
-        & frame["__reason"].str.contains("signal_stale", na=False)
-        & (frame["__plpc"] <= DEFENSIVE_STALE_LOSS_THRESHOLD)
+        & (
+            (frame["__reason"].str.contains("signal_stale", na=False) & (frame["__plpc"] <= DEFENSIVE_STALE_LOSS_THRESHOLD))
+            | unknown_signal_loss
+        )
     )
     trailing_profit = (
         (frame["__decision"] == "watch")
