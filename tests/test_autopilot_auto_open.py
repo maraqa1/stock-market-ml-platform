@@ -571,6 +571,37 @@ def test_auto_open_uses_per_symbol_forecast_size_and_log_prefix():
     assert row["details"]["per_symbol_forecast_fallback"] is True
 
 
+def test_auto_open_logs_large_forecast_score_in_details_not_score_column():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("CHTR", 500.066)
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 500.066,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["promotion_score"] is None
+    assert row["details"]["promotion_score_unlogged"] == 500.066
+    assert row["details"]["expected_profitability_score"] == 500.066
+
+
 def test_auto_open_near_miss_can_fill_remaining_slot_when_position_is_open():
     engine = _engine()
     client = FakeClient()

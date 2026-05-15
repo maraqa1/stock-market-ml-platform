@@ -598,12 +598,16 @@ def _record_open(
     engine: Engine,
     now: datetime,
 ) -> int | None:
+    loggable_promotion_score = _float(promotion_score, None)
+    if loggable_promotion_score is not None and abs(loggable_promotion_score) >= 10:
+        details = {**(details or {}), "promotion_score_unlogged": loggable_promotion_score}
+        loggable_promotion_score = None
     with engine.begin() as conn:
         result = conn.execute(
             insert(autopilot_open_log).values(
                 logged_at=now,
                 symbol=symbol,
-                promotion_score=promotion_score,
+                promotion_score=loggable_promotion_score,
                 size_usd=size_usd,
                 verdict=verdict,
                 block_reason=block_reason or None,
