@@ -177,7 +177,7 @@ class TradingSnapshotMonitor:
         self.state_path.write_text(json.dumps(self.state, indent=2, sort_keys=True), encoding="utf-8")
 
     def latest_files(self) -> list[Path]:
-        return sorted(self.directory.glob("trading_snapshot_*.csv"), key=lambda path: path.stat().st_mtime)
+        return sorted(self.directory.glob("trading_snapshot_*.csv"), key=lambda path: path.name)
 
     def process_new_files(self, *, latest_only: bool = False) -> list[MonitorResult]:
         processed = set(self.state.get("processed", []))
