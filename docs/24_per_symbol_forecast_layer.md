@@ -63,7 +63,7 @@ Operator priority values:
 
 Forecast confirmation is also diagnostic only. It classifies each row as `confirmed`, `weak_confirm`, `conflicted`, or `insufficient_data` using side alignment, expected move, profitability, and risk/reward completeness. It is not allowed to open trades directly.
 
-Paper Autopilot may use confirmed per-symbol forecast rows as a controlled fallback source ahead of near-miss rows when `per_symbol_forecast_fallback_enabled` is enabled in the VM-local autopilot config. This does not let the forecast layer submit orders by itself. The row must be fresh, aligned, confirmed, above the configured confirmation and profitability thresholds, and inside the normal auto-open caps, sizing, market-hour, kill-switch, and paper-only controls.
+Paper Autopilot may use confirmed per-symbol forecast rows as a controlled fallback source when `per_symbol_forecast_fallback_enabled` is enabled in the VM-local autopilot config. If no strong intraday promotion exists, confirmed per-symbol forecasts and eligible near-miss rows are blended into one fallback slate and ranked by `candidate_strength_score`; strong confirmed forecasts can outrank near-misses, while weak forecasts do not hide better near-miss opportunities. This does not let the forecast layer submit orders by itself. The row must be fresh, aligned, confirmed, above the configured confirmation and profitability thresholds, and inside the normal auto-open caps, sizing, market-hour, kill-switch, and paper-only controls.
 
 Tier C fields require calibrated predictive models. In the MVP they are present in the schema but intentionally null, with `tier_c_status=uncalibrated`. They must not be filled by scaling ranking scores into pseudo-probabilities.
 

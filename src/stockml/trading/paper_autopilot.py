@@ -16,6 +16,7 @@ from stockml.autopilot.open import (
     latest_per_symbol_forecast_fallback_candidates,
     latest_strong_candidates,
     load_auto_open_config,
+    ranked_fallback_candidates,
 )
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
 from stockml.db.connection import get_engine
@@ -703,14 +704,14 @@ def tick(
             candidates = strong_candidate_loader()
             if not candidates:
                 if per_symbol_forecast_candidate_loader is not None:
-                    candidates = per_symbol_forecast_candidate_loader()
+                    per_symbol_candidates = per_symbol_forecast_candidate_loader()
                 else:
-                    candidates = latest_per_symbol_forecast_fallback_candidates(root=root)
-            if not candidates:
+                    per_symbol_candidates = latest_per_symbol_forecast_fallback_candidates(root=root)
                 if near_miss_candidate_loader is not None:
-                    candidates = near_miss_candidate_loader()
+                    near_miss_candidates = near_miss_candidate_loader()
                 else:
-                    candidates = latest_near_miss_fallback_candidates(root=root)
+                    near_miss_candidates = latest_near_miss_fallback_candidates(root=root)
+                candidates = ranked_fallback_candidates(per_symbol_candidates, near_miss_candidates)
             if not candidates and open_positions == 0:
                 candidates = fallback_candidate_loader()
             if auto_open_applier is not None:

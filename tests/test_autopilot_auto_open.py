@@ -14,6 +14,7 @@ from stockml.autopilot.open import (
     latest_per_symbol_forecast_fallback_candidates,
     load_auto_open_config,
     position_size_usd,
+    ranked_fallback_candidates,
     set_auto_open_enabled,
     set_auto_open_max_per_day,
 )
@@ -364,6 +365,35 @@ def test_per_symbol_forecast_fallback_candidates_select_most_profitable_confirme
     assert candidates[0]["details"]["per_symbol_forecast_fallback"] is True
     assert candidates[0]["details"]["fallback_reason"] == "per_symbol_forecast_confirmed_candidate"
     assert candidates[0]["promotion_score"] == 100
+
+
+def test_ranked_fallback_candidates_blends_forecast_and_near_miss_strength():
+    weak_forecast = _candidate("LOWP", 10)
+    weak_forecast["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "expected_profitability_score": 10,
+        "confirmation_score": 90,
+        "expected_move_bps": 60,
+    }
+    strong_forecast = _candidate("HIGHP", 100)
+    strong_forecast["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "expected_profitability_score": 100,
+        "confirmation_score": 90,
+        "expected_move_bps": 150,
+    }
+    near_miss = _candidate("GLIBK", 0.0049)
+    near_miss["details"] = {
+        "near_miss_fallback": True,
+        "distance_pct": 0.001,
+        "severity": "near_miss",
+    }
+
+    ranked = ranked_fallback_candidates([weak_forecast, strong_forecast], [near_miss])
+
+    assert [candidate["symbol"] for candidate in ranked] == ["HIGHP", "GLIBK", "LOWP"]
+    assert ranked[0]["details"]["candidate_source"] == "per_symbol_forecast"
+    assert ranked[1]["details"]["candidate_source"] == "near_miss"
 
 
 def test_near_miss_fallback_candidates_include_moderate_gaps_without_hard_safety_fails(tmp_path):
@@ -829,7 +859,9 @@ def test_paper_autopilot_tick_prefers_per_symbol_forecast_before_near_miss(monke
     )
 
     assert calls and calls[0][0][0]["symbol"] == "HIGHP"
-    assert all(candidate["symbol"] != "GLIBK" for candidate in calls[0][0])
+    assert [candidate["symbol"] for candidate in calls[0][0]] == ["HIGHP", "GLIBK"]
+    assert calls[0][0][0]["details"]["candidate_source"] == "per_symbol_forecast"
+    assert calls[0][0][1]["details"]["candidate_source"] == "near_miss"
     assert state["phase"] == "waiting_for_fills"
     assert state["autopilot_open_submitted"] == 1
 
