@@ -51,8 +51,12 @@ def main() -> int:
 
     current_autopilot = load_autopilot_state()
     if current_autopilot.get("mode") == "paper_autopilot" and current_autopilot.get("status") != "running":
-        benign_stop = current_autopilot.get("termination_reason") in {"", "no_open_orders_or_positions"}
-        benign_error = current_autopilot.get("last_error") in {"", "autopilot_not_running"}
+        last_error = current_autopilot.get("last_error")
+        termination_reason = current_autopilot.get("termination_reason")
+        benign_stop = termination_reason in {"", "no_open_orders_or_positions"} or (
+            termination_reason == "autopilot_error" and last_error == "autopilot_not_running"
+        )
+        benign_error = last_error in {"", "autopilot_not_running"}
         if benign_stop and benign_error:
             restarted = start_autopilot()
             print("paper_autopilot_rearm:", restarted.get("status"))

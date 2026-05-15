@@ -48,3 +48,4 @@ def test_intraday_trading_clock_rearms_benign_completed_autopilot():
     assert "start_autopilot()" in script
     assert "paper_autopilot_rearm:" in script
     assert "autopilot_not_running" in script
+    assert "autopilot_error" in script
