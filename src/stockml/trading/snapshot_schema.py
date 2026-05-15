@@ -69,7 +69,14 @@ class SnapshotRow:
     score_state: ScoreState
     outcome: str | None
     outcome_reason: str | None
+    final_verdict: str = "not_evaluated"
+    final_action: str = "review_required"
+    primary_reject_reason: str | None = None
     stage_verdicts: dict[str, Any] = field(default_factory=dict)
+    gate_failures: list[str] = field(default_factory=list)
+    promotion_reason: str | None = None
+    operator_reason: str | None = None
+    raw_reason_text: str | None = None
     notional: float | None = None
     quantity: int | None = None
     data_age_seconds: int = 0
@@ -90,7 +97,14 @@ CANONICAL_COLUMNS = [
     "score_state",
     "outcome",
     "outcome_reason",
+    "final_verdict",
+    "final_action",
+    "primary_reject_reason",
     "stage_verdicts",
+    "gate_failures",
+    "promotion_reason",
+    "operator_reason",
+    "raw_reason_text",
     "notional",
     "quantity",
     "data_age_seconds",
@@ -104,6 +118,7 @@ SNAPSHOT_COLUMNS = CANONICAL_COLUMNS + DEPRECATED_SHIM_COLUMNS
 
 STAGE_VERDICT_KEYS = ["trade_quality", "meta_label", "sizing", "intraday_gate", "monitor", "operator"]
 RAW_JSON_RESERVED_KEYS = set(CANONICAL_COLUMNS) - {"raw_json"}
+FINAL_VERDICTS = {"approved", "rejected", "not_evaluated", "warning", "close_candidate", "review_required"}
 
 
 def default_stage_verdicts(**updates: Any) -> dict[str, Any]:
@@ -146,6 +161,12 @@ def validate_snapshot_row(row: SnapshotRow) -> SnapshotRow:
         raise ValueError("snapshot_data_age_must_be_non_negative")
     if row.pool == Pool.PER_SYMBOL_FORECAST and row.display_score is not None:
         raise ValueError("per_symbol_forecast_display_score_must_be_empty")
+    if row.final_verdict not in FINAL_VERDICTS:
+        raise ValueError("invalid_snapshot_final_verdict")
+    if row.final_verdict == "approved" and row.primary_reject_reason:
+        raise ValueError("approved_row_cannot_have_primary_reject_reason")
+    if row.primary_reject_reason and row.primary_reject_reason.lower() == "approved":
+        raise ValueError("approved_is_not_a_reject_reason")
     if any(key in RAW_JSON_RESERVED_KEYS for key in row.raw_json):
         raise ValueError("snapshot_raw_json_duplicates_canonical")
     return row
@@ -189,7 +210,14 @@ def snapshot_row_to_record(row: SnapshotRow, *, source: str = "") -> dict[str, A
         "score_state": row.score_state.value,
         "outcome": row.outcome or "",
         "outcome_reason": row.outcome_reason or "",
+        "final_verdict": row.final_verdict,
+        "final_action": row.final_action,
+        "primary_reject_reason": row.primary_reject_reason or "",
         "stage_verdicts": json.dumps(row.stage_verdicts, default=str, sort_keys=True),
+        "gate_failures": json.dumps(row.gate_failures, default=str),
+        "promotion_reason": row.promotion_reason or "",
+        "operator_reason": row.operator_reason or "",
+        "raw_reason_text": row.raw_reason_text or "",
         "notional": row.notional if row.notional is not None else "",
         "quantity": row.quantity if row.quantity is not None else "",
         "data_age_seconds": row.data_age_seconds,

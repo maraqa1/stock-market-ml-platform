@@ -211,11 +211,16 @@ def test_intraday_promotion_direction_uses_nightly_bias():
 def test_snapshot_normalizes_legacy_rejection_reason():
     row = _csv_rows(write_snapshot_csv([("model_shortlist", [{"symbol": "AAA", "side": "buy", "trade_quality_status": "rejected", "trade_quality_reason": "Approved; Meta label probability below threshold"}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
     verdicts = json.loads(row["stage_verdicts"])
+    failures = json.loads(row["gate_failures"])
 
     assert row["outcome"] == "rejected"
     assert row["outcome_reason"] == "rejected_meta_label_threshold"
+    assert row["final_verdict"] == "rejected"
+    assert row["primary_reject_reason"] == "rejected_meta_label_threshold"
+    assert "rejected_meta_label_threshold" in failures
     assert row["reason"] == "Meta-label probability below threshold"
     assert "Approved;" not in row["reason"]
+    assert "Approved;" in row["raw_reason_text"]
     assert verdicts["trade_quality"] == "approved"
     assert verdicts["meta_label"] == "rejected:below_threshold"
 
@@ -225,4 +230,76 @@ def test_intraday_block_reason_is_normalized():
 
     assert row["outcome"] == "blocked"
     assert row["outcome_reason"] == "blocked_wide_spread"
+    assert row["final_verdict"] == "rejected"
+    assert row["promotion_reason"] == "wide_spread"
     assert row["reason"] == "Spread too wide"
+
+
+def test_structured_decision_columns_present_in_csv():
+    row = _csv_rows(write_snapshot_csv([("model_shortlist", [{"symbol": "AAA", "side": "buy"}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
+
+    for column in [
+        "final_verdict",
+        "final_action",
+        "primary_reject_reason",
+        "gate_failures",
+        "promotion_reason",
+        "operator_reason",
+        "raw_reason_text",
+    ]:
+        assert column in row
+
+
+def test_rejected_candidate_cannot_become_approved_without_override():
+    row = _csv_rows(
+        write_snapshot_csv(
+            [
+                (
+                    "model_shortlist",
+                    [{"symbol": "AAA", "side": "buy", "trade_quality_status": "rejected", "trade_quality_reason": "Approved; meta label probability below threshold"}],
+                    "",
+                    "fixture",
+                )
+            ],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )[0]
+
+    assert row["final_verdict"] == "rejected"
+    assert row["outcome_reason"] == "rejected_meta_label_threshold"
+    assert row["primary_reject_reason"] == "rejected_meta_label_threshold"
+
+
+def test_rejected_trimmed_and_todays_basket_have_distinct_final_states():
+    rows = _csv_rows(
+        write_snapshot_csv(
+            [
+                ("todays_basket", [{"symbol": "AAA", "side": "buy", "order_eligible": True}], "", "fixture"),
+                ("rejected_trimmed", [{"symbol": "BBB", "side": "buy", "status": "rejected", "reason": "Price below minimum"}], "", "fixture"),
+            ],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )
+    by_pool = {row["pool"]: row for row in rows}
+
+    assert by_pool["todays_basket"]["final_verdict"] == "approved"
+    assert by_pool["rejected_trimmed"]["final_verdict"] == "rejected"
+    assert by_pool["rejected_trimmed"]["primary_reject_reason"] == "rejected_price_min"
+
+
+def test_missing_stage_data_is_explicitly_explained():
+    row = _csv_rows(write_snapshot_csv([("per_symbol_forecast", [{"symbol": "AAA", "side": "buy", "raw_score": 0.1}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
+    verdicts = json.loads(row["stage_verdicts"])
+    raw = json.loads(row["raw_json"])
+
+    assert set(verdicts.values()) == {"not_evaluated"}
+    assert raw["stage_not_evaluated_reasons"]["trade_quality"] == "stage_not_run_for_pool"
+
+
+def test_old_semicolon_text_is_legacy_only_not_primary_truth():
+    row = _csv_rows(write_snapshot_csv([("todays_basket", [{"symbol": "AAA", "side": "buy", "basket_status": "rejected", "reason_note": "Approved; meta label probability below threshold"}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
+
+    assert row["outcome_reason"] == "rejected_meta_label_threshold"
+    assert row["primary_reject_reason"] == "rejected_meta_label_threshold"
+    assert row["raw_reason_text"] == "Approved; meta label probability below threshold"
+    assert row["reason"] == "Meta-label probability below threshold"
