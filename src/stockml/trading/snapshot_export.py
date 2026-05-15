@@ -12,6 +12,19 @@ from stockml.trading.snapshot_writer import write_snapshot_csv, write_snapshot_f
 
 
 SNAPSHOT_DIR = Path("data") / "trading" / "snapshots"
+NEAR_MISS_SNAPSHOT_DEDUPE_KEYS = ["symbol", "side", "status", "risk_adjusted_score"]
+
+
+def _dedupe_near_miss_snapshot_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str, str]] = set()
+    deduped: list[dict[str, Any]] = []
+    for row in rows:
+        key = tuple(str(row.get(column) or "").strip().lower() for column in NEAR_MISS_SNAPSHOT_DEDUPE_KEYS)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return deduped
 
 
 def snapshot_pools(root: Path) -> list[tuple[str, list[dict[str, Any]], Any, str]]:
@@ -20,6 +33,7 @@ def snapshot_pools(root: Path) -> list[tuple[str, list[dict[str, Any]], Any, str
     queue = action_queue_context(root)
     promotions = intraday_promotion_context(root)
     near_miss = near_miss_context(root)
+    near_miss_rows = _dedupe_near_miss_snapshot_rows(list(near_miss.get("rows") or []))
     per_symbol_forecast = per_symbol_forecast_context(root, limit=1000)
     return [
         ("model_shortlist", trading.get("candidate_pool_rows", []), "", "candidate_pool_artifact"),
@@ -28,7 +42,7 @@ def snapshot_pools(root: Path) -> list[tuple[str, list[dict[str, Any]], Any, str
         ("open_positions", positions.get("positions", []), positions.get("refreshed_at", ""), "broker_positions"),
         ("action_queue", queue.get("items", []), queue.get("generated_at", ""), "monitor_and_operator_queue"),
         ("intraday_promotion", promotions.get("rows", []), promotions.get("latest_tick", ""), "promotion_log"),
-        ("near_miss", near_miss.get("rows", []), near_miss.get("file_name", ""), "near_miss_analysis"),
+        ("near_miss", near_miss_rows, near_miss.get("file_name", ""), "near_miss_analysis"),
         ("per_symbol_forecast", per_symbol_forecast.get("rows", []), per_symbol_forecast.get("file_name", ""), "per_symbol_forecast"),
     ]
 

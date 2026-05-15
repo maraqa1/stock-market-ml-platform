@@ -140,7 +140,7 @@ def _outcome_and_stage(pool: Pool, row: dict[str, Any]) -> tuple[str | None, Fun
     if pool == Pool.NEAR_MISS:
         return "near_miss", FunnelStage.NEAR_MISS
     if pool == Pool.PER_SYMBOL_FORECAST:
-        return None, FunnelStage.SCORED
+        return "scored", FunnelStage.SCORED
     if pool == Pool.OPEN_POSITIONS:
         return "accepted", FunnelStage.FILLED
     if pool == Pool.ACTION_QUEUE:
@@ -193,6 +193,13 @@ def _raw_json(row: dict[str, Any], *, source: str) -> dict[str, Any]:
     return raw
 
 
+def _pool_raw_json(pool: Pool, row: dict[str, Any], *, source: str, raw_score: float | None, display_score: float | None) -> dict[str, Any]:
+    raw = _raw_json(row, source=source)
+    if pool == Pool.INTRADAY_PROMOTION and raw_score is not None and display_score is not None:
+        raw["promotion_adjustment"] = round(display_score - raw_score, 10)
+    return raw
+
+
 def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: datetime, generated_at: Any = "", source: str = "") -> SnapshotRow:
     pool_enum = pool if isinstance(pool, Pool) else pool_from_value(pool)
     generated = parse_generated_at(generated_at or first_value(row, ["generated_at", "snapshot_at", "time", "updated_at", "logged_at"]), fallback=snapshot_at)
@@ -213,12 +220,12 @@ def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: da
         score_basis=_score_basis(pool_enum, row),
         score_state=_score_state(pool_enum, raw_score, display_score),
         outcome=outcome,
-        outcome_reason=reason if outcome else None,
+        outcome_reason=reason if outcome not in [None, "scored"] else None,
         stage_verdicts=_stage_verdicts(pool_enum, row, outcome=outcome, reason=reason),
         notional=float_or_none(first_value(row, ["planned_notional", "approved_notional", "notional", "market_value"])),
         quantity=int_or_none(first_value(row, ["planned_quantity", "suggested_quantity", "qty", "filled_qty"])),
         data_age_seconds=max(0, int((snapshot_at - generated).total_seconds())),
-        raw_json=_raw_json(row, source=source),
+        raw_json=_pool_raw_json(pool_enum, row, source=source, raw_score=raw_score, display_score=display_score),
     )
     return validate_snapshot_row(snapshot_row)
 

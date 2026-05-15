@@ -171,3 +171,19 @@ def test_blank_display_scores_have_explicit_score_state():
     assert by_symbol["BBB"]["score_state"] == ScoreState.NOT_APPLICABLE.value
     assert by_symbol["CCC"]["display_score"] == ""
     assert by_symbol["CCC"]["score_state"] == ScoreState.MISSING_SOURCE.value
+
+
+def test_per_symbol_forecast_snapshot_outcome_is_scored():
+    row = _csv_rows(write_snapshot_csv([("per_symbol_forecast", [{"symbol": "AAA", "side": "buy", "volatility_adjusted_score": 2.0}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
+
+    assert row["outcome"] == "scored"
+    assert row["status"] == "scored"
+
+
+def test_intraday_promotion_adjustment_is_explained_in_raw_json():
+    row = _csv_rows(write_snapshot_csv([("intraday_promotion", [{"symbol": "AAA", "promotion_score": 1.03, "nightly_score": 1.0, "verdict": "watch"}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
+    raw = json.loads(row["raw_json"])
+
+    assert row["raw_score"] == "1.0"
+    assert row["display_score"] == "1.03"
+    assert raw["promotion_adjustment"] == 0.03
