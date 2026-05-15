@@ -10,6 +10,8 @@ import pandas as pd
 
 from stockml.common.logging_utils import log
 from stockml.common.paths import INTERIM_DIR, RAW_DIR, ensure_data_dirs, latest_file, timestamp
+from stockml.marketdata.providers.yahoo_legacy import YahooLegacyProvider, normalize_yfinance_download
+from stockml.marketdata.schemas import PRICE_COLUMNS
 
 STORE_FILE = RAW_DIR / "03_us_price_history_store.csv"
 
@@ -92,7 +94,7 @@ def determine_download_plan(
 
         next_date = pd.Timestamp(latest_by_ticker[ticker]) + pd.Timedelta(days=1)
 
-        # Keep a 5-calendar-day overlap to handle delayed Yahoo adjustments,
+        # Keep a 5-calendar-day overlap to handle delayed provider adjustments,
         # holidays, and occasional missing latest rows.
         overlap_date = max(pd.Timestamp(start_date), next_date - pd.Timedelta(days=5))
 
@@ -107,111 +109,21 @@ def chunked(items: List[str], size: int) -> Iterable[List[str]]:
         yield items[i:i + size]
 
 
-def normalize_yfinance_download(data: pd.DataFrame, tickers: List[str], download_timestamp: str) -> pd.DataFrame:
-    rows = []
-
-    if data is None or data.empty:
-        return pd.DataFrame()
-
-    if isinstance(data.columns, pd.MultiIndex):
-        top_level = list(data.columns.get_level_values(0).unique())
-
-        # yfinance may return either ticker-first or field-first multi-index.
-        ticker_first = any(t in top_level for t in tickers)
-
-        for ticker in tickers:
-            try:
-                if ticker_first:
-                    sub = data[ticker].copy()
-                else:
-                    sub = data.xs(ticker, axis=1, level=1).copy()
-            except Exception:
-                continue
-
-            sub = sub.reset_index()
-            sub["ticker"] = ticker
-            rows.append(sub)
-    else:
-        if len(tickers) != 1:
-            return pd.DataFrame()
-        sub = data.copy().reset_index()
-        sub["ticker"] = tickers[0]
-        rows.append(sub)
-
-    if not rows:
-        return pd.DataFrame()
-
-    out = pd.concat(rows, ignore_index=True)
-
-    rename = {
-        "Date": "date",
-        "Datetime": "date",
-        "Open": "open",
-        "High": "high",
-        "Low": "low",
-        "Close": "close",
-        "Adj Close": "adj_close",
-        "Adj_Close": "adj_close",
-        "Volume": "volume",
-    }
-
-    out = out.rename(columns={c: rename.get(c, c) for c in out.columns})
-
-    required = ["date", "ticker", "open", "high", "low", "close", "adj_close", "volume"]
-    for c in required:
-        if c not in out.columns:
-            out[c] = pd.NA
-
-    out = out[required].copy()
-    out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.date
-    out["ticker"] = out["ticker"].astype(str).str.upper().str.strip()
-
-    for c in ["open", "high", "low", "close", "adj_close", "volume"]:
-        out[c] = pd.to_numeric(out[c], errors="coerce")
-
-    out["source"] = "yfinance"
-    out["download_timestamp"] = download_timestamp
-
-    out = out.dropna(subset=["date", "ticker"])
-    out = out.drop_duplicates(["ticker", "date"], keep="last")
-    return out
-
-
 def download_group(tickers: List[str], start: str, batch_size: int, sleep_seconds: float) -> Tuple[pd.DataFrame, pd.DataFrame]:
     stamp = datetime.now().isoformat(timespec="seconds")
     all_rows = []
     failures = []
+    provider = YahooLegacyProvider()
 
     batches = list(chunked(tickers, batch_size))
     for batch_no, batch in enumerate(batches, start=1):
         log(f"Downloading batch {batch_no}/{len(batches)} start={start} tickers={len(batch)}")
 
-        try:
-            import yfinance as yf
-
-            data = yf.download(
-                tickers=batch,
-                start=start,
-                auto_adjust=False,
-                group_by="ticker",
-                progress=False,
-                threads=True,
-            )
-            normalized = normalize_yfinance_download(data, batch, stamp)
-
-            if normalized.empty:
-                for t in batch:
-                    failures.append({"ticker": t, "start": start, "reason": "empty_download"})
-            else:
-                got = set(normalized["ticker"].unique())
-                missing = sorted(set(batch) - got)
-                for t in missing:
-                    failures.append({"ticker": t, "start": start, "reason": "missing_from_batch_result"})
-                all_rows.append(normalized)
-
-        except Exception as e:
-            for t in batch:
-                failures.append({"ticker": t, "start": start, "reason": str(e)[:500]})
+        normalized, failed = provider.fetch_daily_prices(batch, start=start, download_timestamp=stamp)
+        if not normalized.empty:
+            all_rows.append(normalized)
+        if not failed.empty:
+            failures.extend(failed.to_dict("records"))
 
         if sleep_seconds > 0:
             time.sleep(sleep_seconds)
@@ -258,7 +170,7 @@ def download_price_history(
             all_failures.append(failed)
 
     new_prices = pd.concat(all_new, ignore_index=True) if all_new else pd.DataFrame(
-        columns=["date", "ticker", "open", "high", "low", "close", "adj_close", "volume", "source", "download_timestamp"]
+        columns=PRICE_COLUMNS
     )
 
     failures = pd.concat(all_failures, ignore_index=True) if all_failures else pd.DataFrame(
