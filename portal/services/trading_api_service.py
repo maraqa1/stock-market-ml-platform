@@ -698,6 +698,7 @@ def intraday_promotion_context(root: Path) -> dict[str, Any]:
                 select(
                     intraday_promotion_log.c.symbol,
                     intraday_candidate_snapshots.c.is_held,
+                    intraday_candidate_snapshots.c.nightly_bias,
                     intraday_promotion_log.c.nightly_score,
                     intraday_promotion_log.c.intraday_adjustment,
                     intraday_promotion_log.c.promotion_score,

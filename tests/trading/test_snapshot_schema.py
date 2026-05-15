@@ -189,6 +189,25 @@ def test_intraday_promotion_adjustment_is_explained_in_raw_json():
     assert raw["promotion_adjustment"] == 0.03
 
 
+def test_intraday_promotion_direction_uses_nightly_bias():
+    row = _csv_rows(
+        write_snapshot_csv(
+            [
+                (
+                    "intraday_promotion",
+                    [{"symbol": "AAA", "nightly_bias": "short", "promotion_score": 0.5, "nightly_score": -0.1, "verdict": "watch"}],
+                    "",
+                    "fixture",
+                )
+            ],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )[0]
+
+    assert row["direction"] == Direction.SHORT.value
+    assert row["side"] == "sell"
+
+
 def test_snapshot_normalizes_legacy_rejection_reason():
     row = _csv_rows(write_snapshot_csv([("model_shortlist", [{"symbol": "AAA", "side": "buy", "trade_quality_status": "rejected", "trade_quality_reason": "Approved; Meta label probability below threshold"}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
     verdicts = json.loads(row["stage_verdicts"])
