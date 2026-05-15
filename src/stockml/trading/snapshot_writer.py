@@ -20,6 +20,8 @@ from stockml.trading.snapshot_schema import (
     snapshot_row_to_record,
     validate_snapshot_row,
 )
+from stockml.trading.outcome_reasons import OutcomeReason
+from stockml.trading.reason_normalizer import normalize_concatenated, normalize_reason
 
 
 def first_value(row: dict[str, Any], keys: Iterable[str], default: Any = "") -> Any:
@@ -170,20 +172,49 @@ def _outcome_and_stage(pool: Pool, row: dict[str, Any]) -> tuple[str | None, Fun
     return None, FunnelStage.SCORED
 
 
-def _stage_verdicts(pool: Pool, row: dict[str, Any], *, outcome: str | None, reason: str | None) -> dict[str, Any]:
+def _stage_verdicts(pool: Pool, row: dict[str, Any], *, outcome: str | None, reason: str | None, normalized_reason: OutcomeReason | None, normalized_verdicts: dict[str, Any]) -> dict[str, Any]:
     if pool == Pool.INTRADAY_PROMOTION:
         verdict = str(first_value(row, ["verdict", "decision"], "") or "not_evaluated").lower()
         block_reason = first_value(row, ["block_reason", "reason"], "")
-        value = f"block:{block_reason}" if verdict == "block" and block_reason else verdict
-        return default_stage_verdicts(intraday_gate=value)
+        if verdict == "block" and block_reason:
+            reason_enum = normalize_reason(str(block_reason))
+            value = f"block:{reason_enum.value.removeprefix('blocked_')}" if reason_enum and reason_enum.value.startswith("blocked_") else f"block:{block_reason}"
+        else:
+            value = verdict
+        merged = default_stage_verdicts(**normalized_verdicts)
+        merged["intraday_gate"] = value
+        return merged
     if pool == Pool.ACTION_QUEUE:
         decision = str(first_value(row, ["decision", "recommended_action", "operator_call"], "") or "pending").lower()
         return default_stage_verdicts(monitor=decision, operator="pending")
+    if normalized_verdicts:
+        return default_stage_verdicts(**normalized_verdicts)
     if outcome == "rejected":
-        return default_stage_verdicts(trade_quality=f"rejected:{reason}" if reason else "rejected")
+        reason_value = normalized_reason.value if normalized_reason else "unknown"
+        return default_stage_verdicts(trade_quality=f"rejected:{reason_value.removeprefix('rejected_')}")
     if outcome == "accepted":
         return default_stage_verdicts(trade_quality="approved")
     return default_stage_verdicts()
+
+
+def _outcome_reason(pool: Pool, outcome: str | None, reason: str | None, row: dict[str, Any]) -> tuple[str | None, dict[str, Any], OutcomeReason | None]:
+    normalized, verdicts = normalize_concatenated(reason)
+    if outcome == "accepted":
+        return OutcomeReason.ACCEPTED.value, verdicts, OutcomeReason.ACCEPTED
+    if outcome == "open_candidate":
+        return OutcomeReason.OPEN_CANDIDATE.value, verdicts, OutcomeReason.OPEN_CANDIDATE
+    if outcome == "blocked":
+        reason_enum = normalized if normalized and normalized.value.startswith("blocked_") else normalize_reason(str(first_value(row, ["block_reason", "reason"], "")))
+        reason_enum = reason_enum if reason_enum and reason_enum.value.startswith("blocked_") else OutcomeReason.BLOCKED_UNKNOWN
+        return reason_enum.value, verdicts, reason_enum
+    if outcome == "near_miss":
+        failed_gate = str(first_value(row, ["failed_gate"], "")).lower()
+        reason_enum = OutcomeReason.NEAR_MISS_LIQUIDITY if "liquidity" in failed_gate else OutcomeReason.NEAR_MISS_SCORE
+        return reason_enum.value, verdicts, reason_enum
+    if outcome == "rejected":
+        reason_enum = normalized if normalized and normalized.value.startswith("rejected_") else OutcomeReason.REJECTED_UNKNOWN
+        return reason_enum.value, verdicts, reason_enum
+    return None, verdicts, normalized
 
 
 def _raw_json(row: dict[str, Any], *, source: str) -> dict[str, Any]:
@@ -205,6 +236,7 @@ def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: da
     generated = parse_generated_at(generated_at or first_value(row, ["generated_at", "snapshot_at", "time", "updated_at", "logged_at"]), fallback=snapshot_at)
     reason = str(first_value(row, ["outcome_reason", "reason", "reason_note", "decision_reason", "trade_quality_reason", "block_reason", "message", "operator_call_reason"], "") or "")
     outcome, stage = _outcome_and_stage(pool_enum, row)
+    outcome_reason, normalized_verdicts, normalized_reason = _outcome_reason(pool_enum, outcome, reason, row)
     raw_score = _raw_score(pool_enum, row)
     display_score = _display_score(pool_enum, row)
     snapshot_row = SnapshotRow(
@@ -220,8 +252,8 @@ def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: da
         score_basis=_score_basis(pool_enum, row),
         score_state=_score_state(pool_enum, raw_score, display_score),
         outcome=outcome,
-        outcome_reason=reason if outcome not in [None, "scored"] else None,
-        stage_verdicts=_stage_verdicts(pool_enum, row, outcome=outcome, reason=reason),
+        outcome_reason=outcome_reason if outcome not in [None, "scored"] else None,
+        stage_verdicts=_stage_verdicts(pool_enum, row, outcome=outcome, reason=reason, normalized_reason=normalized_reason, normalized_verdicts=normalized_verdicts),
         notional=float_or_none(first_value(row, ["planned_notional", "approved_notional", "notional", "market_value"])),
         quantity=int_or_none(first_value(row, ["planned_quantity", "suggested_quantity", "qty", "filled_qty"])),
         data_age_seconds=max(0, int((snapshot_at - generated).total_seconds())),

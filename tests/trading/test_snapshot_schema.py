@@ -187,3 +187,23 @@ def test_intraday_promotion_adjustment_is_explained_in_raw_json():
     assert row["raw_score"] == "1.0"
     assert row["display_score"] == "1.03"
     assert raw["promotion_adjustment"] == 0.03
+
+
+def test_snapshot_normalizes_legacy_rejection_reason():
+    row = _csv_rows(write_snapshot_csv([("model_shortlist", [{"symbol": "AAA", "side": "buy", "trade_quality_status": "rejected", "trade_quality_reason": "Approved; Meta label probability below threshold"}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
+    verdicts = json.loads(row["stage_verdicts"])
+
+    assert row["outcome"] == "rejected"
+    assert row["outcome_reason"] == "rejected_meta_label_threshold"
+    assert row["reason"] == "Meta-label probability below threshold"
+    assert "Approved;" not in row["reason"]
+    assert verdicts["trade_quality"] == "approved"
+    assert verdicts["meta_label"] == "rejected:below_threshold"
+
+
+def test_intraday_block_reason_is_normalized():
+    row = _csv_rows(write_snapshot_csv([("intraday_promotion", [{"symbol": "AAA", "verdict": "block", "block_reason": "wide_spread"}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
+
+    assert row["outcome"] == "blocked"
+    assert row["outcome_reason"] == "blocked_wide_spread"
+    assert row["reason"] == "Spread too wide"

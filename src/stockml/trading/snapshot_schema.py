@@ -6,6 +6,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from stockml.trading.outcome_reasons import OutcomeReason, human_label
+
 
 class Direction(str, Enum):
     LONG = "long"
@@ -123,6 +125,21 @@ def validate_snapshot_row(row: SnapshotRow) -> SnapshotRow:
         raise ValueError("invalid_snapshot_score_state")
     if row.outcome_reason and not row.outcome:
         raise ValueError("snapshot_reason_without_outcome")
+    if row.outcome_reason:
+        try:
+            reason = OutcomeReason(str(row.outcome_reason))
+        except ValueError as exc:
+            raise ValueError("invalid_snapshot_outcome_reason") from exc
+        if row.outcome == "rejected" and not reason.value.startswith("rejected_"):
+            raise ValueError("rejected_reason_must_be_rejected")
+        if row.outcome == "near_miss" and not reason.value.startswith("near_miss_"):
+            raise ValueError("near_miss_reason_must_be_near_miss")
+        if row.outcome == "blocked" and not reason.value.startswith("blocked_"):
+            raise ValueError("blocked_reason_must_be_blocked")
+        if row.outcome == "accepted" and reason != OutcomeReason.ACCEPTED:
+            raise ValueError("accepted_reason_must_be_accepted")
+        if row.outcome == "open_candidate" and reason != OutcomeReason.OPEN_CANDIDATE:
+            raise ValueError("open_candidate_reason_must_be_open_candidate")
     if row.rank is not None and row.rank < 1:
         raise ValueError("snapshot_rank_must_be_positive")
     if row.data_age_seconds < 0:
@@ -185,7 +202,7 @@ def snapshot_row_to_record(row: SnapshotRow, *, source: str = "") -> dict[str, A
             "action": shim_action(row),
             "verdict": shim_verdict(row),
             "score": row.display_score if row.display_score is not None else "",
-            "reason": row.outcome_reason or "",
+            "reason": human_label(row.outcome_reason),
             "source": source,
         }
     )
