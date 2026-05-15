@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from scripts.check_trading_snapshot_quality import FAIL, PASS, WARN, check_exact_duplicate_near_miss, check_ghost_rows, check_null_outcome, check_score_raw_score_mismatch, check_short_scores_and_ranks, check_stale_data, run_checks
+from scripts.check_trading_snapshot_quality import FAIL, PASS, WARN, check_cross_stage_symbol_overlap, check_duplicate_symbol_direction, check_exact_duplicate_near_miss, check_ghost_rows, check_null_outcome, check_score_raw_score_mismatch, check_short_scores_and_ranks, check_stale_data, run_checks
 
 
 def test_ghost_rows_fail():
@@ -31,6 +31,51 @@ def test_score_raw_score_mismatch_reports_offset():
 
     assert result.status == WARN
     assert "diff=0.25" in result.details[0]
+
+
+def test_score_raw_score_mismatch_is_pass_when_promotion_adjustment_explains_delta():
+    frame = pd.DataFrame(
+        [
+            {
+                "symbol": "AAA",
+                "direction": "neutral",
+                "outcome": "accepted",
+                "raw_score": 1.0,
+                "score": 1.03,
+                "raw_json": '{"promotion_adjustment": 0.03}',
+            }
+        ]
+    )
+
+    result = check_score_raw_score_mismatch(frame)
+
+    assert result.status == PASS
+
+
+def test_duplicate_symbol_direction_only_flags_same_pool_duplicates():
+    frame = pd.DataFrame(
+        [
+            {"pool": "model_shortlist", "symbol": "AAA", "direction": "long"},
+            {"pool": "per_symbol_forecast", "symbol": "AAA", "direction": "long"},
+        ]
+    )
+
+    result = check_duplicate_symbol_direction(frame)
+
+    assert result.status == PASS
+
+
+def test_cross_stage_symbol_overlap_warns_for_expected_funnel_overlap():
+    frame = pd.DataFrame(
+        [
+            {"pool": "model_shortlist", "symbol": "AAA", "direction": "long"},
+            {"pool": "per_symbol_forecast", "symbol": "AAA", "direction": "long"},
+        ]
+    )
+
+    result = check_cross_stage_symbol_overlap(frame)
+
+    assert result.status == WARN
 
 
 def test_null_outcome_suggests_stage_fill_value():

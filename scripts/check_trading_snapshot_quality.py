@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -54,19 +55,40 @@ def _symbol_list(frame: pd.DataFrame, limit: int = 20) -> str:
 
 
 def check_duplicate_symbol_direction(frame: pd.DataFrame) -> CheckResult:
-    required = {"symbol", "direction"}
+    required = {"pool", "symbol", "direction"}
     if not required.issubset(frame.columns):
-        return CheckResult("duplicate_symbol_direction", WARN, "Missing symbol/direction columns; duplicate check skipped.")
+        return CheckResult("duplicate_symbol_direction", WARN, "Missing pool/symbol/direction columns; duplicate check skipped.")
+    work = frame.copy()
+    work["pool"] = _text_series(work, "pool").str.lower()
+    work["symbol"] = _text_series(work, "symbol").str.upper()
+    work["direction"] = _text_series(work, "direction").str.lower()
+    grouped = work.groupby(["pool", "symbol", "direction"], dropna=False).size().reset_index(name="rows")
+    dupes = grouped[grouped["rows"] > 1]
+    if dupes.empty:
+        return CheckResult("duplicate_symbol_direction", PASS, "No repeated symbol + direction pairs within the same pool.")
+    affected = [f"{row.pool}/{row.symbol}/{row.direction}: {int(row.rows)} rows" for row in dupes.itertuples()]
+    return CheckResult(
+        "duplicate_symbol_direction",
+        WARN,
+        f"{len(dupes)} symbol + direction pairs repeat within the same pool.",
+        affected[:25],
+    )
+
+
+def check_cross_stage_symbol_overlap(frame: pd.DataFrame) -> CheckResult:
+    required = {"pool", "symbol", "direction"}
+    if not required.issubset(frame.columns):
+        return CheckResult("cross_stage_symbol_overlap", WARN, "Missing pool/symbol/direction columns; cross-stage overlap check skipped.")
     work = frame.copy()
     work["symbol"] = _text_series(work, "symbol").str.upper()
     work["direction"] = _text_series(work, "direction").str.lower()
     grouped = work.groupby(["symbol", "direction"], dropna=False).agg(rows=("pool", "size"), pools=("pool", lambda values: sorted(set(map(str, values)))))
     dupes = grouped[grouped["rows"] > 1].reset_index()
     if dupes.empty:
-        return CheckResult("duplicate_symbol_direction", PASS, "No repeated symbol + direction pairs across funnel rows.")
+        return CheckResult("cross_stage_symbol_overlap", PASS, "No cross-stage symbol + direction overlap.")
     affected = [f"{row.symbol}/{row.direction}:{int(row.rows)} rows in {','.join(row.pools)}" for row in dupes.itertuples()]
     return CheckResult(
-        "duplicate_symbol_direction",
+        "cross_stage_symbol_overlap",
         WARN,
         f"{len(dupes)} symbol + direction pairs appear multiple times across funnel stages.",
         affected[:25],
@@ -111,7 +133,11 @@ def check_score_raw_score_mismatch(frame: pd.DataFrame, tolerance: float = 0.000
     score = _numeric_series(frame, "score")
     comparable = raw.notna() & score.notna()
     diff = score - raw
-    mismatches = frame[comparable & diff.abs().gt(tolerance)].copy()
+    explained = pd.Series([False] * len(frame), index=frame.index)
+    if _has_column(frame, "raw_json"):
+        adjustments = _text_series(frame, "raw_json").map(_promotion_adjustment)
+        explained = adjustments.notna() & (diff - adjustments).abs().le(tolerance)
+    mismatches = frame[comparable & ~explained & diff.abs().gt(tolerance)].copy()
     if mismatches.empty:
         return CheckResult("score_raw_score_mismatch", PASS, f"No score/raw_score mismatches above tolerance {tolerance}.")
     mismatches["offset"] = diff.loc[mismatches.index].round(6)
@@ -191,12 +217,29 @@ def check_stale_data(frame: pd.DataFrame, threshold_seconds: int = 3600) -> Chec
 
 CHECKS: list[Callable[[pd.DataFrame], CheckResult]] = [
     check_duplicate_symbol_direction,
+    check_cross_stage_symbol_overlap,
     check_ghost_rows,
     check_short_scores_and_ranks,
     check_score_raw_score_mismatch,
     check_null_outcome,
     check_exact_duplicate_near_miss,
 ]
+
+
+def _promotion_adjustment(raw_json: str) -> float | None:
+    try:
+        payload = json.loads(raw_json)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get("promotion_adjustment")
+    if value in [None, ""]:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def run_checks(frame: pd.DataFrame, *, stale_threshold_seconds: int = 3600) -> list[CheckResult]:
