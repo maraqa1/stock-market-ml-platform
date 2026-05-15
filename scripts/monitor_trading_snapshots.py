@@ -101,10 +101,10 @@ class SnapshotComparator:
 
 
 class AlertManager:
-    def __init__(self, log_path: Path, *, slack_webhook: str | None = None):
+    def __init__(self, log_path: Path, *, slack_webhook: str | None = None, fired_keys: set[str] | None = None):
         self.log_path = log_path
         self.slack_webhook = slack_webhook
-        self.fired_keys: set[str] = set()
+        self.fired_keys: set[str] = fired_keys or set()
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def emit(self, result: MonitorResult, *, snapshot_path: Path) -> None:
@@ -148,6 +148,7 @@ class TradingSnapshotMonitor:
         freeze_cycles: int = 2,
         sizing_block_cycles: int = 2,
         meta_label_cycles: int = 3,
+        market_hours_only_alerts: bool = True,
         state_path: Path | None = None,
         log_path: Path | None = None,
         slack_webhook: str | None = None,
@@ -157,9 +158,10 @@ class TradingSnapshotMonitor:
         self.freeze_cycles = freeze_cycles
         self.sizing_block_cycles = sizing_block_cycles
         self.meta_label_cycles = meta_label_cycles
+        self.market_hours_only_alerts = market_hours_only_alerts
         self.state_path = state_path or directory / "monitor_state.json"
-        self.alerts = AlertManager(log_path or directory / "monitor.log", slack_webhook=slack_webhook)
         self.state = self._load_state()
+        self.alerts = AlertManager(log_path or directory / "monitor.log", slack_webhook=slack_webhook, fired_keys=set(self.state.get("fired_alert_keys", [])))
 
     def _load_state(self) -> dict[str, Any]:
         if not self.state_path.exists():
@@ -170,18 +172,22 @@ class TradingSnapshotMonitor:
             return {"processed": [], "freeze_streak": 0, "accepted_unsized": {}, "meta_label_low_streak": 0, "last_stale_count": None}
 
     def _save_state(self) -> None:
+        self.state["fired_alert_keys"] = sorted(self.alerts.fired_keys)
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(json.dumps(self.state, indent=2, sort_keys=True), encoding="utf-8")
 
     def latest_files(self) -> list[Path]:
         return sorted(self.directory.glob("trading_snapshot_*.csv"), key=lambda path: path.stat().st_mtime)
 
-    def process_new_files(self) -> list[MonitorResult]:
+    def process_new_files(self, *, latest_only: bool = False) -> list[MonitorResult]:
         processed = set(self.state.get("processed", []))
         results: list[MonitorResult] = []
-        for path in self.latest_files():
-            if str(path) in processed:
-                continue
+        candidates = [path for path in self.latest_files() if str(path) not in processed]
+        if latest_only and candidates:
+            skipped = candidates[:-1]
+            processed.update(str(path) for path in skipped)
+            candidates = candidates[-1:]
+        for path in candidates:
             results.extend(self.process_snapshot(path))
             processed.add(str(path))
         self.state["processed"] = sorted(processed)[-100:]
@@ -200,6 +206,7 @@ class TradingSnapshotMonitor:
             freeze_cycles=self.freeze_cycles,
             sizing_block_cycles=self.sizing_block_cycles,
             meta_label_cycles=self.meta_label_cycles,
+            market_hours_only_alerts=self.market_hours_only_alerts,
         )
         for result in results:
             self.alerts.emit(result, snapshot_path=path)
@@ -222,9 +229,11 @@ def check_pipeline_freeze(current: pd.DataFrame, previous: pd.DataFrame | None, 
 
 def check_sizing_blockage(current: pd.DataFrame, state: dict[str, Any], *, sizing_block_cycles: int) -> MonitorResult:
     outcome = _text(current, "outcome").str.lower()
+    pool = _text(current, "pool").str.lower()
     notional_missing = _num(current, "notional").isna()
     quantity_missing = _num(current, "quantity").isna()
-    accepted_unsized = current[outcome.eq("accepted") & (notional_missing | quantity_missing)]
+    executable_pool = pool.isin({"todays_basket", "action_queue"})
+    accepted_unsized = current[executable_pool & outcome.eq("accepted") & (notional_missing | quantity_missing)]
     symbols = sorted(set(_text(accepted_unsized, "symbol").str.upper()) - {""})
     counters = dict(state.get("accepted_unsized", {}))
     next_counters: dict[str, int] = {}
@@ -239,7 +248,15 @@ def check_sizing_blockage(current: pd.DataFrame, state: dict[str, Any], *, sizin
     return MonitorResult("sizing_blockage", PASS, "No accepted candidates with missing notional/quantity.")
 
 
-def check_stale_data(current: pd.DataFrame, state: dict[str, Any], *, stale_threshold_seconds: int) -> MonitorResult:
+def _is_market_hours(now: datetime | None = None) -> bool:
+    stamp = now or datetime.now(timezone.utc)
+    if stamp.weekday() >= 5:
+        return False
+    minutes = stamp.hour * 60 + stamp.minute
+    return (13 * 60 + 30) <= minutes <= (21 * 60)
+
+
+def check_stale_data(current: pd.DataFrame, state: dict[str, Any], *, stale_threshold_seconds: int, market_hours_only_alerts: bool = True) -> MonitorResult:
     ages = _num(current, "data_age_seconds")
     stale = current[ages.gt(stale_threshold_seconds)]
     stale_count = int(len(stale))
@@ -249,9 +266,11 @@ def check_stale_data(current: pd.DataFrame, state: dict[str, Any], *, stale_thre
     details = {"stale_count": stale_count, "previous_stale_count": previous_count, "max_age_seconds": int(ages.max()) if ages.notna().any() else None}
     if not over_4h.empty:
         symbols = sorted(set(_text(over_4h, "symbol").str.upper()) - {""})
-        return MonitorResult("stale_data", ALERT, f"{len(over_4h)} rows exceed 4h data age.", {**details, "symbols": symbols[:50]})
+        status = ALERT if (not market_hours_only_alerts or _is_market_hours()) else WARN
+        return MonitorResult("stale_data", status, f"{len(over_4h)} rows exceed 4h data age.", {**details, "symbols": symbols[:50], "market_hours": _is_market_hours()})
     if previous_count is not None and previous_count > 0 and stale_count > previous_count * 1.2:
-        return MonitorResult("stale_data", ALERT, f"Stale row count increased >20%: {previous_count} -> {stale_count}.", details)
+        status = ALERT if (not market_hours_only_alerts or _is_market_hours()) else WARN
+        return MonitorResult("stale_data", status, f"Stale row count increased >20%: {previous_count} -> {stale_count}.", {**details, "market_hours": _is_market_hours()})
     if stale_count:
         return MonitorResult("stale_data", WARN, f"{stale_count} rows exceed stale threshold {stale_threshold_seconds}s.", details)
     return MonitorResult("stale_data", PASS, "No stale rows above threshold.", details)
@@ -291,11 +310,12 @@ def run_snapshot_checks(
     freeze_cycles: int = 2,
     sizing_block_cycles: int = 2,
     meta_label_cycles: int = 3,
+    market_hours_only_alerts: bool = True,
 ) -> list[MonitorResult]:
     return [
         check_pipeline_freeze(current, previous, state, freeze_cycles=freeze_cycles),
         check_sizing_blockage(current, state, sizing_block_cycles=sizing_block_cycles),
-        check_stale_data(current, state, stale_threshold_seconds=stale_threshold_seconds),
+        check_stale_data(current, state, stale_threshold_seconds=stale_threshold_seconds, market_hours_only_alerts=market_hours_only_alerts),
         check_meta_label_suppression(current, state, meta_label_cycles=meta_label_cycles),
     ]
 
@@ -313,12 +333,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("snapshot_dir", type=Path, help="Directory containing trading_snapshot_*.csv files.")
     parser.add_argument("--interval", type=int, default=60, help="Polling interval in seconds for --watch.")
     parser.add_argument("--watch", action="store_true", help="Keep polling for new snapshots. Without this, process new files once.")
+    parser.add_argument("--latest-only", action="store_true", help="On this run, mark older unseen snapshots processed and check only the newest file.")
     parser.add_argument("--state-path", type=Path, default=None, help="Path to monitor_state.json.")
     parser.add_argument("--log-path", type=Path, default=None, help="Path to monitor.log JSONL output.")
     parser.add_argument("--stale-threshold-seconds", type=int, default=3600)
     parser.add_argument("--freeze-cycles", type=int, default=2)
     parser.add_argument("--sizing-block-cycles", type=int, default=2)
     parser.add_argument("--meta-label-cycles", type=int, default=3)
+    parser.add_argument("--alert-stale-outside-market-hours", action="store_true", help="Promote stale-data alerts to ALERT outside regular UTC market coverage.")
     parser.add_argument("--slack-webhook", default=None)
     args = parser.parse_args(argv)
 
@@ -327,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
         "freeze_cycles": args.freeze_cycles,
         "sizing_block_cycles": args.sizing_block_cycles,
         "meta_label_cycles": args.meta_label_cycles,
+        "market_hours_only_alerts": not args.alert_stale_outside_market_hours,
         "state_path": args.state_path,
         "log_path": args.log_path,
         "slack_webhook": args.slack_webhook,
@@ -335,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
         watch_dir(args.snapshot_dir, interval=args.interval, **kwargs)
         return 0
     monitor = TradingSnapshotMonitor(args.snapshot_dir, **kwargs)
-    results = monitor.process_new_files()
+    results = monitor.process_new_files(latest_only=args.latest_only)
     return 1 if any(result.status == ALERT for result in results) else 0
 
 

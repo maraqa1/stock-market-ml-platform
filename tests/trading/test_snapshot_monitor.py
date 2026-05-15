@@ -58,7 +58,7 @@ def test_pipeline_freeze_alerts_after_two_cycles():
 
 def test_sizing_blockage_alerts_when_same_symbol_stuck():
     state = {}
-    frame = pd.DataFrame([row(symbol="AAA", outcome="accepted", notional=None, quantity=None)])
+    frame = pd.DataFrame([row(pool="todays_basket", symbol="AAA", outcome="accepted", notional=None, quantity=None)])
 
     first = check_sizing_blockage(frame, state, sizing_block_cycles=2)
     second = check_sizing_blockage(frame, state, sizing_block_cycles=2)
@@ -68,21 +68,40 @@ def test_sizing_blockage_alerts_when_same_symbol_stuck():
     assert "AAA" in second.details["symbols"]
 
 
+def test_sizing_blockage_ignores_non_executable_pools():
+    state = {}
+    frame = pd.DataFrame([row(pool="intraday_promotion", symbol="AAA", outcome="accepted", notional=None, quantity=None)])
+
+    result = check_sizing_blockage(frame, state, sizing_block_cycles=1)
+
+    assert result.status == PASS
+
+
 def test_stale_data_alerts_on_four_hour_rows():
     state = {}
     frame = pd.DataFrame([row(symbol="OLD", data_age_seconds=15000)])
 
-    result = check_stale_data(frame, state, stale_threshold_seconds=3600)
+    result = check_stale_data(frame, state, stale_threshold_seconds=3600, market_hours_only_alerts=False)
 
     assert result.status == ALERT
     assert "OLD" in result.details["symbols"]
+
+
+def test_stale_data_warns_outside_market_hours_by_default(monkeypatch):
+    state = {}
+    frame = pd.DataFrame([row(symbol="OLD", data_age_seconds=15000)])
+    monkeypatch.setattr("scripts.monitor_trading_snapshots._is_market_hours", lambda: False)
+
+    result = check_stale_data(frame, state, stale_threshold_seconds=3600)
+
+    assert result.status == WARN
 
 
 def test_stale_data_alerts_on_twenty_percent_increase():
     state = {"last_stale_count": 10}
     frame = pd.DataFrame([row(symbol=f"S{i}", data_age_seconds=4000) for i in range(13)])
 
-    result = check_stale_data(frame, state, stale_threshold_seconds=3600)
+    result = check_stale_data(frame, state, stale_threshold_seconds=3600, market_hours_only_alerts=False)
 
     assert result.status == ALERT
     assert result.details["previous_stale_count"] == 10
@@ -113,3 +132,17 @@ def test_monitor_persists_state_and_log(tmp_path: Path):
     assert (tmp_path / "state.json").exists()
     assert (tmp_path / "monitor.log").exists()
     assert "pipeline_freeze" in (tmp_path / "monitor.log").read_text(encoding="utf-8")
+
+
+def test_monitor_latest_only_marks_older_files_processed(tmp_path: Path):
+    directory = tmp_path / "snapshots"
+    directory.mkdir()
+    pd.DataFrame([row(symbol="OLD")]).to_csv(directory / "trading_snapshot_20260515_120000.csv", index=False)
+    pd.DataFrame([row(symbol="NEW")]).to_csv(directory / "trading_snapshot_20260515_120500.csv", index=False)
+
+    monitor = TradingSnapshotMonitor(directory, state_path=tmp_path / "state.json", log_path=tmp_path / "monitor.log")
+    monitor.process_new_files(latest_only=True)
+
+    state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert len(state["processed"]) == 2
+    assert state["last_snapshot"].endswith("trading_snapshot_20260515_120500.csv")
