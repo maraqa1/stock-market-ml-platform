@@ -91,6 +91,8 @@ def expected_return_bps(row: dict[str, Any], slope_5d_bps: float = 0.0) -> float
     score = model_score(row)
     if score is None:
         return None
+    if not slope_5d_bps:
+        return None
     expected = score * slope_5d_bps
     return -abs(expected) if is_short(row) else expected
 
