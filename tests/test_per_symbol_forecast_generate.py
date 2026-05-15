@@ -31,6 +31,8 @@ def test_forecast_rows_schema_is_stable():
     assert frame.iloc[0]["tier_c_status"] == "uncalibrated"
     assert frame.iloc[0]["forecast_confirmation"] in {"confirmed", "weak_confirm", "conflicted", "insufficient_data"}
     assert frame.iloc[0]["expected_move_bps_calibrated"] <= frame.iloc[0]["expected_move_bps"]
+    assert "expected_5d_return_bps" in frame.columns
+    assert "expected_5d_return" not in frame.columns
 
 
 def test_generate_per_symbol_forecast_writes_append_only_artifact(tmp_path: Path):

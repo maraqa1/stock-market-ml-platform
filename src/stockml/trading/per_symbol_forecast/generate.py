@@ -5,13 +5,18 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+import yaml
+from sqlalchemy import insert
+from sqlalchemy.engine import Engine
 
 from stockml.common.paths import PER_SYMBOL_FORECAST_DIR, PROJECT_ROOT, latest_file, timestamp
+from stockml.db.connection import get_engine
+from stockml.db.schema import forecast_cap_log
 from stockml.trading.per_symbol_forecast.confirmation import confirmation_fields
 from stockml.trading.per_symbol_forecast.derived import canonical_symbol, derived_fields
 from stockml.trading.per_symbol_forecast.model_stub import model_fields
 from stockml.trading.per_symbol_forecast.schema import OUTPUT_COLUMNS, output_record
-from stockml.trading.per_symbol_forecast.statistical import rank_to_return_slope, statistical_fields
+from stockml.trading.per_symbol_forecast.statistical import ForecastBounds, rank_to_return_slope_bps, statistical_fields
 from stockml.trading.per_symbol_forecast.validation import validate_output
 
 OUTPUT_DIR_NAME = "per_symbol_forecast"
@@ -40,6 +45,30 @@ def latest_positions_path(root: Path | None = None) -> Path | None:
 def latest_per_symbol_forecast_path(root: Path | None = None) -> Path | None:
     base = Path(root).resolve() if root else PROJECT_ROOT
     return latest_file(base / "data" / "trading" / OUTPUT_DIR_NAME, f"{OUTPUT_FILE_PREFIX}_*.csv")
+
+
+def _forecast_bounds(root: Path | None = None) -> ForecastBounds:
+    base = Path(root).resolve() if root else PROJECT_ROOT
+    path = base / "config" / "per_symbol_forecast.yaml"
+    if not path.exists():
+        return ForecastBounds()
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return ForecastBounds()
+    section = payload.get("per_symbol_forecast") if isinstance(payload, dict) else {}
+    bounds = section.get("forecast_bounds") if isinstance(section, dict) else {}
+    if not isinstance(bounds, dict):
+        return ForecastBounds()
+    defaults = ForecastBounds()
+    return ForecastBounds(
+        reasonable_max_1d_return_bps=float(bounds.get("reasonable_max_1d_return_bps", defaults.reasonable_max_1d_return_bps)),
+        reasonable_max_5d_return_bps=float(bounds.get("reasonable_max_5d_return_bps", defaults.reasonable_max_5d_return_bps)),
+        reasonable_max_move_bps=float(bounds.get("reasonable_max_move_bps", defaults.reasonable_max_move_bps)),
+        suspicious_warn_threshold_bps=float(bounds.get("suspicious_warn_threshold_bps", defaults.suspicious_warn_threshold_bps)),
+        cap_at_max=bool(bounds.get("cap_at_max", defaults.cap_at_max)),
+        max_reasonable_slope_bps_per_unit=float(bounds.get("max_reasonable_slope_bps_per_unit", defaults.max_reasonable_slope_bps_per_unit)),
+    )
 
 
 def _candidate_rows(frame: pd.DataFrame, limit: int) -> Iterable[dict[str, object]]:
@@ -94,9 +123,16 @@ def _merge_candidate_and_position_rows(candidates: pd.DataFrame, positions: pd.D
     return pd.DataFrame(records).drop(columns=["__symbol"], errors="ignore")
 
 
-def forecast_rows(candidates: pd.DataFrame, positions: pd.DataFrame | None = None, generated_at: str | None = None, limit: int = 100) -> pd.DataFrame:
+def forecast_rows(
+    candidates: pd.DataFrame,
+    positions: pd.DataFrame | None = None,
+    generated_at: str | None = None,
+    limit: int = 100,
+    bounds: ForecastBounds | None = None,
+) -> pd.DataFrame:
     generated_at = generated_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
-    slope_5d = rank_to_return_slope(candidates.rename(columns={"risk_adjusted_score": "model_score"}), "expected_trade_return")
+    cfg = bounds or ForecastBounds()
+    slope_5d = rank_to_return_slope_bps(candidates.rename(columns={"risk_adjusted_score": "model_score"}), "expected_trade_return")
     source_rows = _merge_candidate_and_position_rows(candidates, positions)
     records: list[dict[str, object]] = []
     seen: set[str] = set()
@@ -107,11 +143,47 @@ def forecast_rows(candidates: pd.DataFrame, positions: pd.DataFrame | None = Non
         seen.add(symbol)
         record: dict[str, object] = {}
         record.update(derived_fields(row, generated_at=generated_at))
-        record.update(statistical_fields(row, slope_5d=slope_5d))
+        record.update(statistical_fields(row, slope_5d=slope_5d, bounds=cfg))
         record.update(confirmation_fields(record))
         record.update(model_fields())
         records.append(output_record(record))
     return validate_output(pd.DataFrame(records, columns=OUTPUT_COLUMNS))
+
+
+def log_forecast_caps(frame: pd.DataFrame, *, engine: Engine | None = None, forecast_run_id: str = "", now: datetime | None = None) -> int:
+    if frame.empty or "cap_applied" not in frame.columns:
+        return 0
+    capped = frame[frame["cap_applied"].fillna(False).astype(bool)].copy()
+    if capped.empty:
+        return 0
+    db = engine or get_engine(required=False)
+    if db is None:
+        return 0
+    stamp = now or datetime.now(timezone.utc)
+    rows = []
+    for row in capped.fillna("").to_dict("records"):
+        pre_cap = row.get("pre_cap_expected_5d_bps")
+        if pre_cap in ["", None]:
+            continue
+        rows.append(
+            {
+                "logged_at": stamp,
+                "symbol": str(row.get("symbol") or "").upper(),
+                "field_name": "expected_5d_return_bps",
+                "pre_cap_value": float(pre_cap),
+                "cap_applied": float(row.get("expected_5d_return_bps") or 0),
+                "reason": "forecast_return_cap_applied",
+                "forecast_run_id": forecast_run_id,
+            }
+        )
+    if not rows:
+        return 0
+    try:
+        with db.begin() as conn:
+            conn.execute(insert(forecast_cap_log), rows)
+    except Exception:
+        return 0
+    return len(rows)
 
 
 def write_per_symbol_forecast(frame: pd.DataFrame, output_dir: Path | None = None, stamp: str | None = None) -> Path:
@@ -128,12 +200,15 @@ def generate_per_symbol_forecast(root: Path | None = None, limit: int = 100, sta
     positions_path = latest_positions_path(base)
     candidates = _read_csv(candidate_path)
     positions = _read_csv(positions_path)
-    frame = forecast_rows(candidates, positions=positions, limit=limit)
-    output_path = write_per_symbol_forecast(frame, output_dir=base / "data" / "trading" / OUTPUT_DIR_NAME, stamp=stamp)
+    run_id = stamp or timestamp()
+    frame = forecast_rows(candidates, positions=positions, limit=limit, bounds=_forecast_bounds(base))
+    output_path = write_per_symbol_forecast(frame, output_dir=base / "data" / "trading" / OUTPUT_DIR_NAME, stamp=run_id)
+    caps_logged = log_forecast_caps(frame, forecast_run_id=run_id)
     return {
         "status": "ok",
         "rows": int(len(frame)),
         "path": str(output_path),
         "source": str(candidate_path or ""),
         "positions_source": str(positions_path or ""),
+        "caps_logged": caps_logged,
     }

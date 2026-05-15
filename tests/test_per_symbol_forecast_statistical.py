@@ -1,10 +1,13 @@
 import pandas as pd
 
 from stockml.trading.per_symbol_forecast.statistical import (
+    ForecastBounds,
+    assert_slope_is_sane,
     calibrated_move_bps,
     direction_context,
     magnitude_bucket,
     rank_to_return_slope,
+    return_value_to_bps,
     statistical_fields,
     volatility_adjusted_score,
 )
@@ -14,6 +17,11 @@ def test_rank_to_return_slope_is_positive_when_signal_exists():
     history = pd.DataFrame({"model_score": [1, 2, 3, 4], "target_return_5d": [0.01, 0.02, 0.03, 0.04]})
 
     assert rank_to_return_slope(history) > 0
+
+
+def test_expected_trade_return_percent_points_convert_to_bps():
+    assert round(return_value_to_bps(1.06265350225328), 6) == 106.26535
+    assert return_value_to_bps(0.01) == 100.0
 
 
 def test_rank_to_return_slope_is_zero_for_missing_inputs():
@@ -32,6 +40,7 @@ def test_short_invalidation_level_is_above_entry():
     assert result["suggested_stop_bps"] == 200.0
     assert result["invalidation_level"] == 102.0
     assert result["direction_context"] == "short_bias"
+    assert result["expected_5d_return_bps"] is None
 
 
 def test_direction_and_magnitude_context_are_diagnostic_not_probability():
@@ -46,3 +55,12 @@ def test_direction_and_magnitude_context_are_diagnostic_not_probability():
 def test_expected_move_is_calibrated_by_volatility_cap():
     assert calibrated_move_bps(1000, 0.02) == 300
     assert calibrated_move_bps(100, 0.02) == 100
+
+
+def test_slope_sanity_rejects_units_bug():
+    try:
+        assert_slope_is_sane(5000, ForecastBounds(max_reasonable_slope_bps_per_unit=1000))
+    except ValueError as exc:
+        assert "slope_units" in str(exc)
+    else:
+        raise AssertionError("expected slope sanity failure")

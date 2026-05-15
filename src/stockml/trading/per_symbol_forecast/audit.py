@@ -24,7 +24,7 @@ def audit_per_symbol_forecast(root: Path | None = None, stamp: str | None = None
                 "generated_at": generated_at,
                 "source_file": latest.name if latest else "",
                 "forecast_rows": int(len(frame)),
-                "tier_b_expected_5d_return_correlation": None,
+                "tier_b_expected_5d_return_bps_correlation": None,
                 "tier_c_direction_probability_brier_score": None,
                 "audit_status": "awaiting_realized_outcomes",
             }

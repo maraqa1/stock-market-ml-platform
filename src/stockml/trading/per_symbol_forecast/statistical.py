@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, asdict
 from typing import Any
 
 import pandas as pd
@@ -10,6 +11,16 @@ from stockml.trading.per_symbol_forecast.derived import current_price, is_short,
 DEFAULT_STOP_MULTIPLIER = 1.0
 DEFAULT_TAKE_PROFIT_MULTIPLIER = 1.5
 DEFAULT_MOVE_VOL_MULTIPLIER = 1.5
+
+
+@dataclass(frozen=True)
+class ForecastBounds:
+    reasonable_max_1d_return_bps: float = 200.0
+    reasonable_max_5d_return_bps: float = 500.0
+    reasonable_max_move_bps: float = 1000.0
+    suspicious_warn_threshold_bps: float = 300.0
+    cap_at_max: bool = True
+    max_reasonable_slope_bps_per_unit: float = 1000.0
 
 
 def rank_to_return_slope(history: pd.DataFrame, horizon_col: str = "target_return_5d") -> float:
@@ -23,6 +34,28 @@ def rank_to_return_slope(history: pd.DataFrame, horizon_col: str = "target_retur
     if not var:
         return 0.0
     return float(cov / var)
+
+
+def return_value_to_bps(value: float | None) -> float | None:
+    if value is None:
+        return None
+    parsed = float(value)
+    if pd.isna(parsed):
+        return None
+    if abs(parsed) <= 0.25:
+        return parsed * 10000.0
+    return parsed * 100.0
+
+
+def rank_to_return_slope_bps(history: pd.DataFrame, horizon_col: str = "target_return_5d") -> float:
+    slope = rank_to_return_slope(history, horizon_col)
+    return return_value_to_bps(slope) or 0.0
+
+
+def assert_slope_is_sane(slope_bps_per_score_unit: float, bounds: ForecastBounds | None = None) -> None:
+    cfg = bounds or ForecastBounds()
+    if abs(slope_bps_per_score_unit) > cfg.max_reasonable_slope_bps_per_unit:
+        raise ValueError("per_symbol_forecast_slope_units_out_of_bounds")
 
 
 def volatility_adjusted_score(score: float | None, volatility: float | None, floor: float = 0.01, cap: float = 100.0) -> float | None:
@@ -51,14 +84,14 @@ def spread_penalty(spread_bps: float | None) -> float:
     return -min(max(spread_bps, 0.0) / 100.0, 1.0)
 
 
-def expected_return(row: dict[str, Any], slope_5d: float = 0.0) -> float | None:
+def expected_return_bps(row: dict[str, Any], slope_5d_bps: float = 0.0) -> float | None:
     value = num(row.get("expected_trade_return"))
     if value is not None:
-        return value
+        return return_value_to_bps(value)
     score = model_score(row)
     if score is None:
         return None
-    expected = score * slope_5d
+    expected = score * slope_5d_bps
     return -abs(expected) if is_short(row) else expected
 
 
@@ -102,6 +135,16 @@ def calibrated_move_bps(raw_move_bps: float | None, volatility: float | None, mu
     if volatility is None or volatility <= 0:
         return raw_move_bps
     return min(raw_move_bps, abs(volatility) * 10000.0 * multiplier)
+
+
+def capped_bps(value: float | None, limit: float, *, cap_at_max: bool = True) -> tuple[float | None, bool, float | None]:
+    if value is None:
+        return None, False, None
+    if abs(value) <= limit:
+        return value, False, None
+    if not cap_at_max:
+        return None, True, value
+    return (limit if value > 0 else -limit), True, value
 
 
 def forecast_risk_penalty(row: dict[str, Any], stop_bps: float) -> float:
@@ -168,13 +211,20 @@ def forecast_reason(row: dict[str, Any], expected_5d: float | None, vol_adj: flo
     return "NEUTRAL_LOW_CONVICTION"
 
 
-def statistical_fields(row: dict[str, Any], slope_5d: float = 0.0) -> dict[str, Any]:
+def statistical_fields(row: dict[str, Any], slope_5d: float = 0.0, bounds: ForecastBounds | None = None) -> dict[str, Any]:
+    cfg = bounds or ForecastBounds()
     spread = num(row.get("spread_bps"))
     vol = num(row.get("volatility_20d") or row.get("volatility_60d"))
     score = model_score(row)
-    expected_5d = expected_return(row, slope_5d=slope_5d)
-    expected_1d = expected_5d / 5.0 if expected_5d is not None else None
-    expected_move = abs(expected_5d * 10000.0) if expected_5d is not None else None
+    slope_5d_bps = return_value_to_bps(slope_5d) if abs(slope_5d) <= 10 else slope_5d
+    assert_slope_is_sane(slope_5d_bps or 0.0, cfg)
+    pre_cap_5d = expected_return_bps(row, slope_5d_bps=slope_5d_bps or 0.0)
+    expected_5d, cap_5d, pre_cap_value = capped_bps(pre_cap_5d, cfg.reasonable_max_5d_return_bps, cap_at_max=cfg.cap_at_max)
+    pre_cap_1d = expected_5d / 5.0 if expected_5d is not None else None
+    expected_1d, cap_1d, _ = capped_bps(pre_cap_1d, cfg.reasonable_max_1d_return_bps, cap_at_max=cfg.cap_at_max)
+    pre_cap_move = abs(expected_5d) if expected_5d is not None else None
+    expected_move, cap_move, _ = capped_bps(pre_cap_move, cfg.reasonable_max_move_bps, cap_at_max=cfg.cap_at_max)
+    cap_applied = bool(cap_5d or cap_1d or cap_move)
     vol_bps = abs(vol or 0.0) * 10000.0
     calibrated_move = calibrated_move_bps(expected_move, vol)
     stop_bps = vol_bps * DEFAULT_STOP_MULTIPLIER
@@ -195,11 +245,18 @@ def statistical_fields(row: dict[str, Any], slope_5d: float = 0.0) -> dict[str, 
     return {
         "direction_context": direction_context(row, expected_5d),
         "direction_basis": direction_basis(row, expected_5d),
-        "expected_5d_return_raw": expected_5d,
-        "expected_1d_return": expected_1d,
-        "expected_5d_return": expected_5d,
+        "expected_1d_return_bps": expected_1d,
+        "expected_5d_return_bps": expected_5d,
         "expected_move_bps": expected_move,
         "expected_move_bps_calibrated": calibrated_move,
+        "cap_applied": cap_applied,
+        "pre_cap_expected_5d_bps": pre_cap_value,
+        "units_audit": {
+            "internal_return_unit": "bps",
+            "expected_trade_return_interpretation": "raw_ratio_when_abs_le_0.25_else_percent_points",
+            "slope_unit": "bps_per_score_unit",
+            "bounds": asdict(cfg),
+        },
         "magnitude_bucket": magnitude_bucket(calibrated_move),
         "downside_risk_bps": vol_bps,
         "upside_risk_bps": vol_bps,

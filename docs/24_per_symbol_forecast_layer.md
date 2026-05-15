@@ -45,9 +45,9 @@ The synchronized intraday clock runs the forecast generation after candidate ref
 
 Tier A fields are derived directly from existing inputs. Examples: symbol, forecast scope, open-position flag, position entry/P&L fields, side, current trade action, candidate rank, current price, meta-label probability, spread, and intraday range position.
 
-Tier B fields are statistical context. Examples: direction context, direction basis, expected 1-day and 5-day return, expected move in bps, magnitude bucket, downside and upside risk, volatility-adjusted score, penalties, expected profitability score, forecast confirmation, confirmation score, suggested stop and take-profit levels, invalidation level, regime label, and forecast reason.
+Tier B fields are statistical context. Examples: direction context, direction basis, expected 1-day and 5-day return in bps, expected move in bps, magnitude bucket, downside and upside risk, volatility-adjusted score, penalties, expected profitability score, forecast confirmation, confirmation score, suggested stop and take-profit levels, invalidation level, regime label, and forecast reason.
 
-Direction context is not a calibrated probability. It is derived from candidate side, trade action, or the sign of expected return. Raw expected move is retained, but the operator-facing calibrated move is capped by realized volatility so unusually large model-scale values do not dominate the ranking. Expected profitability is an ordinal diagnostic score that combines calibrated move context with risk-adjusted score and risk penalties.
+Direction context is not a calibrated probability. It is derived from candidate side, trade action, or the sign of expected return. Return projections use basis points internally and `_bps` field names. Raw expected move is retained, but the operator-facing calibrated move is capped by configured bounds and realized volatility so unusually large model-scale values do not dominate the ranking. Expected profitability is an ordinal diagnostic score that combines calibrated move context with risk-adjusted score and risk penalties.
 
 Forecast scope values:
 

@@ -483,6 +483,20 @@ autopilot_open_log = Table(
     Index("ix_autopilot_open_logged_at", "logged_at"),
 )
 
+forecast_cap_log = Table(
+    "forecast_cap_log",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("logged_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("symbol", String(50), nullable=False),
+    Column("field_name", String(100), nullable=False),
+    Column("pre_cap_value", Float, nullable=False),
+    Column("cap_applied", Float, nullable=False),
+    Column("reason", String(100), nullable=False),
+    Column("forecast_run_id", String(100)),
+    Index("ix_fcl_logged_at", "logged_at"),
+)
+
 daily_report_runs = Table(
     "daily_report_runs",
     metadata,

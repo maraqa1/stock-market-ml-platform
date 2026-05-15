@@ -84,7 +84,9 @@
                 <td>{{ (row.get('operator_priority', '-') or "-")|title }}</td>
                 <td class="num" data-sort-value="{{ row.get('confirmation_score', 0) or 0 }}">{{ number(row.get('confirmation_score'), 0) if row.get('confirmation_score', "") != "" else "-" }}</td>
                 <td title="{{ row.get('direction_basis', '') }}">{{ (row.get('direction_context', '-') or "-")|replace("_", " ")|title }}</td>
-                <td class="num" data-sort-value="{{ row.get('expected_move_bps_calibrated', 0) or 0 }}" title="Raw: {{ row.get('expected_move_bps', '-') }} bps">{{ number(row.get('expected_move_bps_calibrated'), 0) if row.get('expected_move_bps_calibrated', "") != "" else "-" }} bps</td>
+                <td class="num" data-sort-value="{{ row.get('expected_move_bps_calibrated', 0) or 0 }}" title="Raw: {{ row.get('expected_move_bps', '-') }} bps{% if row.get('cap_applied') in [True, 'True', 'true', '1', 1] %}; capped from {{ row.get('pre_cap_expected_5d_bps', '-') }} bps{% endif %}">
+                  {{ number(row.get('expected_move_bps_calibrated'), 0) if row.get('expected_move_bps_calibrated', "") != "" else "-" }} bps{% if row.get('cap_applied') in [True, 'True', 'true', '1', 1] %}*{% endif %}
+                </td>
                 <td>{{ (row.get('magnitude_bucket', '-') or "-")|title }}</td>
                 <td class="num" data-sort-value="{{ row.get('expected_profitability_score', 0) or 0 }}">{{ number(row.get('expected_profitability_score'), 2) if row.get('expected_profitability_score', "") != "" else "-" }}</td>
                 <td class="num" data-sort-value="{{ row.get('volatility_adjusted_score', 0) or 0 }}">{{ number(row.get('volatility_adjusted_score'), 3) if row.get('volatility_adjusted_score', "") != "" else "-" }}</td>
