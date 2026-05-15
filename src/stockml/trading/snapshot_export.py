@@ -31,7 +31,7 @@ def snapshot_pools(root: Path) -> list[tuple[str, list[dict[str, Any]], Any, str
     trading = trading_context(root)
     positions = positions_context(root)
     queue = action_queue_context(root)
-    promotions = intraday_promotion_context(root)
+    promotions = intraday_promotion_context(root, limit=None)
     near_miss = near_miss_context(root)
     near_miss_rows = _dedupe_near_miss_snapshot_rows(list(near_miss.get("rows") or []))
     per_symbol_forecast = per_symbol_forecast_context(root, limit=1000)

@@ -681,7 +681,7 @@ def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None) 
     return items
 
 
-def intraday_promotion_context(root: Path) -> dict[str, Any]:
+def intraday_promotion_context(root: Path, *, limit: int | None = 20) -> dict[str, Any]:
     engine = _engine()
     if engine is None:
         return {"source": "empty", "latest_tick": "", "rows": [], "counts": {}}
@@ -694,7 +694,7 @@ def intraday_promotion_context(root: Path) -> dict[str, Any]:
                 intraday_candidate_snapshots,
                 intraday_promotion_log.c.snapshot_id == intraday_candidate_snapshots.c.id,
             )
-            rows = conn.execute(
+            query = (
                 select(
                     intraday_promotion_log.c.symbol,
                     intraday_candidate_snapshots.c.is_held,
@@ -710,8 +710,10 @@ def intraday_promotion_context(root: Path) -> dict[str, Any]:
                 .select_from(joined)
                 .where(intraday_candidate_snapshots.c.snapshot_at == latest_tick)
                 .order_by(intraday_promotion_log.c.promotion_score.desc(), intraday_promotion_log.c.symbol.asc())
-                .limit(20)
-            ).mappings().all()
+            )
+            if limit is not None:
+                query = query.limit(max(1, int(limit)))
+            rows = conn.execute(query).mappings().all()
         records = [_record(dict(row)) for row in rows]
         counts = _status_counts(pd.DataFrame(records), "verdict")
         return {
