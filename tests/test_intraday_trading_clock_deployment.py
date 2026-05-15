@@ -39,3 +39,12 @@ def test_intraday_trading_clock_exports_snapshot_after_autopilot():
 
     assert "from stockml.trading.snapshot_export import export_trading_snapshot" in script
     assert "trading_snapshot_path:" in script
+
+
+def test_intraday_trading_clock_rearms_benign_completed_autopilot():
+    script = (ROOT / "scripts" / "run_intraday_trading_clock.py").read_text(encoding="utf-8")
+
+    assert "load_autopilot_state" in script
+    assert "start_autopilot()" in script
+    assert "paper_autopilot_rearm:" in script
+    assert "autopilot_not_running" in script

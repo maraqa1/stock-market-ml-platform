@@ -14,6 +14,8 @@ if str(SRC) not in sys.path:
 from stockml.intraday.refresh import candidate_refresh_tick, prune_old_snapshots
 from stockml.intraday.promotion_score import score_unscored_snapshots
 from stockml.trading.per_symbol_forecast import generate_per_symbol_forecast
+from stockml.trading.paper_autopilot import load_state as load_autopilot_state
+from stockml.trading.paper_autopilot import start as start_autopilot
 from stockml.trading.paper_autopilot import tick as autopilot_tick
 from stockml.trading.snapshot_export import export_trading_snapshot
 
@@ -46,6 +48,14 @@ def main() -> int:
     allow_auto_open = refresh.get("status") == "ok"
     if not allow_auto_open:
         print("auto_open_gate:", f"skipped_{refresh.get('reason') or refresh.get('status')}")
+
+    current_autopilot = load_autopilot_state()
+    if current_autopilot.get("mode") == "paper_autopilot" and current_autopilot.get("status") != "running":
+        benign_stop = current_autopilot.get("termination_reason") in {"", "no_open_orders_or_positions"}
+        benign_error = current_autopilot.get("last_error") in {"", "autopilot_not_running"}
+        if benign_stop and benign_error:
+            restarted = start_autopilot()
+            print("paper_autopilot_rearm:", restarted.get("status"))
 
     state = autopilot_tick(allow_auto_open=allow_auto_open)
     print("paper_autopilot_mode:", state.get("mode"))

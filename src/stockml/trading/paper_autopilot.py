@@ -746,6 +746,10 @@ def tick(
             phase = "monitoring_positions"
             status = "running"
             termination_reason = ""
+        elif state.get("mode") == "paper_autopilot":
+            phase = "tracking_orders"
+            status = "running"
+            termination_reason = ""
         else:
             phase = "cycle_complete"
             status = "complete"

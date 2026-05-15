@@ -104,6 +104,27 @@ def test_paper_autopilot_tick_terminates_when_flat(monkeypatch, tmp_path):
     assert state["termination_reason"] == "no_open_orders_or_positions"
 
 
+def test_paper_autopilot_mode_stays_running_when_flat(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([]).to_csv(positions, index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        allow_auto_open=False,
+    )
+
+    assert state["status"] == "running"
+    assert state["phase"] == "tracking_orders"
+    assert state["termination_reason"] == ""
+
+
 def test_paper_autopilot_tick_counts_direct_broker_orders(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)
