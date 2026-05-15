@@ -10,6 +10,7 @@ import pandas as pd
 from sqlalchemy import func, insert, select
 from sqlalchemy.engine import Engine
 
+from stockml.autopilot.candidate_arbitration import arbitrate_candidates, arbitration_score
 from stockml.common.paths import PROJECT_ROOT, TRADING_DIR
 from stockml.db.connection import get_engine
 from stockml.db.schema import autopilot_open_log, intraday_candidate_snapshots, intraday_promotion_log
@@ -531,18 +532,7 @@ def latest_per_symbol_forecast_fallback_candidates(
 
 
 def fallback_candidate_strength(candidate: dict[str, Any]) -> float:
-    details = candidate.get("details") if isinstance(candidate.get("details"), dict) else {}
-    if details.get("per_symbol_forecast_fallback"):
-        profitability = _float(details.get("expected_profitability_score"), _float(candidate.get("promotion_score")))
-        confirmation = _float(details.get("confirmation_score"))
-        move = _float(details.get("expected_move_bps"))
-        return profitability + (confirmation * 0.25) + (move * 0.10)
-    if details.get("near_miss_fallback"):
-        distance_pct = min(max(_float(details.get("distance_pct"), 1.0), 0.0), 1.0)
-        severity = str(details.get("severity") or "").lower()
-        severity_bonus = 10.0 if severity == "near_miss" else (0.0 if severity == "moderate_gap" else -25.0)
-        return ((1.0 - distance_pct) * 100.0) + severity_bonus + (_float(candidate.get("promotion_score")) * 10.0)
-    return _float(candidate.get("promotion_score"))
+    return arbitration_score(candidate)
 
 
 def ranked_fallback_candidates(
@@ -551,44 +541,13 @@ def ranked_fallback_candidates(
     *,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for source, candidates in [
-        ("per_symbol_forecast", per_symbol_forecast_candidates),
-        ("near_miss", near_miss_candidates),
-    ]:
-        for candidate in candidates:
-            payload = dict(candidate)
-            details = dict(payload.get("details") or {})
-            if source == "per_symbol_forecast":
-                details.setdefault("per_symbol_forecast_fallback", True)
-                details.setdefault("fallback_reason", "per_symbol_forecast_confirmed_candidate")
-            else:
-                details.setdefault("near_miss_fallback", True)
-                details.setdefault("fallback_reason", "near_miss_diagnostic_candidate")
-            details["candidate_source"] = source
-            payload["details"] = details
-            strength = fallback_candidate_strength(payload)
-            payload["candidate_strength_score"] = strength
-            payload["details"]["candidate_strength_score"] = strength
-            rows.append(payload)
-    best_by_symbol: dict[str, dict[str, Any]] = {}
-    for candidate in rows:
-        symbol = str(candidate.get("symbol") or "").upper()
-        if not symbol:
-            continue
-        candidate["symbol"] = symbol
-        previous = best_by_symbol.get(symbol)
-        if previous is None or _float(candidate.get("candidate_strength_score")) > _float(previous.get("candidate_strength_score")):
-            best_by_symbol[symbol] = candidate
-    ranked = sorted(
-        best_by_symbol.values(),
-        key=lambda row: (
-            -_float(row.get("candidate_strength_score")),
-            -(1 if (row.get("details") or {}).get("per_symbol_forecast_fallback") else 0),
-            str(row.get("symbol") or ""),
-        ),
+    return arbitrate_candidates(
+        [
+            ("per_symbol_forecast", per_symbol_forecast_candidates),
+            ("near_miss", near_miss_candidates),
+        ],
+        limit=limit,
     )
-    return ranked[:limit] if limit is not None else ranked
 
 
 def _todays_open_count(engine: Engine, now: datetime) -> int:
