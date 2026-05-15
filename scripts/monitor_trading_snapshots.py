@@ -55,6 +55,7 @@ def _keyed(frame: pd.DataFrame) -> pd.DataFrame:
     for column in ["pool", "symbol", "direction"]:
         work[column] = _text(work, column).str.lower() if column != "symbol" else _text(work, column).str.upper()
     work["__key"] = work["pool"] + "|" + work["symbol"] + "|" + work["direction"]
+    work = work.drop_duplicates("__key", keep="first")
     return work.set_index("__key", drop=False)
 
 
@@ -84,15 +85,15 @@ class SnapshotComparator:
     def _text_changes(self, column: str) -> int:
         if self.common_index.empty:
             return 0
-        left = _text(self.previous.loc[self.common_index], column)
-        right = _text(self.current.loc[self.common_index], column)
-        return int((left != right).sum())
+        left = _text(self.previous.reindex(self.common_index), column)
+        right = _text(self.current.reindex(self.common_index), column)
+        return int((left.to_numpy() != right.to_numpy()).sum())
 
     def _numeric_changes(self, column: str) -> int:
         if self.common_index.empty:
             return 0
-        left = _num(self.previous.loc[self.common_index], column)
-        right = _num(self.current.loc[self.common_index], column)
+        left = _num(self.previous.reindex(self.common_index), column)
+        right = _num(self.current.reindex(self.common_index), column)
         both_null = left.isna() & right.isna()
         changed = (left - right).abs().gt(self.score_tolerance)
         changed = changed | (left.isna() ^ right.isna())

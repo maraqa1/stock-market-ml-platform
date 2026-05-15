@@ -27,11 +27,20 @@ def row(**overrides):
 
 def test_snapshot_comparator_counts_field_changes():
     previous = pd.DataFrame([row(outcome="accepted", raw_score=0.5, notional=100, quantity=1)])
-    current = pd.DataFrame([row(outcome="rejected", raw_score=0.6, notional=200, quantity=2)])
+    current = pd.DataFrame([row(outcome="rejected", raw_score=0.6, display_score=0.6, notional=200, quantity=2)])
 
     counts = SnapshotComparator(previous, current).field_change_counts()
 
     assert counts == {"outcomes": 1, "scores": 2, "notional": 1, "quantity": 1}
+
+
+def test_snapshot_comparator_tolerates_duplicate_keys():
+    previous = pd.DataFrame([row(symbol="AAA"), row(symbol="AAA")])
+    current = pd.DataFrame([row(symbol="AAA", outcome="rejected"), row(symbol="AAA", outcome="rejected")])
+
+    counts = SnapshotComparator(previous, current).field_change_counts()
+
+    assert counts["outcomes"] == 1
 
 
 def test_pipeline_freeze_alerts_after_two_cycles():
