@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import csv
-import io
-import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,71 +44,18 @@ from stockml.services.events import record_event_safely
 from stockml.autopilot.rotate import confirm_rotation, override_rotation
 from stockml.autopilot.open import set_auto_open_enabled, set_auto_open_max_per_day
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
+from stockml.trading.snapshot_writer import write_snapshot_csv
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
 from stockml.reports.daily import dashboard_report_card, get_or_build_report, report_csv, report_index
 
 
-SNAPSHOT_COLUMNS = [
-    "snapshot_at",
-    "pool",
-    "generated_at",
-    "symbol",
-    "side",
-    "rank",
-    "status",
-    "action",
-    "verdict",
-    "score",
-    "notional",
-    "quantity",
-    "reason",
-    "source",
-    "raw_json",
-]
-
-
-def _first_value(row: dict, keys: list[str], default: object = "") -> object:
-    for key in keys:
-        value = row.get(key)
-        if value not in [None, ""]:
-            return value
-    return default
-
-
-def _snapshot_row(pool: str, row: dict, *, snapshot_at: str, generated_at: str = "", source: str = "") -> dict:
-    symbol = _first_value(row, ["symbol", "ticker", "replace_symbol", "with_symbol"])
-    action = _first_value(row, ["decision", "recommended_action", "operator_call", "trade_action"])
-    status = _first_value(row, ["status", "basket_status", "trade_quality_status", "alpaca_status"])
-    reason = _first_value(row, ["reason", "reason_note", "decision_reason", "trade_quality_reason", "block_reason", "message", "operator_call_reason"])
-    return {
-        "snapshot_at": snapshot_at,
-        "pool": pool,
-        "generated_at": generated_at or str(_first_value(row, ["generated_at", "snapshot_at", "time", "updated_at", "logged_at"])),
-        "symbol": str(symbol or "").upper(),
-        "side": _first_value(row, ["side", "trade_action", "nightly_bias"]),
-        "rank": _first_value(row, ["candidate_rank", "rank", "replacement_rank"]),
-        "status": status,
-        "action": action,
-        "verdict": _first_value(row, ["verdict", "decision"]),
-        "score": _first_value(row, ["promotion_score", "risk_adjusted_score", "score", "nightly_score", "confidence_score"]),
-        "notional": _first_value(row, ["planned_notional", "approved_notional", "notional", "market_value"]),
-        "quantity": _first_value(row, ["planned_quantity", "suggested_quantity", "qty", "filled_qty"]),
-        "reason": reason,
-        "source": source or str(row.get("source") or ""),
-        "raw_json": json.dumps(row, default=str, sort_keys=True),
-    }
-
-
 def trading_snapshot_csv(root: Path) -> str:
-    snapshot_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     trading = trading_context(root)
     positions = positions_context(root)
     queue = action_queue_context(root)
     promotions = intraday_promotion_context(root)
     near_miss = near_miss_context(root)
     per_symbol_forecast = per_symbol_forecast_context(root, limit=1000)
-    rows: list[dict] = []
-
     pools = [
         ("model_shortlist", trading.get("candidate_pool_rows", []), "", "candidate_pool_artifact"),
         ("todays_basket", trading.get("basket_rows", []), "", "order_plan_and_results"),
@@ -122,15 +66,7 @@ def trading_snapshot_csv(root: Path) -> str:
         ("near_miss", near_miss.get("rows", []), near_miss.get("file_name", ""), "near_miss_analysis"),
         ("per_symbol_forecast", per_symbol_forecast.get("rows", []), per_symbol_forecast.get("file_name", ""), "per_symbol_forecast"),
     ]
-    for pool, pool_rows, generated_at, source in pools:
-        for row in pool_rows or []:
-            rows.append(_snapshot_row(pool, dict(row), snapshot_at=snapshot_at, generated_at=generated_at, source=source))
-
-    out = io.StringIO()
-    writer = csv.DictWriter(out, fieldnames=SNAPSHOT_COLUMNS)
-    writer.writeheader()
-    writer.writerows(rows)
-    return out.getvalue()
+    return write_snapshot_csv(pools, snapshot_at=datetime.now(timezone.utc))
 
 
 def create_app(root: Path | None = None) -> Flask:

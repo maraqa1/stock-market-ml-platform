@@ -462,7 +462,31 @@ def test_trading_snapshot_csv_exports_current_pools(symbol_client):
     assert response.mimetype == "text/csv"
     assert "trading_snapshot_" in response.headers["Content-Disposition"]
     text = response.data.decode("utf-8")
-    assert "snapshot_at,pool,generated_at,symbol,side,rank,status,action,verdict,score,notional,quantity,reason,source,raw_json" in text
+    header = text.splitlines()[0]
+    for column in [
+        "snapshot_at",
+        "pool",
+        "symbol",
+        "generated_at",
+        "direction",
+        "funnel_stage",
+        "raw_score",
+        "display_score",
+        "score_basis",
+        "outcome",
+        "outcome_reason",
+        "stage_verdicts",
+        "data_age_seconds",
+        "raw_json",
+        "side",
+        "status",
+        "action",
+        "verdict",
+        "score",
+        "reason",
+        "source",
+    ]:
+        assert column in header
     assert "model_shortlist" in text
     assert "open_positions" in text
     assert "near_miss" in text
