@@ -22,8 +22,9 @@ def test_intraday_trading_clock_script_runs_pipeline_in_order():
     forecast_index = script.index("forecast = generate_per_symbol_forecast")
     rotation_index = script.index("run_rotation_recommendations()")
     autopilot_index = script.index("state = autopilot_tick")
+    snapshot_index = script.index("snapshot = export_trading_snapshot")
 
-    assert refresh_index < scoring_index < forecast_index < rotation_index < autopilot_index
+    assert refresh_index < scoring_index < forecast_index < rotation_index < autopilot_index < snapshot_index
 
 
 def test_intraday_trading_clock_disables_auto_open_when_refresh_skips():
@@ -31,3 +32,10 @@ def test_intraday_trading_clock_disables_auto_open_when_refresh_skips():
 
     assert 'allow_auto_open = refresh.get("status") == "ok"' in script
     assert "autopilot_tick(allow_auto_open=allow_auto_open)" in script
+
+
+def test_intraday_trading_clock_exports_snapshot_after_autopilot():
+    script = (ROOT / "scripts" / "run_intraday_trading_clock.py").read_text(encoding="utf-8")
+
+    assert "from stockml.trading.snapshot_export import export_trading_snapshot" in script
+    assert "trading_snapshot_path:" in script

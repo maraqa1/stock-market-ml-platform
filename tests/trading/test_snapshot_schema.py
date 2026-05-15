@@ -14,6 +14,7 @@ from stockml.trading.snapshot_schema import (
     FunnelStage,
     Pool,
     ScoreBasis,
+    ScoreState,
     SnapshotRow,
     validate_snapshot_row,
 )
@@ -61,6 +62,7 @@ def test_backward_compat_columns_present():
     assert row["side"] == "buy"
     assert row["action"] == "Long"
     assert row["score"] == "0.7"
+    assert row["score_state"] == ScoreState.AVAILABLE.value
 
 
 def test_score_basis_matches_pool_convention():
@@ -103,6 +105,7 @@ def test_validate_rejects_invalid_rows():
         raw_score=0.1,
         display_score=0.1,
         score_basis=ScoreBasis.RAW_RANK,
+        score_state=ScoreState.AVAILABLE,
         outcome=None,
         outcome_reason=None,
     )
@@ -147,3 +150,24 @@ def test_data_age_seconds_uses_generated_at():
     row = build_snapshot_row("model_shortlist", {"symbol": "AAA", "side": "buy"}, snapshot_at=SNAPSHOT_AT, generated_at=generated)
 
     assert row.data_age_seconds == 300
+
+
+def test_blank_display_scores_have_explicit_score_state():
+    rows = _csv_rows(
+        write_snapshot_csv(
+            [
+                ("per_symbol_forecast", [{"symbol": "AAA", "side": "buy", "volatility_adjusted_score": 2.0}], "", "fixture"),
+                ("open_positions", [{"symbol": "BBB", "side": "long", "qty": 1}], "", "fixture"),
+                ("model_shortlist", [{"symbol": "CCC", "side": "buy"}], "", "fixture"),
+            ],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )
+    by_symbol = {row["symbol"]: row for row in rows}
+
+    assert by_symbol["AAA"]["display_score"] == ""
+    assert by_symbol["AAA"]["score_state"] == ScoreState.SUPPRESSED_DIAGNOSTIC.value
+    assert by_symbol["BBB"]["display_score"] == ""
+    assert by_symbol["BBB"]["score_state"] == ScoreState.NOT_APPLICABLE.value
+    assert by_symbol["CCC"]["display_score"] == ""
+    assert by_symbol["CCC"]["score_state"] == ScoreState.MISSING_SOURCE.value

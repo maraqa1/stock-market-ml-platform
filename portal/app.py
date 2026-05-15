@@ -44,29 +44,13 @@ from stockml.services.events import record_event_safely
 from stockml.autopilot.rotate import confirm_rotation, override_rotation
 from stockml.autopilot.open import set_auto_open_enabled, set_auto_open_max_per_day
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
-from stockml.trading.snapshot_writer import write_snapshot_csv
+from stockml.trading.snapshot_export import snapshot_csv_payload
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
 from stockml.reports.daily import dashboard_report_card, get_or_build_report, report_csv, report_index
 
 
 def trading_snapshot_csv(root: Path) -> str:
-    trading = trading_context(root)
-    positions = positions_context(root)
-    queue = action_queue_context(root)
-    promotions = intraday_promotion_context(root)
-    near_miss = near_miss_context(root)
-    per_symbol_forecast = per_symbol_forecast_context(root, limit=1000)
-    pools = [
-        ("model_shortlist", trading.get("candidate_pool_rows", []), "", "candidate_pool_artifact"),
-        ("todays_basket", trading.get("basket_rows", []), "", "order_plan_and_results"),
-        ("rejected_trimmed", trading.get("rejected_trimmed_rows", []), "", "guardrails_and_broker_results"),
-        ("open_positions", positions.get("positions", []), positions.get("refreshed_at", ""), "broker_positions"),
-        ("action_queue", queue.get("items", []), queue.get("generated_at", ""), "monitor_and_operator_queue"),
-        ("intraday_promotion", promotions.get("rows", []), promotions.get("latest_tick", ""), "promotion_log"),
-        ("near_miss", near_miss.get("rows", []), near_miss.get("file_name", ""), "near_miss_analysis"),
-        ("per_symbol_forecast", per_symbol_forecast.get("rows", []), per_symbol_forecast.get("file_name", ""), "per_symbol_forecast"),
-    ]
-    return write_snapshot_csv(pools, snapshot_at=datetime.now(timezone.utc))
+    return snapshot_csv_payload(root, snapshot_at=datetime.now(timezone.utc))
 
 
 def create_app(root: Path | None = None) -> Flask:

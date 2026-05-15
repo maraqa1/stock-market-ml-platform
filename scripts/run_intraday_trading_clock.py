@@ -15,6 +15,7 @@ from stockml.intraday.refresh import candidate_refresh_tick, prune_old_snapshots
 from stockml.intraday.promotion_score import score_unscored_snapshots
 from stockml.trading.per_symbol_forecast import generate_per_symbol_forecast
 from stockml.trading.paper_autopilot import tick as autopilot_tick
+from stockml.trading.snapshot_export import export_trading_snapshot
 
 from scripts.run_rotation_recommendations import main as run_rotation_recommendations
 
@@ -55,6 +56,11 @@ def main() -> int:
     print("autopilot_open_submitted:", state.get("autopilot_open_submitted"))
     print("autopilot_open_notes:", state.get("autopilot_open_notes"))
     print("last_error:", state.get("last_error"))
+
+    snapshot = export_trading_snapshot(ROOT)
+    print("trading_snapshot_status:", snapshot.get("status"))
+    print("trading_snapshot_rows:", snapshot.get("rows", 0))
+    print("trading_snapshot_path:", snapshot.get("path", ""))
     return 0 if not state.get("last_error") else 1
 
 

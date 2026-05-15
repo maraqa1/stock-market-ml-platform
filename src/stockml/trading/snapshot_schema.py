@@ -34,6 +34,13 @@ class ScoreBasis(str, Enum):
     NONE = "none"
 
 
+class ScoreState(str, Enum):
+    AVAILABLE = "available"
+    NOT_APPLICABLE = "not_applicable"
+    MISSING_SOURCE = "missing_source"
+    SUPPRESSED_DIAGNOSTIC = "suppressed_diagnostic"
+
+
 class Pool(str, Enum):
     MODEL_SHORTLIST = "model_shortlist"
     PER_SYMBOL_FORECAST = "per_symbol_forecast"
@@ -57,6 +64,7 @@ class SnapshotRow:
     raw_score: float | None
     display_score: float | None
     score_basis: ScoreBasis
+    score_state: ScoreState
     outcome: str | None
     outcome_reason: str | None
     stage_verdicts: dict[str, Any] = field(default_factory=dict)
@@ -77,6 +85,7 @@ CANONICAL_COLUMNS = [
     "raw_score",
     "display_score",
     "score_basis",
+    "score_state",
     "outcome",
     "outcome_reason",
     "stage_verdicts",
@@ -110,6 +119,8 @@ def validate_snapshot_row(row: SnapshotRow) -> SnapshotRow:
         raise ValueError("invalid_snapshot_funnel_stage")
     if not isinstance(row.score_basis, ScoreBasis):
         raise ValueError("invalid_snapshot_score_basis")
+    if not isinstance(row.score_state, ScoreState):
+        raise ValueError("invalid_snapshot_score_state")
     if row.outcome_reason and not row.outcome:
         raise ValueError("snapshot_reason_without_outcome")
     if row.rank is not None and row.rank < 1:
@@ -158,6 +169,7 @@ def snapshot_row_to_record(row: SnapshotRow, *, source: str = "") -> dict[str, A
         "raw_score": row.raw_score if row.raw_score is not None else "",
         "display_score": row.display_score if row.display_score is not None else "",
         "score_basis": row.score_basis.value,
+        "score_state": row.score_state.value,
         "outcome": row.outcome or "",
         "outcome_reason": row.outcome_reason or "",
         "stage_verdicts": json.dumps(row.stage_verdicts, default=str, sort_keys=True),

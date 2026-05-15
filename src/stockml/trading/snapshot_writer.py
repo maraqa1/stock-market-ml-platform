@@ -14,6 +14,7 @@ from stockml.trading.snapshot_schema import (
     Pool,
     SNAPSHOT_COLUMNS,
     ScoreBasis,
+    ScoreState,
     SnapshotRow,
     default_stage_verdicts,
     snapshot_row_to_record,
@@ -116,6 +117,20 @@ def _display_score(pool: Pool, row: dict[str, Any]) -> float | None:
     return float_or_none(first_value(row, ["display_score", "promotion_score", "risk_adjusted_score", "score", "nightly_score", "confidence_score", "unrealized_plpc"]))
 
 
+def _score_state(pool: Pool, raw_score: float | None, display_score: float | None) -> ScoreState:
+    if display_score is not None:
+        return ScoreState.AVAILABLE
+    if pool == Pool.PER_SYMBOL_FORECAST:
+        return ScoreState.SUPPRESSED_DIAGNOSTIC if raw_score is not None else ScoreState.MISSING_SOURCE
+    if pool == Pool.OPEN_POSITIONS:
+        return ScoreState.NOT_APPLICABLE
+    if pool == Pool.ACTION_QUEUE:
+        return ScoreState.NOT_APPLICABLE if raw_score is None else ScoreState.MISSING_SOURCE
+    if pool in {Pool.MODEL_SHORTLIST, Pool.INTRADAY_PROMOTION, Pool.NEAR_MISS, Pool.TODAYS_BASKET, Pool.REJECTED_TRIMMED}:
+        return ScoreState.MISSING_SOURCE
+    return ScoreState.NOT_APPLICABLE
+
+
 def _outcome_and_stage(pool: Pool, row: dict[str, Any]) -> tuple[str | None, FunnelStage]:
     status = str(first_value(row, ["outcome", "status", "basket_status", "trade_quality_status", "alpaca_status"], "")).strip().lower()
     verdict = str(first_value(row, ["verdict", "decision"], "")).strip().lower()
@@ -183,6 +198,8 @@ def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: da
     generated = parse_generated_at(generated_at or first_value(row, ["generated_at", "snapshot_at", "time", "updated_at", "logged_at"]), fallback=snapshot_at)
     reason = str(first_value(row, ["outcome_reason", "reason", "reason_note", "decision_reason", "trade_quality_reason", "block_reason", "message", "operator_call_reason"], "") or "")
     outcome, stage = _outcome_and_stage(pool_enum, row)
+    raw_score = _raw_score(pool_enum, row)
+    display_score = _display_score(pool_enum, row)
     snapshot_row = SnapshotRow(
         snapshot_at=snapshot_at,
         pool=pool_enum,
@@ -191,9 +208,10 @@ def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: da
         direction=direction_from_row(row),
         funnel_stage=stage,
         rank=int_or_none(first_value(row, ["candidate_rank", "rank", "replacement_rank"])),
-        raw_score=_raw_score(pool_enum, row),
-        display_score=_display_score(pool_enum, row),
+        raw_score=raw_score,
+        display_score=display_score,
         score_basis=_score_basis(pool_enum, row),
+        score_state=_score_state(pool_enum, raw_score, display_score),
         outcome=outcome,
         outcome_reason=reason if outcome else None,
         stage_verdicts=_stage_verdicts(pool_enum, row, outcome=outcome, reason=reason),

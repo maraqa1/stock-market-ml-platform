@@ -473,6 +473,7 @@ def test_trading_snapshot_csv_exports_current_pools(symbol_client):
         "raw_score",
         "display_score",
         "score_basis",
+        "score_state",
         "outcome",
         "outcome_reason",
         "stage_verdicts",
