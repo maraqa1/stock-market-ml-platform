@@ -589,7 +589,9 @@ def create_app(root: Path | None = None) -> Flask:
 
     @app.route("/api/trading/positions")
     def api_trading_positions():
-        return jsonify(positions_context(root_path()))
+        payload = positions_context(root_path())
+        legacy_keys = {"source", "refreshed_at", "summary", "pending_close_order_count", "eod_state", "eod_banner", "positions"}
+        return jsonify({key: payload.get(key) for key in legacy_keys})
 
     @app.route("/api/trading/positions/<path:position_id>/lineage")
     def api_trading_position_lineage(position_id: str):

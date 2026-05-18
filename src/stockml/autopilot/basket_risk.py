@@ -75,12 +75,12 @@ def evaluate_basket_risk(
 
     reason = ""
     paused = False
-    if red_pct > cfg.pause_new_entries_if_red_position_pct_above:
-        paused = True
-        reason = "red_position_pct_pause"
-    elif basket_return < cfg.pause_new_entries_if_basket_return_below:
+    if basket_return < cfg.pause_new_entries_if_basket_return_below:
         paused = True
         reason = "basket_drawdown_pause"
+    elif red_pct > cfg.pause_new_entries_if_red_position_pct_above:
+        paused = True
+        reason = "red_position_pct_pause"
     elif previous_state == "new_entries_paused" and basket_return <= cfg.resume_new_entries_if_basket_return_above:
         paused = True
         reason = "basket_drawdown_pause_not_resumed"
