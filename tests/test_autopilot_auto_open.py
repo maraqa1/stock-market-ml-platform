@@ -92,6 +92,7 @@ def _candidate(symbol: str = "CSTL", score: float = 0.72, bias: str = "long") ->
         "symbol": symbol,
         "promotion_score": score,
         "nightly_bias": bias,
+        "current_price": 10,
         "is_held": False,
         "details": {"is_first_15_min": False, "is_last_30_min": False},
     }
@@ -219,7 +220,8 @@ def test_auto_open_submits_paper_order_and_logs_opened():
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["symbol"] == "CSTL"
     assert client.orders[0]["side"] == "buy"
-    assert client.orders[0]["notional"] == "100.0"
+    assert client.orders[0]["qty"] == "10"
+    assert "notional" not in client.orders[0]
     with engine.connect() as conn:
         row = conn.execute(select(autopilot_open_log)).mappings().one()
     assert row["symbol"] == "CSTL"
@@ -663,7 +665,8 @@ def test_auto_open_uses_reduced_size_for_flat_account_fallback():
 
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["symbol"] == "ANGI"
-    assert client.orders[0]["notional"] == "50.0"
+    assert client.orders[0]["qty"] == "5"
+    assert "notional" not in client.orders[0]
     assert "ANGI:fallback_opened:order-ANGI" in result["autopilot_open_notes"]
     with engine.connect() as conn:
         row = conn.execute(select(autopilot_open_log)).mappings().one()
@@ -695,7 +698,8 @@ def test_auto_open_uses_smaller_size_for_near_miss_fallback():
 
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["symbol"] == "GLIBK"
-    assert client.orders[0]["notional"] == "50.0"
+    assert client.orders[0]["qty"] == "5"
+    assert "notional" not in client.orders[0]
     assert "GLIBK:near_miss_opened:order-GLIBK" in result["autopilot_open_notes"]
     with engine.connect() as conn:
         row = conn.execute(select(autopilot_open_log)).mappings().one()
@@ -732,7 +736,8 @@ def test_auto_open_uses_per_symbol_forecast_size_and_log_prefix():
 
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["symbol"] == "HIGHP"
-    assert client.orders[0]["notional"] == "50.0"
+    assert client.orders[0]["qty"] == "5"
+    assert "notional" not in client.orders[0]
     assert "HIGHP:per_symbol_forecast_opened:order-HIGHP" in result["autopilot_open_notes"]
     with engine.connect() as conn:
         row = conn.execute(select(autopilot_open_log)).mappings().one()

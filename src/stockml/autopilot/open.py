@@ -921,7 +921,6 @@ def apply_auto_open(
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_shortable", details=asset_details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:asset_not_shortable")
             continue
-        use_whole_qty = side == "sell" or not asset_details["asset_fractionable"]
         order = {
             "symbol": symbol,
             "side": side,
@@ -930,18 +929,15 @@ def apply_auto_open(
             "extended_hours": False,
             "client_order_id": f"stockml-autopilot-{stamp.strftime('%Y%m%d%H%M%S')}-{symbol}-{side}"[:48],
         }
-        if use_whole_qty:
-            current_price = _candidate_price(candidate, details)
-            qty = _whole_share_qty(order_size, current_price)
-            asset_details = {**asset_details, "current_price_for_qty": current_price, "computed_qty": qty}
-            if qty < 1:
-                blocked += 1
-                _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="whole_share_size_below_one", details=asset_details, engine=db, now=stamp)
-                notes.append(f"{symbol}:blocked:whole_share_size_below_one")
-                continue
-            order["qty"] = str(qty)
-        else:
-            order["notional"] = str(round(order_size, 2))
+        current_price = _candidate_price(candidate, details)
+        qty = _whole_share_qty(order_size, current_price)
+        asset_details = {**asset_details, "current_price_for_qty": current_price, "computed_qty": qty}
+        if qty < 1:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="whole_share_size_below_one", details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:whole_share_size_below_one")
+            continue
+        order["qty"] = str(qty)
         validation = validate_order_payload(order, max_order_notional=trade_cfg.max_notional_per_order)
         if not validation.valid:
             blocked += 1
