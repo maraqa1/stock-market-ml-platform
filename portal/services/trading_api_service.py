@@ -667,6 +667,7 @@ def action_queue_context(root: Path) -> dict[str, Any]:
     items.extend(_candidate_queue_items(evaluations, len(items), held_symbols=position_symbols or set(), root=root))
     items.extend(_rotation_queue_items(len(items), held_symbols=position_symbols))
     counts = _status_counts(pd.DataFrame(items), "decision")
+    counts["close"] = int(counts.get("close", 0)) + int(counts.get("close_candidate", 0)) + int(counts.get("close_now", 0))
     generated_at = max([value for value in [_csv_timestamp(decisions_file), _csv_timestamp(evaluations_file), _csv_timestamp(positions_file)] if value] or [""])
     return {"source": "csv_artifacts", "generated_at": generated_at, "items": items, "counts": {"total": len(items), **counts}}
 
