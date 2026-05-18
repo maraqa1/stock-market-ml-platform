@@ -558,6 +558,10 @@ def latest_per_symbol_forecast_fallback_candidates(
     }
     frame = frame.copy()
     frame["__symbol"] = frame.get("symbol", pd.Series("", index=frame.index)).fillna("").astype(str).str.upper()
+    side_text = frame.get("side", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+    action_text = frame.get("current_trade_action", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+    frame["__bias"] = "long"
+    frame.loc[side_text.isin(["sell", "short"]) | action_text.isin(["short", "sell"]) | side_text.str.contains("short", na=False) | action_text.str.contains("short", na=False), "__bias"] = "short"
     frame["__confirmation"] = frame.get("forecast_confirmation", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
     frame["__side_alignment"] = frame.get("side_alignment", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
     frame["__score"] = pd.to_numeric(frame.get("confirmation_score", pd.Series(index=frame.index)), errors="coerce")
@@ -578,11 +582,25 @@ def latest_per_symbol_forecast_fallback_candidates(
         & frame["__liquidity_ok"]
         & frame["__volatility_ok"]
     )
-    selected = frame[eligible].sort_values(["__profitability", "__score", "__symbol"], ascending=[False, False, True]).drop_duplicates("__symbol").head(limit)
+    ranked = frame[eligible].sort_values(["__profitability", "__score", "__symbol"], ascending=[False, False, True]).drop_duplicates("__symbol")
+    if limit >= 2 and ranked["__bias"].nunique() > 1:
+        short_slots = max(1, limit // 2)
+        long_slots = max(1, limit - short_slots)
+        selected = pd.concat(
+            [
+                ranked[ranked["__bias"].eq("long")].head(long_slots),
+                ranked[ranked["__bias"].eq("short")].head(short_slots),
+            ],
+            ignore_index=False,
+        ).drop_duplicates("__symbol")
+        if len(selected) < limit:
+            selected = pd.concat([selected, ranked[~ranked["__symbol"].isin(selected["__symbol"])]], ignore_index=False).drop_duplicates("__symbol")
+        selected = selected.sort_values(["__profitability", "__score", "__symbol"], ascending=[False, False, True]).head(limit)
+    else:
+        selected = ranked.head(limit)
     candidates: list[dict[str, Any]] = []
     for row in selected.fillna("").to_dict("records"):
-        side_text = str(row.get("side") or row.get("current_trade_action") or "").lower()
-        bias = "short" if side_text in {"sell", "short"} or "short" in side_text else "long"
+        bias = str(row.get("__bias") or "long")
         details = {
             "per_symbol_forecast_fallback": True,
             "fallback_reason": "per_symbol_forecast_confirmed_candidate",

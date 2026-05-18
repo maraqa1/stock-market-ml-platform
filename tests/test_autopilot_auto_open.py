@@ -449,6 +449,57 @@ def test_per_symbol_forecast_fallback_candidates_require_quality_flags(tmp_path)
     assert candidates == []
 
 
+def test_per_symbol_forecast_fallback_candidates_include_qualified_shorts(tmp_path):
+    directory = tmp_path / "data" / "trading" / "per_symbol_forecast"
+    directory.mkdir(parents=True)
+    rows = []
+    for idx in range(1, 6):
+        rows.append(
+            {
+                "symbol": f"LONG{idx}",
+                "side": "buy",
+                "current_trade_action": "Long",
+                "forecast_confirmation": "confirmed",
+                "confirmation_score": 100,
+                "confirmation_reason": "side_aligned;magnitude_ok;profitability_ok;risk_reward_ok",
+                "side_alignment": "aligned",
+                "expected_profitability_score": 200 - idx,
+                "expected_move_bps": 100,
+                "profitability_ok": True,
+                "risk_reward_ok": True,
+                "liquidity_ok": True,
+                "volatility_ok": True,
+            }
+        )
+    rows.append(
+        {
+            "symbol": "SHORTY",
+            "side": "sell",
+            "current_trade_action": "Short",
+            "forecast_confirmation": "confirmed",
+            "confirmation_score": 100,
+            "confirmation_reason": "side_aligned;magnitude_ok;profitability_ok;risk_reward_ok",
+            "side_alignment": "aligned",
+            "expected_profitability_score": 50,
+            "expected_move_bps": 100,
+            "profitability_ok": True,
+            "risk_reward_ok": True,
+            "liquidity_ok": True,
+            "volatility_ok": True,
+        }
+    )
+    pd.DataFrame(rows).to_csv(directory / "per_symbol_forecast_20260514_120000.csv", index=False)
+
+    candidates = latest_per_symbol_forecast_fallback_candidates(
+        root=tmp_path,
+        config=AutoOpenConfig(per_symbol_forecast_fallback_enabled=True),
+        limit=5,
+    )
+
+    assert "SHORTY" in [candidate["symbol"] for candidate in candidates]
+    assert next(candidate for candidate in candidates if candidate["symbol"] == "SHORTY")["nightly_bias"] == "short"
+
+
 def test_ranked_fallback_candidates_blends_forecast_and_near_miss_strength():
     weak_forecast = _candidate("LOWP", 10)
     weak_forecast["details"] = {
@@ -736,6 +787,71 @@ def test_auto_open_blocks_forecast_candidate_with_missing_quality_flags():
     with engine.connect() as conn:
         row = conn.execute(select(autopilot_open_log)).mappings().one()
     assert row["block_reason"] == "profitability_ok_not_evaluated"
+
+
+def test_auto_open_submits_short_when_shorting_enabled():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("SHORTY", 100, bias="short")
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(allow_short_selling=True),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["side"] == "sell"
+    assert "SHORTY:per_symbol_forecast_opened:order-SHORTY" in result["autopilot_open_notes"]
+
+
+def test_auto_open_blocks_short_when_shorting_disabled():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("SHORTY", 100, bias="short")
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(allow_short_selling=False),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert client.orders == []
+    assert "SHORTY:blocked:shorting_disabled" in result["autopilot_open_notes"]
 
 
 def test_auto_open_near_miss_can_fill_remaining_slot_when_position_is_open():
