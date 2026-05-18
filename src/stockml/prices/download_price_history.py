@@ -10,7 +10,7 @@ import pandas as pd
 
 from stockml.common.logging_utils import log
 from stockml.common.paths import INTERIM_DIR, RAW_DIR, ensure_data_dirs, latest_file, timestamp
-from stockml.marketdata.providers.yahoo_legacy import YahooLegacyProvider, normalize_yfinance_download
+from stockml.marketdata.providers.factory import provider_from_name
 from stockml.marketdata.schemas import PRICE_COLUMNS
 
 STORE_FILE = RAW_DIR / "03_us_price_history_store.csv"
@@ -109,15 +109,15 @@ def chunked(items: List[str], size: int) -> Iterable[List[str]]:
         yield items[i:i + size]
 
 
-def download_group(tickers: List[str], start: str, batch_size: int, sleep_seconds: float) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def download_group(tickers: List[str], start: str, batch_size: int, sleep_seconds: float, provider_name: str | None = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
     stamp = datetime.now().isoformat(timespec="seconds")
     all_rows = []
     failures = []
-    provider = YahooLegacyProvider()
+    provider = provider_from_name(provider_name)
 
     batches = list(chunked(tickers, batch_size))
     for batch_no, batch in enumerate(batches, start=1):
-        log(f"Downloading batch {batch_no}/{len(batches)} start={start} tickers={len(batch)}")
+        log(f"Downloading batch {batch_no}/{len(batches)} provider={provider.provider_name} start={start} tickers={len(batch)}")
 
         normalized, failed = provider.fetch_daily_prices(batch, start=start, download_timestamp=stamp)
         if not normalized.empty:
@@ -140,6 +140,7 @@ def download_price_history(
     limit: Optional[int] = None,
     force_full: bool = False,
     exchange: Optional[str] = None,
+    provider_name: str | None = None,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
@@ -163,7 +164,7 @@ def download_price_history(
         grouped.setdefault(start, []).append(ticker)
 
     for start, group_tickers in sorted(grouped.items()):
-        prices, failed = download_group(group_tickers, start=start, batch_size=batch_size, sleep_seconds=sleep_seconds)
+        prices, failed = download_group(group_tickers, start=start, batch_size=batch_size, sleep_seconds=sleep_seconds, provider_name=provider_name)
         if not prices.empty:
             all_new.append(prices)
         if not failed.empty:
@@ -209,6 +210,7 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NASDAQ")
     p.add_argument("--force-full", action="store_true")
+    p.add_argument("--provider", default=None, help="Market data provider: yahoo_legacy or eodhd. Defaults to config/env.")
     args = p.parse_args()
 
     paths = download_price_history(
@@ -218,6 +220,7 @@ def main() -> int:
         limit=args.limit,
         force_full=args.force_full,
         exchange=args.exchange,
+        provider_name=args.provider,
     )
 
     for name, path in paths.items():

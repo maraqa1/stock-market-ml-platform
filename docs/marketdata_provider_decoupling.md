@@ -32,13 +32,32 @@ They now call the provider adapter instead of importing yfinance directly.
 
 ## Future Provider Replacement
 
-The next provider should implement `MarketDataProvider` and return the same
-canonical schemas. A future config switch can then choose:
+Provider adapters implement `MarketDataProvider` and return the same canonical
+schemas. The initial alternative provider is EOD Historical Data, available as
+`eodhd`.
 
 ```yaml
 marketdata:
-  primary_provider: alpha_vantage
+  primary_provider: eodhd
   fallback_providers: []
+  eodhd:
+    default_exchange_suffix: US
+```
+
+The EODHD adapter reads `EODHD_API_KEY` from the environment and keeps provider
+symbols such as `SEDG.US` internal to the adapter. Downstream artifacts still use
+canonical tickers such as `SEDG`.
+
+Price download can be run explicitly with:
+
+```bash
+PYTHONPATH=src python -m stockml.prices.download_price_history --provider eodhd --limit 20 --force-full
+```
+
+Metadata can be run explicitly with:
+
+```bash
+PYTHONPATH=src python -m stockml.metadata.build_metadata_enriched --provider eodhd --limit 20
 ```
 
 Before disabling Yahoo, run a coverage comparison:

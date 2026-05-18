@@ -3,6 +3,8 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.marketdata.providers.base import MarketDataProvider
+from stockml.marketdata.providers.eodhd import EodhdProvider, normalize_eodhd_eod_rows, to_eodhd_symbol
+from stockml.marketdata.providers.factory import provider_from_name
 from stockml.marketdata.providers.yahoo_legacy import empty_fundamentals_row, normalize_yfinance_download
 from stockml.marketdata.schemas import FUNDAMENTAL_COLUMNS, PRICE_COLUMNS
 from stockml.metadata.yahoo_metadata import METADATA_COLUMNS, empty_metadata_row
@@ -34,6 +36,84 @@ def test_yahoo_legacy_normalizes_prices_to_canonical_schema():
     assert out.loc[0, "adj_close"] == 10.25
 
 
+def test_eodhd_normalizes_prices_to_canonical_schema():
+    raw = [
+        {
+            "date": "2026-05-14",
+            "open": 10,
+            "high": 11,
+            "low": 9,
+            "close": 10.5,
+            "adjusted_close": 10.25,
+            "volume": 1000,
+        }
+    ]
+
+    out = normalize_eodhd_eod_rows(raw, "aaa", "2026-05-15T00:00:00")
+
+    assert list(out.columns) == PRICE_COLUMNS
+    assert out.loc[0, "ticker"] == "AAA"
+    assert out.loc[0, "source"] == "eodhd"
+    assert out.loc[0, "adj_close"] == 10.25
+
+
+def test_eodhd_provider_fetches_price_rows_with_us_suffix():
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [{"date": "2026-05-14", "open": 10, "high": 11, "low": 9, "close": 10.5, "adjusted_close": 10.25, "volume": 1000}]
+
+    class Session:
+        def get(self, url, params, timeout):
+            calls.append((url, params, timeout))
+            return Response()
+
+    provider = EodhdProvider(api_key="key", session=Session())
+    prices, failures = provider.fetch_daily_prices(["aaa"], start="2026-05-01", download_timestamp="stamp")
+
+    assert failures.empty
+    assert prices.loc[0, "ticker"] == "AAA"
+    assert calls[0][0].endswith("/eod/AAA.US")
+    assert calls[0][1]["from"] == "2026-05-01"
+    assert calls[0][1]["api_token"] == "key"
+
+
+def test_eodhd_provider_maps_fundamentals_to_canonical_schema():
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "General": {"Name": "AAA Inc", "Exchange": "NASDAQ", "Sector": "Technology", "Industry": "Software", "CurrencyCode": "USD", "CountryName": "USA", "Type": "Common Stock"},
+                "Highlights": {"MarketCapitalization": 12345, "PERatio": 12.3, "ForwardPE": 10.1, "DividendYield": 0.01, "Beta": 1.2},
+                "Valuation": {"PriceBookMRQ": 2.3},
+                "Technicals": {"AvgVolume": 456789},
+            }
+
+    class Session:
+        def get(self, url, params, timeout):
+            return Response()
+
+    row = EodhdProvider(api_key="key", session=Session()).fetch_fundamentals("aaa")
+
+    assert list(row.keys()) == FUNDAMENTAL_COLUMNS
+    assert row["ticker"] == "AAA"
+    assert row["company"] == "AAA Inc"
+    assert row["market_cap"] == 12345
+    assert row["metadata_status"] == "ok"
+
+
+def test_provider_factory_selects_eodhd_and_yahoo_aliases():
+    assert isinstance(provider_from_name("eodhd", api_key="key"), EodhdProvider)
+    assert provider_from_name("yahoo").provider_name == "yahoo_legacy"
+    assert to_eodhd_symbol("SEDG") == "SEDG.US"
+
+
 def test_legacy_metadata_wrapper_preserves_schema():
     row = empty_metadata_row("aapl", "metadata_error", "rate limited")
     provider_row = empty_fundamentals_row("aapl", "metadata_error", "rate limited")
@@ -59,4 +139,3 @@ def test_portal_has_no_vendor_provider_imports():
                 offenders.append(f"{path}:{token}")
 
     assert offenders == []
-

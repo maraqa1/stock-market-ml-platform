@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from stockml.marketdata.providers.yahoo_legacy import YahooLegacyProvider, empty_fundamentals_row
+from stockml.marketdata.providers.factory import provider_from_name
 from stockml.marketdata.schemas import FUNDAMENTAL_COLUMNS
 
 METADATA_COLUMNS = FUNDAMENTAL_COLUMNS
@@ -23,6 +24,7 @@ def fetch_metadata_for_universe(
     universe: pd.DataFrame,
     limit: Optional[int] = None,
     sleep_seconds: float = 0.25,
+    provider_name: str | None = None,
 ) -> pd.DataFrame:
     if "yahoo_ticker" in universe.columns:
         ticker_col = "yahoo_ticker"
@@ -38,9 +40,10 @@ def fetch_metadata_for_universe(
         frame = frame.head(limit)
 
     rows: List[Dict[str, object]] = []
+    provider = provider_from_name(provider_name)
     for _, row in frame.iterrows():
         rows.append(
-            fetch_yahoo_metadata(
+            provider.fetch_fundamentals(
                 ticker=row[ticker_col],
                 company=str(row.get("company", "") or ""),
                 exchange=str(row.get("listing_exchange", row.get("exchange", "")) or ""),
