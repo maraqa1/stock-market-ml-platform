@@ -219,7 +219,7 @@ def test_trading_paper_autopilot_controls(client):
 
 
 def test_trading_paper_autopilot_auto_open_button_persists_config(client):
-    post = client.post("/trading/autopilot/feature/auto-open", data={"enabled": "true"})
+    post = client.post("/trading/autopilot/feature/auto-open/enable")
     assert post.status_code == 302
     config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
     assert "open_enabled: true" in config_path.read_text(encoding="utf-8")
@@ -228,8 +228,25 @@ def test_trading_paper_autopilot_auto_open_button_persists_config(client):
     assert b"Disable Auto Open" in enabled_page.data
     assert b"Enable Auto Open" not in enabled_page.data
 
-    disable = client.post("/trading/autopilot/feature/auto-open", data={"enabled": "false"})
+    disable = client.post("/trading/autopilot/feature/auto-open/disable")
     assert disable.status_code == 302
+    assert "open_enabled: false" in config_path.read_text(encoding="utf-8")
+
+
+def test_trading_paper_autopilot_auto_open_legacy_form_and_json_routes(client):
+    config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
+
+    form_post = client.post("/trading/autopilot/feature/auto-open", data={"enabled": "true"})
+    assert form_post.status_code == 302
+    assert "open_enabled: true" in config_path.read_text(encoding="utf-8")
+
+    json_post = client.post(
+        "/trading/autopilot/feature/auto-open",
+        json={"enabled": False},
+        headers={"Accept": "application/json"},
+    )
+    assert json_post.status_code == 200
+    assert json_post.get_json()["auto_open_enabled"] is False
     assert "open_enabled: false" in config_path.read_text(encoding="utf-8")
 
 

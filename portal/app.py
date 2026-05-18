@@ -261,6 +261,20 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/trading/autopilot/feature/auto-open", methods=["POST"])
     def trading_autopilot_auto_open_feature():
         enabled = str(request.form.get("enabled", "")).lower() in {"1", "true", "yes", "on"}
+        if request.is_json:
+            payload_json = request.get_json(silent=True) or {}
+            enabled = str(payload_json.get("enabled", "")).lower() in {"1", "true", "yes", "on"}
+        return _set_auto_open_feature(enabled)
+
+    @app.route("/trading/autopilot/feature/auto-open/enable", methods=["POST"])
+    def trading_autopilot_auto_open_enable():
+        return _set_auto_open_feature(True)
+
+    @app.route("/trading/autopilot/feature/auto-open/disable", methods=["POST"])
+    def trading_autopilot_auto_open_disable():
+        return _set_auto_open_feature(False)
+
+    def _set_auto_open_feature(enabled: bool):
         config = set_auto_open_enabled(enabled, root=root_path())
         payload = {"status": "ok", "auto_open_enabled": config.open_enabled}
         if request.accept_mimetypes.best == "application/json":

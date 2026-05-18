@@ -103,13 +103,11 @@
         <button class="btn btn-ghost" type="submit">Run Tracking Tick</button>
       </form>
       {% if paper_autopilot.auto_open_enabled %}
-        <form method="post" action="/trading/autopilot/feature/auto-open" data-confirm="Disable Paper Autopilot auto-open?">
-          <input type="hidden" name="enabled" value="false">
+        <form method="post" action="/trading/autopilot/feature/auto-open/disable" data-confirm="Disable Paper Autopilot auto-open?">
           <button class="btn btn-danger" type="submit">Disable Auto Open</button>
         </form>
       {% else %}
-        <form method="post" action="/trading/autopilot/feature/auto-open" data-confirm="Enable Paper Autopilot auto-open? This can submit guarded paper open orders.">
-          <input type="hidden" name="enabled" value="true">
+        <form method="post" action="/trading/autopilot/feature/auto-open/enable" data-confirm="Enable Paper Autopilot auto-open? This can submit guarded paper open orders.">
           <button class="btn btn-primary" type="submit">Enable Auto Open</button>
         </form>
       {% endif %}
