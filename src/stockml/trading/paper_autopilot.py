@@ -504,7 +504,7 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
     )
     trailing_profit = (
         (frame["__decision"] == "watch")
-        & frame["__reason"].str.contains("signal_stale", na=False)
+        & frame["__reason"].str.contains("signal_stale|latest_signal_unknown", na=False)
         & (frame["__peak_plpc"] >= TRAILING_PROFIT_MIN)
         & ((frame["__peak_plpc"] - frame["__plpc"]) >= TRAILING_GIVEBACK_THRESHOLD)
     )

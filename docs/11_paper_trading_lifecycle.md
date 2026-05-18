@@ -58,6 +58,19 @@ This installs `stockml-position-monitor.timer`, which runs every 30 seconds duri
 
 The monitor does not submit new entry orders and does not close positions by itself. It creates the review layer needed before adding an automatic close/rebalance executor.
 
+## Paper Autopilot Exit Rules
+
+Paper Autopilot may submit paper-only close orders from the synchronized intraday trading clock. The current exit rules are deliberately simple and defensive:
+
+- Hard stop: close when unrealized return is at or below `-4.0%`.
+- Defensive stale-signal stop: close when the signal is stale and unrealized return is at or below `-2.5%`.
+- Defensive unknown-signal stop: close when the signal is unknown and unrealized return is at or below `-2.0%`.
+- Trailing profit protection: once a position's peak unrealized return reaches at least `+3.0%`, close if it gives back at least `1.5%` from that peak while the signal is stale or unknown.
+
+Paper Autopilot stores high-water marks in `position_peak_plpc` inside `data/portal_outputs/paper_autopilot_state.json`. These peaks are used for trailing profit protection; they are not model scores and they do not change candidate ranking.
+
+These rules are implemented in `src/stockml/trading/paper_autopilot.py` as `HARD_STOP_LOSS_THRESHOLD`, `DEFENSIVE_STALE_LOSS_THRESHOLD`, `DEFENSIVE_UNKNOWN_LOSS_THRESHOLD`, `TRAILING_PROFIT_MIN`, and `TRAILING_GIVEBACK_THRESHOLD`. Changing them is a risk-control change and should be tested separately from model, threshold, or provider work.
+
 ## Scheduler Synchronization
 
 The paper lifecycle has two coordinated clocks:
