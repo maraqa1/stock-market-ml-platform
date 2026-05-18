@@ -782,7 +782,13 @@ def apply_auto_open(
         symbol = str(candidate.get("symbol") or "").upper()
         if not symbol or symbol in held or bool(candidate.get("is_held")):
             continue
-        details = candidate.get("details") or {}
+        details = dict(candidate.get("details") or {})
+        if candidate.get("current_trade_action") and not details.get("current_trade_action"):
+            details["current_trade_action"] = candidate.get("current_trade_action")
+        if candidate.get("side") and not details.get("side"):
+            details["side"] = candidate.get("side")
+        if candidate.get("nightly_bias") and not details.get("nightly_bias"):
+            details["nightly_bias"] = candidate.get("nightly_bias")
         is_fallback = bool(details.get("flat_account_fallback"))
         is_near_miss = bool(details.get("near_miss_fallback"))
         is_per_symbol_forecast = bool(details.get("per_symbol_forecast_fallback"))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any, Optional
 
 import requests
@@ -18,11 +19,21 @@ class AlpacaAPIError(RuntimeError):
         super().__init__(f"alpaca_api_error status={self.status_code} request_id={self.request_id} body={self.response_text}")
 
     def as_dict(self) -> dict[str, str | int]:
-        return {
+        details: dict[str, str | int] = {
             "http_status": self.status_code,
             "request_id": self.request_id,
             "api_error": self.response_text,
         }
+        try:
+            payload = json.loads(self.response_text)
+        except Exception:
+            payload = {}
+        if isinstance(payload, dict):
+            if payload.get("code") is not None:
+                details["api_code"] = str(payload.get("code"))
+            if payload.get("message") is not None:
+                details["api_message"] = str(payload.get("message"))
+        return details
 
 
 def _raise_for_status(method: str, url: str, response: requests.Response) -> None:

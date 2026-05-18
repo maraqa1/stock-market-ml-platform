@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import os
 
 import pandas as pd
+import requests
 from sqlalchemy import create_engine, insert, select
 
 from stockml.autopilot.open import (
@@ -21,6 +22,7 @@ from stockml.autopilot.open import (
     set_per_symbol_forecast_fallback_max_per_day,
 )
 from stockml.db.schema import autopilot_open_log, create_all, intraday_candidate_snapshots, intraday_promotion_log, kill_switch_events
+from stockml.trading.alpaca_client import AlpacaAPIError
 from stockml.trading import paper_autopilot
 from stockml.trading.config import AlpacaConfig
 
@@ -64,6 +66,15 @@ class FakeClient:
     def submit_order(self, order: dict) -> dict:
         self.orders.append(order)
         return {"id": f"order-{order['symbol']}", "status": "accepted"}
+
+
+class RejectingClient(FakeClient):
+    def submit_order(self, order: dict) -> dict:
+        self.orders.append(order)
+        response = requests.Response()
+        response.status_code = 403
+        response._content = b'{"code":40310000,"message":"asset is not shortable"}'
+        raise AlpacaAPIError("POST", "https://paper-api.alpaca.markets/v2/orders", response)
 
 
 def _engine():
@@ -825,6 +836,50 @@ def test_auto_open_submits_short_when_shorting_enabled():
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["side"] == "sell"
     assert "SHORTY:per_symbol_forecast_opened:order-SHORTY" in result["autopilot_open_notes"]
+
+
+def test_auto_open_logs_short_rejection_context():
+    engine = _engine()
+    client = RejectingClient()
+    candidate = _candidate("SHORTY", 100, bias="short")
+    candidate["current_trade_action"] = "Short"
+    candidate["side"] = "sell"
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(allow_short_selling=True),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert client.orders[0]["side"] == "sell"
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["verdict"] == "failed"
+    assert row["block_reason"] == "alpaca_api_error"
+    assert row["details"]["current_trade_action"] == "Short"
+    assert row["details"]["side"] == "sell"
+    assert row["details"]["nightly_bias"] == "short"
+    assert row["details"]["order"]["side"] == "sell"
+    assert row["details"]["api_code"] == "40310000"
+    assert row["details"]["api_message"] == "asset is not shortable"
 
 
 def test_auto_open_blocks_short_when_shorting_disabled():

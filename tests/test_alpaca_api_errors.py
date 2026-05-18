@@ -35,6 +35,17 @@ def test_alpaca_api_error_captures_request_id_and_body():
     assert error.request_id == "req-123"
     assert "market is closed" in error.response_text
     assert error.as_dict()["http_status"] == 422
+    assert error.as_dict()["api_message"] == "market is closed"
+
+
+def test_alpaca_api_error_parses_code_and_message():
+    response = requests.Response()
+    response.status_code = 403
+    response._content = b'{"code":40310000,"message":"asset is not shortable"}'
+    error = AlpacaAPIError("POST", "https://paper-api.alpaca.markets/v2/orders", response)
+
+    assert error.as_dict()["api_code"] == "40310000"
+    assert error.as_dict()["api_message"] == "asset is not shortable"
 
 
 def test_cancel_order_uses_alpaca_delete_endpoint(monkeypatch):
