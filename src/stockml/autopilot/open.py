@@ -594,8 +594,9 @@ def latest_per_symbol_forecast_fallback_candidates(
             ignore_index=False,
         ).drop_duplicates("__symbol")
         if len(selected) < limit:
-            selected = pd.concat([selected, ranked[~ranked["__symbol"].isin(selected["__symbol"])]], ignore_index=False).drop_duplicates("__symbol")
-        selected = selected.sort_values(["__profitability", "__score", "__symbol"], ascending=[False, False, True]).head(limit)
+            remaining = ranked[~ranked["__symbol"].isin(selected["__symbol"])].head(limit - len(selected))
+            selected = pd.concat([selected, remaining], ignore_index=False).drop_duplicates("__symbol")
+        selected = selected.head(limit)
     else:
         selected = ranked.head(limit)
     candidates: list[dict[str, Any]] = []
