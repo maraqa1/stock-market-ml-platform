@@ -208,6 +208,99 @@ def test_intraday_promotion_direction_uses_nightly_bias():
     assert row["side"] == "sell"
 
 
+def test_intraday_promotion_direction_falls_back_to_nightly_score_sign():
+    rows = _csv_rows(
+        write_snapshot_csv(
+            [
+                (
+                    "intraday_promotion",
+                    [{"symbol": "LONG", "promotion_score": 0.5, "nightly_score": 0.1, "verdict": "watch"}],
+                    "",
+                    "fixture",
+                ),
+                (
+                    "intraday_promotion",
+                    [{"symbol": "SHRT", "promotion_score": 0.5, "nightly_score": -0.1, "verdict": "watch"}],
+                    "",
+                    "fixture",
+                ),
+            ],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )
+    by_symbol = {row["symbol"]: row for row in rows}
+
+    assert by_symbol["LONG"]["direction"] == Direction.LONG.value
+    assert by_symbol["LONG"]["side"] == "buy"
+    assert by_symbol["SHRT"]["direction"] == Direction.SHORT.value
+    assert by_symbol["SHRT"]["side"] == "sell"
+
+
+def test_model_shortlist_score_only_row_gets_scored_outcome():
+    row = _csv_rows(
+        write_snapshot_csv(
+            [("model_shortlist", [{"symbol": "ATEC", "side": "buy", "candidate_rank": 28, "risk_adjusted_score": 0.008964}], "", "fixture")],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )[0]
+
+    assert row["outcome"] == "scored"
+    assert row["funnel_stage"] == FunnelStage.SCORED.value
+    assert row["status"] == "scored"
+
+
+def test_unsized_action_queue_candidate_is_pending_review_not_open_candidate():
+    row = _csv_rows(
+        write_snapshot_csv(
+            [("action_queue", [{"symbol": "CSTL", "side": "long", "decision": "open_candidate", "decision_reason": "candidate_slot_available"}], "", "fixture")],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )[0]
+
+    assert row["outcome"] == "pending"
+    assert row["outcome_reason"] == ""
+    assert row["final_verdict"] == "review_required"
+    assert row["final_action"] == "open_candidate"
+    assert row["notional"] == ""
+    assert row["quantity"] == ""
+
+
+def test_action_queue_watch_row_is_pending_not_open_candidate():
+    row = _csv_rows(
+        write_snapshot_csv(
+            [("action_queue", [{"symbol": "CAI", "side": "long", "decision": "watch", "decision_reason": "latest_signal_unknown", "market_value": 154, "qty": 9}], "", "fixture")],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )[0]
+
+    assert row["outcome"] == "pending"
+    assert row["outcome_reason"] == ""
+    assert row["final_verdict"] == "review_required"
+    assert row["notional"] == "154.0"
+    assert row["quantity"] == "9"
+
+
+def test_sized_action_queue_candidate_remains_open_candidate():
+    row = _csv_rows(
+        write_snapshot_csv(
+            [
+                (
+                    "action_queue",
+                    [{"symbol": "CSTL", "side": "long", "decision": "open_candidate", "notional": 150, "qty": 7}],
+                    "",
+                    "fixture",
+                )
+            ],
+            snapshot_at=SNAPSHOT_AT,
+        )
+    )[0]
+
+    assert row["outcome"] == "open_candidate"
+    assert row["outcome_reason"] == "open_candidate"
+    assert row["notional"] == "150.0"
+    assert row["quantity"] == "7"
+
+
 def test_snapshot_normalizes_legacy_rejection_reason():
     row = _csv_rows(write_snapshot_csv([("model_shortlist", [{"symbol": "AAA", "side": "buy", "trade_quality_status": "rejected", "trade_quality_reason": "Approved; Meta label probability below threshold"}], "", "fixture")], snapshot_at=SNAPSHOT_AT))[0]
     verdicts = json.loads(row["stage_verdicts"])

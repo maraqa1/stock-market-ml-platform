@@ -70,6 +70,21 @@ def float_or_none(value: Any) -> float | None:
         return None
 
 
+def direction_for_pool(pool: Pool, row: dict[str, Any]) -> Direction:
+    direction = direction_from_row(row)
+    if direction != Direction.NEUTRAL or pool != Pool.INTRADAY_PROMOTION:
+        return direction
+
+    nightly_score = float_or_none(first_value(row, ["nightly_score", "raw_score"], None))
+    if nightly_score is None:
+        return Direction.NEUTRAL
+    if nightly_score < 0:
+        return Direction.SHORT
+    if nightly_score > 0:
+        return Direction.LONG
+    return Direction.NEUTRAL
+
+
 def int_or_none(value: Any) -> int | None:
     number = float_or_none(value)
     if number is None:
@@ -148,6 +163,14 @@ def _outcome_and_stage(pool: Pool, row: dict[str, Any]) -> tuple[str | None, Fun
     if pool == Pool.ACTION_QUEUE:
         if "close" in action:
             return "pending", FunnelStage.SUBMITTED
+        if action in {"watch", "manual_review", "rotate", "replace", "apply_rotation"}:
+            return "pending", FunnelStage.SELECTED
+        has_size = float_or_none(first_value(row, ["planned_notional", "approved_notional", "notional", "market_value"])) is not None
+        has_quantity = int_or_none(first_value(row, ["planned_quantity", "suggested_quantity", "qty", "filled_qty"])) is not None
+        if verdict == "open_candidate" and has_size and has_quantity:
+            return "open_candidate", FunnelStage.SELECTED
+        if verdict == "open_candidate":
+            return "pending", FunnelStage.SELECTED
         return "open_candidate", FunnelStage.SELECTED
     if pool == Pool.INTRADAY_PROMOTION:
         if verdict == "block" or status == "blocked" or reason:
@@ -169,6 +192,8 @@ def _outcome_and_stage(pool: Pool, row: dict[str, Any]) -> tuple[str | None, Fun
             return "rejected", FunnelStage.REJECTED
     if pool == Pool.REJECTED_TRIMMED:
         return "rejected", FunnelStage.REJECTED
+    if pool == Pool.MODEL_SHORTLIST and (status == "" and verdict == "" and reason == ""):
+        return "scored", FunnelStage.SCORED
     return None, FunnelStage.SCORED
 
 
@@ -322,7 +347,7 @@ def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: da
         pool=pool_enum,
         symbol=str(first_value(row, ["symbol", "ticker", "replace_symbol", "with_symbol"], "") or "").upper(),
         generated_at=generated,
-        direction=direction_from_row(row),
+        direction=direction_for_pool(pool_enum, row),
         funnel_stage=stage,
         rank=int_or_none(first_value(row, ["candidate_rank", "rank", "replacement_rank"])),
         raw_score=raw_score,
