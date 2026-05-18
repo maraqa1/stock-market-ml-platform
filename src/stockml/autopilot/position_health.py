@@ -58,14 +58,18 @@ def classify_position_health(position: dict[str, Any], rules: PositionHealthRule
         status, reason = "close_now", "hard_stop_hit"
     elif _reversal_confirmed(position):
         status, reason = "close_now", "signal_reversal_confirmed"
-    elif risk_tier in {"reject", "rejected", "hard_reject", "block"} and plpc <= loss_threshold:
-        status, reason = "close_now", "risk_tier_reject_with_loss"
-    elif signal_state == "stale" and plpc < 0:
-        status, reason = "close_candidate", "stale_red_position"
-    elif plpc <= loss_threshold:
-        status, reason = "close_candidate", "loss_threshold_breached"
     elif risk_tier in {"reject", "rejected", "hard_reject", "block"}:
         status, reason = "close_candidate", "risk_tier_reject"
+    elif signal_state in {"stale", "unknown"} and plpc <= loss_threshold:
+        reason_state = "signal_stale" if signal_state == "stale" else "latest_signal_unknown"
+        status, reason = "close_candidate", f"loss_threshold_breached;{reason_state}"
+    elif plpc <= loss_threshold:
+        status, reason = "close_candidate", "loss_threshold_breached"
+    elif signal_state in {"stale", "unknown"} and plpc < 0:
+        reason_state = "signal_stale" if signal_state == "stale" else "latest_signal_unknown"
+        status, reason = "watch_loss", f"small_red_above_stop;{reason_state}"
+    elif signal_state == "unknown" and plpc > 0:
+        status, reason = "watch", "latest_signal_unknown_green_position"
     elif signal_state == "unknown":
         status, reason = "manual_review", "latest_signal_unknown"
     elif plpc < 0:

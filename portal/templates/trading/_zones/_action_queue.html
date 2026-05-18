@@ -43,7 +43,7 @@
               <td>{{ time_utc(item.generated_at or action_queue.generated_at) }}</td>
               <td>
                 <div class="action-buttons">
-                  <button class="btn btn-primary btn-sm" type="button" data-queue-action="apply" data-event-id="{{ item.event_id }}" data-symbol="{{ item.symbol }}" data-position-id="{{ item.position_id }}" data-decision="{{ item.decision }}"{% if item.operator_apply_enabled is sameas false %} disabled title="{{ item.operator_call_reason }}"{% endif %}>Apply</button>
+                  <button class="btn btn-primary btn-sm" type="button" data-queue-action="apply" data-event-id="{{ item.event_id }}" data-symbol="{{ item.symbol }}" data-position-id="{{ item.position_id }}" data-decision="{{ item.decision }}"{% if item.operator_apply_enabled is sameas false %} disabled title="{{ item.operator_call_reason }}"{% endif %}>{{ item.action_button_label or "Review" }}</button>
                   <button class="btn btn-ghost btn-sm" type="button" data-queue-action="override" data-event-id="{{ item.event_id }}" data-symbol="{{ item.symbol }}" data-position-id="{{ item.position_id }}" data-decision="{{ item.decision }}">Override</button>
                 </div>
               </td>

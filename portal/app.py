@@ -24,8 +24,8 @@ from portal.services.shortlist import get_for_date as shortlist_get_for_date
 from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.symbol_detail import get as symbol_detail_get
 from portal.services.stock_detail_service import stock_detail_context
+from portal.services.action_queue_service import action_queue_context
 from portal.services.trading_api_service import (
-    action_queue_context,
     basket_integrity_context,
     basket_today_context,
     monitor_today_context,

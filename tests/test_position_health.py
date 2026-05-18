@@ -1,18 +1,39 @@
 from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
 
 
-def test_stale_red_position_becomes_close_candidate():
+def test_stale_red_position_below_threshold_becomes_watch_loss():
     result = classify_position_health({"symbol": "AAA", "unrealized_plpc": -0.004, "latest_signal_status": "stale"})
 
-    assert result["position_health_status"] == "close_candidate"
-    assert result["position_health_reason"] == "stale_red_position"
+    assert result["position_health_status"] == "watch_loss"
+    assert result["position_health_reason"] == "small_red_above_stop;signal_stale"
 
 
 def test_unknown_signal_becomes_manual_review():
-    result = classify_position_health({"symbol": "AAA", "unrealized_plpc": 0.01, "latest_signal_status": "unknown"})
+    result = classify_position_health({"symbol": "AAA", "unrealized_plpc": 0.0, "latest_signal_status": "unknown"})
 
     assert result["position_health_status"] == "manual_review"
     assert result["position_health_reason"] == "latest_signal_unknown"
+
+
+def test_unknown_green_position_remains_watch():
+    result = classify_position_health({"symbol": "AAA", "unrealized_plpc": 0.01, "latest_signal_status": "unknown"})
+
+    assert result["position_health_status"] == "watch"
+    assert result["position_health_reason"] == "latest_signal_unknown_green_position"
+
+
+def test_unknown_red_above_threshold_becomes_close_candidate():
+    result = classify_position_health({"symbol": "AAA", "unrealized_plpc": -0.0233, "latest_signal_status": "unknown"})
+
+    assert result["position_health_status"] == "close_candidate"
+    assert result["position_health_reason"] == "loss_threshold_breached;latest_signal_unknown"
+
+
+def test_stale_red_above_threshold_becomes_close_candidate():
+    result = classify_position_health({"symbol": "AAA", "unrealized_plpc": -0.0233, "latest_signal_status": "stale"})
+
+    assert result["position_health_status"] == "close_candidate"
+    assert result["position_health_reason"] == "loss_threshold_breached;signal_stale"
 
 
 def test_hard_stop_becomes_close_now():

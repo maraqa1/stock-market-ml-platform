@@ -218,8 +218,9 @@ def test_action_queue_adds_operator_calls_for_visible_supervision(tmp_path):
     ctx = action_queue_context(tmp_path)
     rows = {row["symbol"]: row for row in ctx["items"]}
 
-    assert rows["FWRD"]["operator_call_label"] == "Watch only"
-    assert rows["FWRD"]["operator_apply_enabled"] is False
+    assert rows["FWRD"]["decision"] == "close_candidate"
+    assert rows["FWRD"]["operator_call_label"] == "Review close"
+    assert rows["FWRD"]["operator_apply_enabled"] is True
     assert rows["FRMI"]["operator_call_label"] == "Review concentration"
     assert rows["FRMI"]["operator_apply_enabled"] is False
     assert rows["GLIBK"]["operator_call_label"] == "Hold - logic check"

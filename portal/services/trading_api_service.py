@@ -13,6 +13,7 @@ from portal.services.trading_service import _position_summary, _status_counts
 from stockml.db.connection import get_engine
 from stockml.db.schema import PIPELINE_STAGE_NAMES, intraday_candidate_snapshots, intraday_promotion_log, pipeline_runs, pipeline_stages, position_events, rotation_recommendation_log
 from stockml.autopilot.basket_risk import evaluate_basket_risk, load_basket_risk_config
+from stockml.autopilot.action_queue_policy import classify_action_queue_item
 from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
 from stockml.services.events import position_id_for_symbol
 from stockml.autopilot.open import load_auto_open_config
@@ -656,11 +657,13 @@ def action_queue_context(root: Path) -> dict[str, Any]:
         actionable = actionable.drop(columns="__order")
         items = _records(actionable)
         held_symbols = position_symbols if position_symbols is not None else {str(symbol).upper() for symbol in decisions.get("symbol", pd.Series(dtype=str)).dropna()}
+        rules = PositionHealthRules(max_position_loss_pct=float(load_auto_open_config(root=root).max_position_loss_pct), hard_stop_loss_pct=4.0)
         for index, item in enumerate(items):
             item["event_id"] = item.get("event_id") or f"queue-{index + 1}"
             item["position_id"] = position_id_for_symbol(str(item.get("symbol") or ""))
             item.update(_operator_call_for_queue_item(item, held_symbols))
-    items.extend(_candidate_queue_items(evaluations, len(items), held_symbols=position_symbols or set()))
+            item.update(classify_action_queue_item(item, held_symbols=held_symbols, rules=rules))
+    items.extend(_candidate_queue_items(evaluations, len(items), held_symbols=position_symbols or set(), root=root))
     items.extend(_rotation_queue_items(len(items), held_symbols=position_symbols))
     counts = _status_counts(pd.DataFrame(items), "decision")
     generated_at = max([value for value in [_csv_timestamp(decisions_file), _csv_timestamp(evaluations_file), _csv_timestamp(positions_file)] if value] or [""])
@@ -758,7 +761,7 @@ def intraday_promotion_context(root: Path, *, limit: int | None = 20) -> dict[st
         return {"source": "empty", "latest_tick": "", "rows": [], "counts": {}}
 
 
-def _candidate_queue_items(evaluations: pd.DataFrame, offset: int, *, held_symbols: set[str] | None = None) -> list[dict[str, Any]]:
+def _candidate_queue_items(evaluations: pd.DataFrame, offset: int, *, held_symbols: set[str] | None = None, root: Path | None = None) -> list[dict[str, Any]]:
     if evaluations.empty or "decision" not in evaluations.columns:
         return []
     actionable = evaluations[evaluations["decision"].fillna("").isin(["open_candidate", "replace_candidate"])].copy()
@@ -768,12 +771,12 @@ def _candidate_queue_items(evaluations: pd.DataFrame, offset: int, *, held_symbo
         return []
     actionable = actionable.sort_values(["decision", "candidate_rank"], ascending=[True, True]).head(10)
     items: list[dict[str, Any]] = []
+    rules = PositionHealthRules(max_position_loss_pct=float(load_auto_open_config(root=root).max_position_loss_pct), hard_stop_loss_pct=4.0) if root is not None else PositionHealthRules()
     for index, row in enumerate(_records(actionable), start=offset + 1):
         decision = str(row.get("decision") or "")
         label = "Review open" if decision == "open_candidate" else "Review candidate"
         reason = str(row.get("operator_call_text") or "Candidate evaluation requires operator review.")
-        items.append(
-            {
+        item = {
                 **row,
                 "event_id": f"candidate-{index}",
                 "position_id": "",
@@ -786,7 +789,7 @@ def _candidate_queue_items(evaluations: pd.DataFrame, offset: int, *, held_symbo
                 "operator_call_reason": reason,
                 "operator_apply_enabled": False,
             }
-        )
+        items.append(classify_action_queue_item(item, held_symbols=held_symbols or set(), rules=rules))
     return items
 
 
@@ -805,6 +808,7 @@ def _operator_call_for_queue_item(item: dict[str, Any], held_symbols: set[str]) 
             "operator_call_label": "Watch only",
             "operator_call_reason": "No trade. Monitor flagged stale signal; wait for fresh rescore.",
             "operator_apply_enabled": False,
+            "action_button_label": "Acknowledge",
         }
     if decision == "close":
         return {
@@ -812,6 +816,7 @@ def _operator_call_for_queue_item(item: dict[str, Any], held_symbols: set[str]) 
             "operator_call_label": "Review close",
             "operator_call_reason": "Close signal needs operator confirmation before paper order submission.",
             "operator_apply_enabled": True,
+            "action_button_label": "Review close",
         }
     if decision in {"rotate", "replace"}:
         if "take_profit" in reason and pnl <= 0:
