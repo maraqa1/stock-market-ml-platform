@@ -664,8 +664,9 @@ def action_queue_context(root: Path) -> dict[str, Any]:
             item["position_id"] = position_id_for_symbol(str(item.get("symbol") or ""))
             item.update(_operator_call_for_queue_item(item, held_symbols))
             item.update(classify_action_queue_item(item, held_symbols=held_symbols, rules=rules, close_automation_mode=auto_config.close_automation_mode))
+    open_order_symbols = _open_order_symbols_from_tracking(root)
     items.extend(_candidate_queue_items(evaluations, len(items), held_symbols=position_symbols or set(), root=root))
-    items.extend(_rotation_queue_items(len(items), held_symbols=position_symbols))
+    items.extend(_rotation_queue_items(len(items), held_symbols=position_symbols, open_order_symbols=open_order_symbols))
     counts = _status_counts(pd.DataFrame(items), "decision")
     counts["close"] = int(counts.get("close", 0)) + int(counts.get("close_candidate", 0)) + int(counts.get("close_now", 0))
     generated_at = max([value for value in [_csv_timestamp(decisions_file), _csv_timestamp(evaluations_file), _csv_timestamp(positions_file)] if value] or [""])
@@ -681,7 +682,17 @@ def _open_symbols_from_positions_file(positions_file: Path | None) -> set[str] |
     return {str(symbol).upper() for symbol in positions["symbol"].dropna() if str(symbol).strip()}
 
 
-def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None) -> list[dict[str, Any]]:
+def _open_order_symbols_from_tracking(root: Path) -> set[str]:
+    tracking_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
+    tracking = safe_read_csv(tracking_file, nrows=1000)
+    if tracking.empty or "symbol" not in tracking.columns:
+        return set()
+    status = tracking.get("alpaca_status", tracking.get("status", pd.Series("", index=tracking.index))).fillna("").astype(str).str.lower()
+    open_states = {"accepted", "new", "pending_new", "pending_replace", "submitted", "partially_filled", "partial"}
+    return {str(symbol).upper() for symbol in tracking.loc[status.isin(open_states), "symbol"].dropna() if str(symbol).strip()}
+
+
+def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None, open_order_symbols: set[str] | None = None) -> list[dict[str, Any]]:
     rows = _rows_from_db(
         rotation_recommendation_log.select()
         .where(rotation_recommendation_log.c.verdict == "proposed")
@@ -693,6 +704,10 @@ def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None) 
         replace_symbol = str(row.get("replace_symbol") or "").upper()
         with_symbol = str(row.get("with_symbol") or "").upper()
         if held_symbols is not None and replace_symbol not in held_symbols:
+            continue
+        if held_symbols is not None and with_symbol in held_symbols:
+            continue
+        if open_order_symbols and ({replace_symbol, with_symbol} & open_order_symbols):
             continue
         items.append(
             {

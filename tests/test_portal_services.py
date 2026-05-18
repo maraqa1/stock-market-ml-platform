@@ -376,3 +376,61 @@ def test_action_queue_filters_rotation_rows_for_symbols_no_longer_open(monkeypat
     ctx = action_queue_context(tmp_path)
 
     assert ctx["items"] == []
+
+
+def test_action_queue_filters_rotation_rows_when_replacement_already_held(monkeypatch, tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [
+            {"symbol": "CSTL", "qty": 10, "market_value": 150},
+            {"symbol": "ATEC", "qty": 5, "market_value": 150},
+        ],
+    )
+
+    monkeypatch.setattr(
+        "portal.services.trading_api_service._rows_from_db",
+        lambda *args, **kwargs: [
+            {
+                "id": 7,
+                "replace_symbol": "CSTL",
+                "with_symbol": "ATEC",
+                "score_delta": 0.15,
+                "reason": "HIGHER_PROMOTION_SCORE",
+                "verdict": "proposed",
+                "replace_position_id": "paper:CSTL",
+                "logged_at": "2026-05-12T15:29:40+00:00",
+            }
+        ],
+    )
+
+    ctx = action_queue_context(tmp_path)
+
+    assert ctx["items"] == []
+
+
+def test_action_queue_filters_rotation_rows_when_order_in_flight(monkeypatch, tmp_path):
+    write_csv(tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv", [{"symbol": "CSTL", "qty": 10}])
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_tracking_1.csv",
+        [{"symbol": "ATEC", "alpaca_status": "pending_new"}],
+    )
+
+    monkeypatch.setattr(
+        "portal.services.trading_api_service._rows_from_db",
+        lambda *args, **kwargs: [
+            {
+                "id": 7,
+                "replace_symbol": "CSTL",
+                "with_symbol": "ATEC",
+                "score_delta": 0.15,
+                "reason": "HIGHER_PROMOTION_SCORE",
+                "verdict": "proposed",
+                "replace_position_id": "paper:CSTL",
+                "logged_at": "2026-05-12T15:29:40+00:00",
+            }
+        ],
+    )
+
+    ctx = action_queue_context(tmp_path)
+
+    assert ctx["items"] == []

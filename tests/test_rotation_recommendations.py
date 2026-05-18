@@ -137,7 +137,7 @@ def test_confirm_rotation_requires_explicit_paper_open_path_and_can_confirm_with
 
 
 def test_action_queue_surfaces_rotation_recommendations(monkeypatch, tmp_path):
-    def fake_rotation_items(offset, *, held_symbols=None):
+    def fake_rotation_items(offset, *, held_symbols=None, open_order_symbols=None):
         return [
             {
                 "event_id": "rotation-7",
