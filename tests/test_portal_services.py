@@ -4,7 +4,7 @@ import time
 import pandas as pd
 
 from portal.services.latest_file_reader import latest_file, readable_reason
-from portal.services.trading_api_service import action_queue_context
+from portal.services.trading_api_service import action_queue_context, positions_context
 from portal.services.universe_service import universe_context
 from portal.services.signal_service import signal_context
 from portal.services.trading_service import lifecycle_context, trading_context
@@ -224,6 +224,27 @@ def test_action_queue_adds_operator_calls_for_visible_supervision(tmp_path):
     assert rows["FRMI"]["operator_apply_enabled"] is False
     assert rows["GLIBK"]["operator_call_label"] == "Hold - logic check"
     assert rows["GLIBK"]["operator_apply_enabled"] is False
+
+
+def test_positions_context_adds_position_management_intelligence(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "CAI", "qty": 10, "market_value": 150.35, "cost_basis": 150, "unrealized_pl": 0.35, "unrealized_plpc": 0.00231}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [{"symbol": "CAI", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": 0.00231}],
+    )
+    state_path = tmp_path / "data" / "portal_outputs" / "paper_autopilot_state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text('{"position_peak_plpc":{"CAI":0.03498}}', encoding="utf-8")
+
+    ctx = positions_context(tmp_path)
+    row = ctx["positions"][0]
+
+    assert row["position_intelligence_management_state"] == "close_triggered"
+    assert row["position_intelligence"]["close_trigger_reason"] == "trailing_profit_giveback"
+    assert row["position_intelligence"]["signal_state"] == "unknown"
 
 
 def test_action_queue_includes_candidate_evaluation_opportunities(tmp_path):

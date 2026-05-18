@@ -14,6 +14,7 @@ from stockml.db.connection import get_engine
 from stockml.db.schema import PIPELINE_STAGE_NAMES, intraday_candidate_snapshots, intraday_promotion_log, pipeline_runs, pipeline_stages, position_events, rotation_recommendation_log
 from stockml.services.events import position_id_for_symbol
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
+from stockml.trading.position_intelligence import enrich_positions
 
 
 MONITOR_EVENT_TYPES = {"monitor_safe", "monitor_watch", "monitor_close", "monitor_rotate"}
@@ -320,10 +321,14 @@ def positions_context(root: Path) -> dict[str, Any]:
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     actions_file = latest_file(root, "operator_actions", "operator_position_actions_*.csv")
     tracking_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
+    decisions_file = latest_file(root, "agent_decisions", "position_decisions_*.csv")
     positions = safe_read_csv(positions_file, nrows=1000)
     actions = safe_read_csv(actions_file, nrows=1000)
     tracking = safe_read_csv(tracking_file, nrows=1000)
+    decisions = safe_read_csv(decisions_file, nrows=1000)
     rows = _records(positions)
+    autopilot_state = load_autopilot_state(root)
+    rows = enrich_positions(rows, decisions=_records(decisions), autopilot_state=autopilot_state)
     open_position_symbols = {str(row.get("symbol") or "").upper() for row in rows if row.get("symbol")}
     pending_close_orders = _latest_close_orders_by_symbol(actions, tracking, open_position_symbols)
     position_ids: list[str] = []
@@ -342,7 +347,6 @@ def positions_context(root: Path) -> dict[str, Any]:
     lineage_counts = _position_event_counts(position_ids)
     for row in rows:
         row["lineage_event_count"] = lineage_counts.get(str(row.get("position_id") or ""), 0)
-    autopilot_state = load_autopilot_state(root)
     return {
         "source": "csv_artifacts",
         "refreshed_at": _csv_timestamp(positions_file),

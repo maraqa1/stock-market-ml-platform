@@ -2,10 +2,11 @@
 {% from "_macros/format.html" import money, qty, side, signed_money, signed_pct %}
 {% if not positions_api["positions"] %}
   <tr>
-    <td colspan="10" class="empty small">No open paper positions returned.</td>
+    <td colspan="12" class="empty small">No open paper positions returned.</td>
   </tr>
 {% else %}
   {% for row in positions_api["positions"] %}
+    {% set intel = row.position_intelligence or {} %}
     <tr class="row-clickable" data-position-id="{{ row.position_id }}" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
       <td class="num-l col-pinned" data-sort-value="{{ row.symbol }}"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
       <td>{{ side(row.side or "long") }}</td>
@@ -15,6 +16,24 @@
       <td data-sort-value="{{ row.unrealized_pl or 0 }}">{{ signed_money(row.unrealized_pl or 0) }}</td>
       <td data-sort-value="{{ row.unrealized_plpc or 0 }}">{{ signed_pct(row.unrealized_plpc or 0) }}</td>
       <td class="num" data-sort-value="0">Open</td>
+      <td data-sort-value="{{ intel.management_state or '' }}">
+        {{ pill(intel.management_state or "hold") }}
+        {% if intel.signal_state %}
+          <div class="order-state text-secondary">{{ intel.signal_state|replace("_", " ") }}</div>
+        {% endif %}
+      </td>
+      <td class="num" data-sort-value="{{ intel.distance_to_trailing_close if intel.distance_to_trailing_close is not none else 999 }}">
+        {% if intel.close_triggered %}
+          {{ intel.close_trigger_reason|replace("_", " ") }}
+        {% elif intel.trailing_active %}
+          trail {{ signed_pct(intel.distance_to_trailing_close or 0) }}
+        {% elif intel.defensive_close_line is not none %}
+          def {{ signed_pct(intel.distance_to_defensive_close or 0) }}
+        {% else %}
+          hard {{ signed_pct(intel.distance_to_hard_stop or 0) }}
+        {% endif %}
+        <div class="order-state text-secondary">{{ intel.management_summary or "" }}</div>
+      </td>
       <td>
         {% if row.broker_order %}
           {{ pill(row.broker_order.status_key, row.broker_order.label) }}
