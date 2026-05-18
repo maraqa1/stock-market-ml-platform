@@ -25,6 +25,7 @@ def run_profile(
     override_limit: int | None = None,
     skip_sentiment: bool = False,
     write_database: bool = False,
+    provider_name: str | None = None,
 ) -> None:
     profile = load_profile(profile_name)
     limit = _limit(profile, override_limit)
@@ -43,11 +44,12 @@ def run_profile(
             sleep_seconds=float(profile.get("sleep_seconds", 1.0)),
             limit=limit,
             exchange=exchange,
+            provider_name=provider_name or profile.get("provider"),
         )
         build_price_quality_report()
 
     if profile.get("run_metadata", True):
-        build_metadata_enriched(limit=limit)
+        build_metadata_enriched(limit=limit, provider_name=provider_name or profile.get("provider"))
 
     if profile.get("run_features", True):
         build_feature_panel(limit_tickers=limit)
@@ -77,12 +79,14 @@ def main() -> int:
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--skip-sentiment", action="store_true")
     parser.add_argument("--write-database", action="store_true")
+    parser.add_argument("--provider", default=None, help="Market data provider for price and metadata jobs: yahoo_legacy or eodhd.")
     args = parser.parse_args()
     run_profile(
         args.profile,
         override_limit=args.limit_tickers,
         skip_sentiment=args.skip_sentiment,
         write_database=args.write_database,
+        provider_name=args.provider,
     )
     return 0
 

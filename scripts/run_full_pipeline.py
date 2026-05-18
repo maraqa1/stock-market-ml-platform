@@ -25,6 +25,7 @@ def main() -> int:
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--exchange", default=None)
     parser.add_argument("--skip-price-download", action="store_true")
+    parser.add_argument("--provider", default=None, help="Market data provider for price and metadata jobs: yahoo_legacy or eodhd.")
     args = parser.parse_args()
     limit = args.limit_tickers or args.limit
 
@@ -40,13 +41,15 @@ def main() -> int:
             price_args.extend(["--limit", str(limit)])
         if args.exchange:
             price_args.extend(["--exchange", args.exchange])
+        if args.provider:
+            price_args.extend(["--provider", args.provider])
         sys.argv = [original_argv[0]] + price_args
         try:
             run_price_main()
         finally:
             sys.argv = original_argv
 
-    build_metadata_enriched(limit=limit)
+    build_metadata_enriched(limit=limit, provider_name=args.provider)
     build_feature_panel(limit_tickers=limit)
 
     try:

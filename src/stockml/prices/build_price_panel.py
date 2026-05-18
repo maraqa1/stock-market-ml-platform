@@ -15,6 +15,7 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NASDAQ")
     p.add_argument("--force-full", action="store_true")
+    p.add_argument("--provider", default=None, help="Market data provider: yahoo_legacy or eodhd. Defaults to config/env.")
     args = p.parse_args()
 
     log("Starting price-history pipeline")
@@ -25,6 +26,7 @@ def main() -> int:
         limit=args.limit,
         force_full=args.force_full,
         exchange=args.exchange,
+        provider_name=args.provider,
     )
     build_price_quality_report()
     log("Price-history pipeline complete")
