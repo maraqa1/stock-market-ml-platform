@@ -23,6 +23,7 @@ from stockml.trading.order_builder import validate_order_payload
 
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "autopilot.yaml"
+MAX_PORTAL_LIMIT = 100
 
 
 @dataclass(frozen=True)
@@ -274,7 +275,7 @@ def set_auto_open_enabled(enabled: bool, *, root: Path | str | None = None, path
     return load_auto_open_config(config_path)
 
 
-def set_auto_open_max_per_day(max_per_day: int, *, root: Path | str | None = None, path: Path | str | None = None) -> AutoOpenConfig:
+def _write_auto_open_config_values(values: dict[str, Any], *, root: Path | str | None = None, path: Path | str | None = None) -> AutoOpenConfig:
     config_path = Path(path) if path is not None else auto_open_config_path(root)
     payload = _default_payload()
     stored = _read_payload(config_path)
@@ -283,27 +284,34 @@ def set_auto_open_max_per_day(max_per_day: int, *, root: Path | str | None = Non
         section = stored.get("autopilot")
         if isinstance(section, dict):
             payload["autopilot"].update(section)
-    clean = max(0, min(int(max_per_day), 20))
-    payload["autopilot"]["max_auto_opens_per_day"] = clean
+    payload["autopilot"].update(values)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     return load_auto_open_config(config_path)
+
+
+def _clean_portal_limit(value: int) -> int:
+    return max(0, min(int(value), MAX_PORTAL_LIMIT))
+
+
+def set_auto_open_max_per_day(max_per_day: int, *, root: Path | str | None = None, path: Path | str | None = None) -> AutoOpenConfig:
+    return _write_auto_open_config_values({"max_auto_opens_per_day": _clean_portal_limit(max_per_day)}, root=root, path=path)
 
 
 def set_per_symbol_forecast_fallback_max_per_day(max_per_day: int, *, root: Path | str | None = None, path: Path | str | None = None) -> AutoOpenConfig:
-    config_path = Path(path) if path is not None else auto_open_config_path(root)
-    payload = _default_payload()
-    stored = _read_payload(config_path)
-    if stored:
-        payload.update(stored)
-        section = stored.get("autopilot")
-        if isinstance(section, dict):
-            payload["autopilot"].update(section)
-    clean = max(0, min(int(max_per_day), 20))
-    payload["autopilot"]["per_symbol_forecast_fallback_max_per_day"] = clean
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-    return load_auto_open_config(config_path)
+    return _write_auto_open_config_values({"per_symbol_forecast_fallback_max_per_day": _clean_portal_limit(max_per_day)}, root=root, path=path)
+
+
+def set_auto_open_limit_values(limits: dict[str, int], *, root: Path | str | None = None, path: Path | str | None = None) -> AutoOpenConfig:
+    allowed = {
+        "max_auto_opens_per_day",
+        "max_positions",
+        "flat_account_fallback_max_per_day",
+        "near_miss_fallback_max_per_day",
+        "per_symbol_forecast_fallback_max_per_day",
+    }
+    clean = {key: _clean_portal_limit(value) for key, value in limits.items() if key in allowed}
+    return _write_auto_open_config_values(clean, root=root, path=path)
 
 
 def position_size_usd(account_equity: float, config: AutoOpenConfig) -> float:

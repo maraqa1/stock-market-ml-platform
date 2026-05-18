@@ -111,15 +111,19 @@
           <button class="btn btn-primary" type="submit">Enable Auto Open</button>
         </form>
       {% endif %}
-      <form class="autopilot-mode-form" method="post" action="/trading/autopilot/feature/auto-open-cap">
-        <label class="label" for="auto-open-cap">Auto opens/day</label>
-        <input id="auto-open-cap" name="max_auto_opens_per_day" type="number" min="0" max="20" step="1" value="{{ paper_autopilot.auto_open_max_per_day }}">
-        <button class="btn btn-ghost" type="submit">Save Cap</button>
-      </form>
-      <form class="autopilot-mode-form" method="post" action="/trading/autopilot/feature/per-symbol-forecast-cap">
-        <label class="label" for="per-symbol-forecast-cap">Forecast fallback/day</label>
-        <input id="per-symbol-forecast-cap" name="per_symbol_forecast_fallback_max_per_day" type="number" min="0" max="20" step="1" value="{{ paper_autopilot.per_symbol_forecast_fallback_max_per_day }}">
-        <button class="btn btn-ghost" type="submit">Save Forecast Cap</button>
+      <form class="autopilot-mode-form" method="post" action="/trading/autopilot/feature/auto-open-limits">
+        <label class="label" for="auto-open-limit-overall">Auto limits</label>
+        <span class="label">Open/day</span>
+        <input id="auto-open-limit-overall" name="max_auto_opens_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.auto_open_max_per_day }}" title="Overall auto opens per day" aria-label="Overall auto opens per day">
+        <span class="label">Positions</span>
+        <input name="max_positions" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.auto_open_max_positions }}" title="Maximum open positions" aria-label="Maximum open positions">
+        <span class="label">Flat/day</span>
+        <input name="flat_account_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.flat_account_fallback_max_per_day }}" title="Flat-account fallback opens per day" aria-label="Flat-account fallback opens per day">
+        <span class="label">Near/day</span>
+        <input name="near_miss_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.near_miss_fallback_max_per_day }}" title="Near-miss fallback opens per day" aria-label="Near-miss fallback opens per day">
+        <span class="label">Forecast/day</span>
+        <input name="per_symbol_forecast_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.per_symbol_forecast_fallback_max_per_day }}" title="Forecast fallback opens per day" aria-label="Forecast fallback opens per day">
+        <button class="btn btn-ghost" type="submit">Save Limits</button>
       </form>
       {% if paper_autopilot.status in ["running", "paused"] %}
         <form method="post" action="/trading/autopilot/stop">

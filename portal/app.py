@@ -42,7 +42,7 @@ from stockml.intraday.promotion import latest_evaluation
 from stockml.safety.live_disabled import assert_live_disabled
 from stockml.services.events import record_event_safely
 from stockml.autopilot.rotate import confirm_rotation, override_rotation
-from stockml.autopilot.open import set_auto_open_enabled, set_auto_open_max_per_day, set_per_symbol_forecast_fallback_max_per_day
+from stockml.autopilot.open import set_auto_open_enabled, set_auto_open_limit_values, set_auto_open_max_per_day, set_per_symbol_forecast_fallback_max_per_day
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
 from stockml.trading.snapshot_export import snapshot_csv_payload
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
@@ -289,6 +289,34 @@ def create_app(root: Path | None = None) -> Flask:
             max_per_day = 3
         config = set_auto_open_max_per_day(max_per_day, root=root_path())
         payload = {"status": "ok", "auto_open_max_per_day": config.max_auto_opens_per_day}
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(payload)
+        return redirect(url_for("trading", _anchor="paper-autopilot"))
+
+    @app.route("/trading/autopilot/feature/auto-open-limits", methods=["POST"])
+    def trading_autopilot_auto_open_limits():
+        fields = [
+            "max_auto_opens_per_day",
+            "max_positions",
+            "flat_account_fallback_max_per_day",
+            "near_miss_fallback_max_per_day",
+            "per_symbol_forecast_fallback_max_per_day",
+        ]
+        limits = {}
+        for field in fields:
+            try:
+                limits[field] = int(request.form.get(field, 0))
+            except (TypeError, ValueError):
+                limits[field] = 0
+        config = set_auto_open_limit_values(limits, root=root_path())
+        payload = {
+            "status": "ok",
+            "max_auto_opens_per_day": config.max_auto_opens_per_day,
+            "max_positions": config.max_positions,
+            "flat_account_fallback_max_per_day": config.flat_account_fallback_max_per_day,
+            "near_miss_fallback_max_per_day": config.near_miss_fallback_max_per_day,
+            "per_symbol_forecast_fallback_max_per_day": config.per_symbol_forecast_fallback_max_per_day,
+        }
         if request.accept_mimetypes.best == "application/json":
             return jsonify(payload)
         return redirect(url_for("trading", _anchor="paper-autopilot"))

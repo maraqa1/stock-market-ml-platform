@@ -202,7 +202,7 @@ def test_trading_paper_autopilot_controls(client):
     assert b"Auto Rotate" in response.data
     assert b"Enable Auto Open" in response.data
     assert b"Auto open" in response.data
-    assert b"Auto opens/day" in response.data
+    assert b"Auto limits" in response.data
     assert b"Start Paper Autopilot" in response.data
     assert b"Recent Autopilot Ticks" in response.data
 
@@ -251,26 +251,54 @@ def test_trading_paper_autopilot_auto_open_legacy_form_and_json_routes(client):
 
 
 def test_trading_paper_autopilot_auto_open_cap_persists_config(client):
-    post = client.post("/trading/autopilot/feature/auto-open-cap", data={"max_auto_opens_per_day": "7"})
+    post = client.post("/trading/autopilot/feature/auto-open-cap", data={"max_auto_opens_per_day": "77"})
     assert post.status_code == 302
     config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
-    assert "max_auto_opens_per_day: 7" in config_path.read_text(encoding="utf-8")
+    assert "max_auto_opens_per_day: 77" in config_path.read_text(encoding="utf-8")
 
     page = client.get("/trading")
     assert b'name="max_auto_opens_per_day"' in page.data
-    assert b'value="7"' in page.data
+    assert b'value="77"' in page.data
 
 
 def test_trading_paper_autopilot_per_symbol_forecast_cap_persists_config(client):
-    post = client.post("/trading/autopilot/feature/per-symbol-forecast-cap", data={"per_symbol_forecast_fallback_max_per_day": "9"})
+    post = client.post("/trading/autopilot/feature/per-symbol-forecast-cap", data={"per_symbol_forecast_fallback_max_per_day": "99"})
     assert post.status_code == 302
     config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
-    assert "per_symbol_forecast_fallback_max_per_day: 9" in config_path.read_text(encoding="utf-8")
+    assert "per_symbol_forecast_fallback_max_per_day: 99" in config_path.read_text(encoding="utf-8")
 
     page = client.get("/trading")
     assert b'name="per_symbol_forecast_fallback_max_per_day"' in page.data
-    assert b'value="9"' in page.data
-    assert b"Forecast fallback/day" in page.data
+    assert b'value="99"' in page.data
+    assert b"Auto limits" in page.data
+
+
+def test_trading_paper_autopilot_auto_open_limits_persist_config(client):
+    post = client.post(
+        "/trading/autopilot/feature/auto-open-limits",
+        data={
+            "max_auto_opens_per_day": "120",
+            "max_positions": "12",
+            "flat_account_fallback_max_per_day": "3",
+            "near_miss_fallback_max_per_day": "4",
+            "per_symbol_forecast_fallback_max_per_day": "5",
+        },
+    )
+    assert post.status_code == 302
+    config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
+    text = config_path.read_text(encoding="utf-8")
+    assert "max_auto_opens_per_day: 100" in text
+    assert "max_positions: 12" in text
+    assert "flat_account_fallback_max_per_day: 3" in text
+    assert "near_miss_fallback_max_per_day: 4" in text
+    assert "per_symbol_forecast_fallback_max_per_day: 5" in text
+
+    page = client.get("/trading")
+    assert b'title="Overall auto opens per day"' in page.data
+    assert b'title="Maximum open positions"' in page.data
+    assert b'title="Flat-account fallback opens per day"' in page.data
+    assert b'title="Near-miss fallback opens per day"' in page.data
+    assert b'title="Forecast fallback opens per day"' in page.data
 
 
 def test_trading_positions_zone_shows_eod_banner():

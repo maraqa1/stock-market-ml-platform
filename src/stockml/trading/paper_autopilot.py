@@ -847,6 +847,8 @@ def context(root: Path | None = None) -> dict[str, Any]:
         "auto_rotate_enabled": auto_open_config.rotate_enabled,
         "auto_open_max_per_day": auto_open_config.max_auto_opens_per_day,
         "auto_open_max_positions": auto_open_config.max_positions,
+        "flat_account_fallback_max_per_day": auto_open_config.flat_account_fallback_max_per_day,
+        "near_miss_fallback_max_per_day": auto_open_config.near_miss_fallback_max_per_day,
         "per_symbol_forecast_fallback_max_per_day": auto_open_config.per_symbol_forecast_fallback_max_per_day,
         "mode_options": mode_options(),
         "capability_rows": capability_rows(),

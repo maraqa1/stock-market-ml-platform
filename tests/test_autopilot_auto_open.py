@@ -16,6 +16,7 @@ from stockml.autopilot.open import (
     position_size_usd,
     ranked_fallback_candidates,
     set_auto_open_enabled,
+    set_auto_open_limit_values,
     set_auto_open_max_per_day,
     set_per_symbol_forecast_fallback_max_per_day,
 )
@@ -131,7 +132,7 @@ def test_auto_open_daily_cap_persists_to_root_config(tmp_path):
 
     clamped = set_auto_open_max_per_day(99, root=tmp_path)
 
-    assert clamped.max_auto_opens_per_day == 20
+    assert clamped.max_auto_opens_per_day == 99
 
 
 def test_per_symbol_forecast_fallback_daily_cap_persists_to_root_config(tmp_path):
@@ -140,9 +141,29 @@ def test_per_symbol_forecast_fallback_daily_cap_persists_to_root_config(tmp_path
     assert config.per_symbol_forecast_fallback_max_per_day == 9
     assert load_auto_open_config(root=tmp_path).per_symbol_forecast_fallback_max_per_day == 9
 
-    clamped = set_per_symbol_forecast_fallback_max_per_day(99, root=tmp_path)
+    clamped = set_per_symbol_forecast_fallback_max_per_day(999, root=tmp_path)
 
-    assert clamped.per_symbol_forecast_fallback_max_per_day == 20
+    assert clamped.per_symbol_forecast_fallback_max_per_day == 100
+
+
+def test_auto_open_limit_values_persist_and_clamp_to_portal_max(tmp_path):
+    config = set_auto_open_limit_values(
+        {
+            "max_auto_opens_per_day": 101,
+            "max_positions": 12,
+            "flat_account_fallback_max_per_day": 4,
+            "near_miss_fallback_max_per_day": 6,
+            "per_symbol_forecast_fallback_max_per_day": 8,
+            "ignored_limit": 50,
+        },
+        root=tmp_path,
+    )
+
+    assert config.max_auto_opens_per_day == 100
+    assert config.max_positions == 12
+    assert config.flat_account_fallback_max_per_day == 4
+    assert config.near_miss_fallback_max_per_day == 6
+    assert config.per_symbol_forecast_fallback_max_per_day == 8
 
 
 def test_auto_open_is_disabled_by_default_and_writes_no_order():
