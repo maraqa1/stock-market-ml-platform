@@ -118,6 +118,11 @@
         <input id="auto-open-cap" name="max_auto_opens_per_day" type="number" min="0" max="20" step="1" value="{{ paper_autopilot.auto_open_max_per_day }}">
         <button class="btn btn-ghost" type="submit">Save Cap</button>
       </form>
+      <form class="autopilot-mode-form" method="post" action="/trading/autopilot/feature/per-symbol-forecast-cap">
+        <label class="label" for="per-symbol-forecast-cap">Forecast fallback/day</label>
+        <input id="per-symbol-forecast-cap" name="per_symbol_forecast_fallback_max_per_day" type="number" min="0" max="20" step="1" value="{{ paper_autopilot.per_symbol_forecast_fallback_max_per_day }}">
+        <button class="btn btn-ghost" type="submit">Save Forecast Cap</button>
+      </form>
       {% if paper_autopilot.status in ["running", "paused"] %}
         <form method="post" action="/trading/autopilot/stop">
           <button class="btn btn-danger" type="submit">Stop Autopilot</button>

@@ -17,6 +17,7 @@ from stockml.autopilot.open import (
     ranked_fallback_candidates,
     set_auto_open_enabled,
     set_auto_open_max_per_day,
+    set_per_symbol_forecast_fallback_max_per_day,
 )
 from stockml.db.schema import autopilot_open_log, create_all, intraday_candidate_snapshots, intraday_promotion_log, kill_switch_events
 from stockml.trading import paper_autopilot
@@ -131,6 +132,17 @@ def test_auto_open_daily_cap_persists_to_root_config(tmp_path):
     clamped = set_auto_open_max_per_day(99, root=tmp_path)
 
     assert clamped.max_auto_opens_per_day == 20
+
+
+def test_per_symbol_forecast_fallback_daily_cap_persists_to_root_config(tmp_path):
+    config = set_per_symbol_forecast_fallback_max_per_day(9, root=tmp_path)
+
+    assert config.per_symbol_forecast_fallback_max_per_day == 9
+    assert load_auto_open_config(root=tmp_path).per_symbol_forecast_fallback_max_per_day == 9
+
+    clamped = set_per_symbol_forecast_fallback_max_per_day(99, root=tmp_path)
+
+    assert clamped.per_symbol_forecast_fallback_max_per_day == 20
 
 
 def test_auto_open_is_disabled_by_default_and_writes_no_order():

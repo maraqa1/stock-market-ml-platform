@@ -31,3 +31,11 @@ autopilot:
   - market_cap_below_minimum
   - liquidity_below_minimum
   - volatility_extreme
+  per_symbol_forecast_fallback_enabled: true
+  per_symbol_forecast_fallback_max_per_day: 5
+  per_symbol_forecast_fallback_size_multiplier: 0.75
+  per_symbol_forecast_fallback_max_file_age_minutes: 30
+  per_symbol_forecast_fallback_min_confirmation_score: 80
+  per_symbol_forecast_fallback_min_profitability_score: 0
+  per_symbol_forecast_fallback_allowed_confirmations:
+  - confirmed

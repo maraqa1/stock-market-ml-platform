@@ -244,6 +244,18 @@ def test_trading_paper_autopilot_auto_open_cap_persists_config(client):
     assert b'value="7"' in page.data
 
 
+def test_trading_paper_autopilot_per_symbol_forecast_cap_persists_config(client):
+    post = client.post("/trading/autopilot/feature/per-symbol-forecast-cap", data={"per_symbol_forecast_fallback_max_per_day": "9"})
+    assert post.status_code == 302
+    config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
+    assert "per_symbol_forecast_fallback_max_per_day: 9" in config_path.read_text(encoding="utf-8")
+
+    page = client.get("/trading")
+    assert b'name="per_symbol_forecast_fallback_max_per_day"' in page.data
+    assert b'value="9"' in page.data
+    assert b"Forecast fallback/day" in page.data
+
+
 def test_trading_positions_zone_shows_eod_banner():
     root = Path("_tmp_eod_banner_routes")
     if root.exists():
