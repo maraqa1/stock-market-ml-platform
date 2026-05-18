@@ -37,5 +37,6 @@ autopilot:
   per_symbol_forecast_fallback_max_file_age_minutes: 30
   per_symbol_forecast_fallback_min_confirmation_score: 80
   per_symbol_forecast_fallback_min_profitability_score: 0
+  per_symbol_forecast_fallback_max_profitability_score: 300
   per_symbol_forecast_fallback_allowed_confirmations:
   - confirmed

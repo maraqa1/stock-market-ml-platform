@@ -51,10 +51,14 @@ def confirmation_fields(record: dict[str, Any]) -> dict[str, Any]:
     stop = _num(record.get("suggested_stop_bps"))
     take_profit = _num(record.get("suggested_take_profit_bps"))
     risk_penalty = _num(record.get("forecast_risk_penalty")) or 0.0
+    liquidity_tier = _text(record.get("liquidity_tier")).lower()
+    volatility_tier = _text(record.get("volatility_tier")).lower()
 
     magnitude_ok = expected_move is not None and expected_move >= 50.0
     profitability_ok = profitability is not None and profitability > 0.0
     risk_reward_ok = stop is not None and take_profit is not None and stop > 0 and take_profit >= stop
+    liquidity_ok = liquidity_tier in {"high", "medium"}
+    volatility_ok = volatility_tier in {"low", "medium", "normal"}
 
     score = 0
     reasons: list[str] = []
@@ -114,6 +118,8 @@ def confirmation_fields(record: dict[str, Any]) -> dict[str, Any]:
         "magnitude_ok": magnitude_ok,
         "profitability_ok": profitability_ok,
         "risk_reward_ok": risk_reward_ok,
+        "liquidity_ok": liquidity_ok,
+        "volatility_ok": volatility_ok,
         "confirmation_quality": quality,
         "operator_priority": priority,
     }

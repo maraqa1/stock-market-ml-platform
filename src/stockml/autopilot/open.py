@@ -64,6 +64,7 @@ class AutoOpenConfig:
     per_symbol_forecast_fallback_max_file_age_minutes: int = 30
     per_symbol_forecast_fallback_min_confirmation_score: float = 80.0
     per_symbol_forecast_fallback_min_profitability_score: float = 0.0
+    per_symbol_forecast_fallback_max_profitability_score: float = 300.0
     per_symbol_forecast_fallback_allowed_confirmations: tuple[str, ...] = ("confirmed",)
 
 
@@ -81,6 +82,51 @@ def _float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        parsed = float(value)
+        if pd.isna(parsed):
+            return None
+        return parsed
+    except Exception:
+        return None
+
+
+def _bool_flag(value: Any) -> bool | None:
+    if value is None or value == "":
+        return None
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return None
+
+
+def per_symbol_forecast_quality_block_reason(details: dict[str, Any], cfg: AutoOpenConfig) -> str:
+    profitability = _optional_float(details.get("expected_profitability_score"))
+    if profitability is None:
+        return "profitability_not_evaluated"
+    if profitability < cfg.per_symbol_forecast_fallback_min_profitability_score:
+        return "profitability_below_minimum"
+    if profitability > cfg.per_symbol_forecast_fallback_max_profitability_score:
+        return "profitability_score_out_of_range"
+    for key, reason in (
+        ("profitability_ok", "profitability_not_confirmed"),
+        ("risk_reward_ok", "risk_reward_not_confirmed"),
+        ("liquidity_ok", "liquidity_not_confirmed"),
+        ("volatility_ok", "volatility_not_confirmed"),
+    ):
+        flag = _bool_flag(details.get(key))
+        if flag is None:
+            return f"{key}_not_evaluated"
+        if flag is not True:
+            return reason
+    return ""
 
 
 def auto_open_config_path(root: Path | str | None = None) -> Path:
@@ -130,6 +176,7 @@ def _default_payload() -> dict[str, Any]:
             "per_symbol_forecast_fallback_max_file_age_minutes": 30,
             "per_symbol_forecast_fallback_min_confirmation_score": 80,
             "per_symbol_forecast_fallback_min_profitability_score": 0,
+            "per_symbol_forecast_fallback_max_profitability_score": 300,
             "per_symbol_forecast_fallback_allowed_confirmations": ["confirmed"],
         },
     }
@@ -207,6 +254,7 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         per_symbol_forecast_fallback_max_file_age_minutes=int(section.get("per_symbol_forecast_fallback_max_file_age_minutes", 30)),
         per_symbol_forecast_fallback_min_confirmation_score=float(section.get("per_symbol_forecast_fallback_min_confirmation_score", 80)),
         per_symbol_forecast_fallback_min_profitability_score=float(section.get("per_symbol_forecast_fallback_min_profitability_score", 0)),
+        per_symbol_forecast_fallback_max_profitability_score=float(section.get("per_symbol_forecast_fallback_max_profitability_score", 300)),
         per_symbol_forecast_fallback_allowed_confirmations=allowed_confirmation_values,
     )
 
@@ -507,13 +555,20 @@ def latest_per_symbol_forecast_fallback_candidates(
     frame["__score"] = pd.to_numeric(frame.get("confirmation_score", pd.Series(index=frame.index)), errors="coerce")
     frame["__profitability"] = pd.to_numeric(frame.get("expected_profitability_score", pd.Series(index=frame.index)), errors="coerce")
     frame["__risk_reward"] = frame.get("risk_reward_ok", pd.Series(False, index=frame.index)).fillna(False).astype(str).str.lower().isin({"true", "1", "yes"})
+    frame["__profitability_ok"] = frame.get("profitability_ok", pd.Series(False, index=frame.index)).fillna(False).astype(str).str.lower().isin({"true", "1", "yes"})
+    frame["__liquidity_ok"] = frame.get("liquidity_ok", pd.Series(False, index=frame.index)).fillna(False).astype(str).str.lower().isin({"true", "1", "yes"})
+    frame["__volatility_ok"] = frame.get("volatility_ok", pd.Series(False, index=frame.index)).fillna(False).astype(str).str.lower().isin({"true", "1", "yes"})
     eligible = (
         frame["__symbol"].ne("")
         & frame["__confirmation"].isin(allowed)
         & frame["__side_alignment"].eq("aligned")
         & frame["__score"].ge(cfg.per_symbol_forecast_fallback_min_confirmation_score)
         & frame["__profitability"].ge(cfg.per_symbol_forecast_fallback_min_profitability_score)
+        & frame["__profitability"].le(cfg.per_symbol_forecast_fallback_max_profitability_score)
+        & frame["__profitability_ok"]
         & frame["__risk_reward"]
+        & frame["__liquidity_ok"]
+        & frame["__volatility_ok"]
     )
     selected = frame[eligible].sort_values(["__profitability", "__score", "__symbol"], ascending=[False, False, True]).drop_duplicates("__symbol").head(limit)
     candidates: list[dict[str, Any]] = []
@@ -531,7 +586,10 @@ def latest_per_symbol_forecast_fallback_candidates(
             "magnitude_bucket": row.get("magnitude_bucket"),
             "direction_context": row.get("direction_context"),
             "side_alignment": row.get("side_alignment"),
+            "profitability_ok": bool(row.get("__profitability_ok")),
             "risk_reward_ok": bool(row.get("__risk_reward")),
+            "liquidity_ok": bool(row.get("__liquidity_ok")),
+            "volatility_ok": bool(row.get("__volatility_ok")),
             "is_first_15_min": False,
             "is_last_30_min": False,
         }
@@ -702,6 +760,14 @@ def apply_auto_open(
             order_size = round(size * cfg.flat_account_fallback_size_multiplier, 2)
         else:
             order_size = size
+        if is_per_symbol_forecast:
+            quality_block_reason = per_symbol_forecast_quality_block_reason(details, cfg)
+            if quality_block_reason:
+                blocked += 1
+                quality_details = {**details, "quality_gate_status": "blocked", "quality_block_reason": quality_block_reason}
+                _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=quality_block_reason, details=quality_details, engine=db, now=stamp)
+                notes.append(f"{symbol}:blocked:{quality_block_reason}")
+                continue
         if is_fallback and open_positions:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_requires_flat_account", details=details, engine=db, now=stamp)

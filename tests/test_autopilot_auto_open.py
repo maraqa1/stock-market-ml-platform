@@ -339,7 +339,10 @@ def test_per_symbol_forecast_fallback_candidates_select_most_profitable_confirme
                 "expected_move_bps": 60,
                 "magnitude_bucket": "medium",
                 "direction_context": "long_bias",
+                "profitability_ok": True,
                 "risk_reward_ok": True,
+                "liquidity_ok": True,
+                "volatility_ok": True,
             },
             {
                 "symbol": "HIGHP",
@@ -353,7 +356,10 @@ def test_per_symbol_forecast_fallback_candidates_select_most_profitable_confirme
                 "expected_move_bps": 150,
                 "magnitude_bucket": "large",
                 "direction_context": "long_bias",
+                "profitability_ok": True,
                 "risk_reward_ok": True,
+                "liquidity_ok": True,
+                "volatility_ok": True,
             },
             {
                 "symbol": "CONFLICT",
@@ -379,6 +385,49 @@ def test_per_symbol_forecast_fallback_candidates_select_most_profitable_confirme
     assert candidates[0]["promotion_score"] == 100
 
 
+def test_per_symbol_forecast_fallback_candidates_require_quality_flags(tmp_path):
+    directory = tmp_path / "data" / "trading" / "per_symbol_forecast"
+    directory.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "MISSQ",
+                "side": "buy",
+                "current_trade_action": "Long",
+                "forecast_confirmation": "confirmed",
+                "confirmation_score": 100,
+                "confirmation_reason": "side_aligned;magnitude_ok;profitability_ok;risk_reward_ok",
+                "side_alignment": "aligned",
+                "expected_profitability_score": 100,
+                "expected_move_bps": 100,
+                "risk_reward_ok": True,
+            },
+            {
+                "symbol": "BADSCALE",
+                "side": "buy",
+                "current_trade_action": "Long",
+                "forecast_confirmation": "confirmed",
+                "confirmation_score": 100,
+                "confirmation_reason": "side_aligned;magnitude_ok;profitability_ok;risk_reward_ok",
+                "side_alignment": "aligned",
+                "expected_profitability_score": 500,
+                "expected_move_bps": 500,
+                "profitability_ok": True,
+                "risk_reward_ok": True,
+                "liquidity_ok": True,
+                "volatility_ok": True,
+            },
+        ]
+    ).to_csv(directory / "per_symbol_forecast_20260514_120000.csv", index=False)
+
+    candidates = latest_per_symbol_forecast_fallback_candidates(
+        root=tmp_path,
+        config=AutoOpenConfig(per_symbol_forecast_fallback_enabled=True),
+    )
+
+    assert candidates == []
+
+
 def test_ranked_fallback_candidates_blends_forecast_and_near_miss_strength():
     weak_forecast = _candidate("LOWP", 10)
     weak_forecast["details"] = {
@@ -386,6 +435,10 @@ def test_ranked_fallback_candidates_blends_forecast_and_near_miss_strength():
         "expected_profitability_score": 10,
         "confirmation_score": 90,
         "expected_move_bps": 60,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
     }
     strong_forecast = _candidate("HIGHP", 100)
     strong_forecast["details"] = {
@@ -393,6 +446,10 @@ def test_ranked_fallback_candidates_blends_forecast_and_near_miss_strength():
         "expected_profitability_score": 100,
         "confirmation_score": 90,
         "expected_move_bps": 150,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
     }
     near_miss = _candidate("GLIBK", 0.0049)
     near_miss["details"] = {
@@ -559,6 +616,11 @@ def test_auto_open_uses_per_symbol_forecast_size_and_log_prefix():
     candidate["details"] = {
         "per_symbol_forecast_fallback": True,
         "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
         "is_first_15_min": False,
         "is_last_30_min": False,
     }
@@ -583,7 +645,7 @@ def test_auto_open_uses_per_symbol_forecast_size_and_log_prefix():
     assert row["details"]["per_symbol_forecast_fallback"] is True
 
 
-def test_auto_open_logs_large_forecast_score_in_details_not_score_column():
+def test_auto_open_blocks_out_of_range_forecast_profitability_score():
     engine = _engine()
     client = FakeClient()
     candidate = _candidate("CHTR", 500.066)
@@ -591,6 +653,10 @@ def test_auto_open_logs_large_forecast_score_in_details_not_score_column():
         "per_symbol_forecast_fallback": True,
         "fallback_reason": "per_symbol_forecast_confirmed_candidate",
         "expected_profitability_score": 500.066,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
         "is_first_15_min": False,
         "is_last_30_min": False,
     }
@@ -606,12 +672,49 @@ def test_auto_open_logs_large_forecast_score_in_details_not_score_column():
         now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
     )
 
-    assert result["autopilot_open_submitted"] == 1
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "CHTR:blocked:profitability_score_out_of_range" in result["autopilot_open_notes"]
     with engine.connect() as conn:
         row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["verdict"] == "blocked"
     assert row["promotion_score"] is None
-    assert row["details"]["promotion_score_unlogged"] == 500.066
+    assert row["block_reason"] == "profitability_score_out_of_range"
+    assert row["details"]["quality_gate_status"] == "blocked"
     assert row["details"]["expected_profitability_score"] == 500.066
+
+
+def test_auto_open_blocks_forecast_candidate_with_missing_quality_flags():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("MISSQ", 100)
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "risk_reward_ok": True,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "MISSQ:blocked:profitability_ok_not_evaluated" in result["autopilot_open_notes"]
+    assert client.orders == []
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["block_reason"] == "profitability_ok_not_evaluated"
 
 
 def test_auto_open_near_miss_can_fill_remaining_slot_when_position_is_open():

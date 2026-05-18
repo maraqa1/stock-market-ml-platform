@@ -51,6 +51,8 @@ TIER_B_FIELDS = [
     "magnitude_ok",
     "profitability_ok",
     "risk_reward_ok",
+    "liquidity_ok",
+    "volatility_ok",
     "suggested_stop_bps",
     "suggested_take_profit_bps",
     "invalidation_level",
