@@ -751,6 +751,7 @@ def test_auto_open_blocks_out_of_range_forecast_profitability_score():
         "risk_reward_ok": True,
         "liquidity_ok": True,
         "volatility_ok": True,
+        "current_price": 10,
         "is_first_15_min": False,
         "is_last_30_min": False,
     }
@@ -823,6 +824,7 @@ def test_auto_open_submits_short_when_shorting_enabled():
         "risk_reward_ok": True,
         "liquidity_ok": True,
         "volatility_ok": True,
+        "current_price": 10,
         "is_first_15_min": False,
         "is_last_30_min": False,
     }
@@ -840,7 +842,7 @@ def test_auto_open_submits_short_when_shorting_enabled():
 
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["side"] == "sell"
-    assert client.orders[0]["qty"] == "10"
+    assert client.orders[0]["qty"] == "7"
     assert "notional" not in client.orders[0]
     assert "SHORTY:per_symbol_forecast_opened:order-SHORTY" in result["autopilot_open_notes"]
 
@@ -886,7 +888,7 @@ def test_auto_open_logs_short_rejection_context():
     assert row["details"]["side"] == "sell"
     assert row["details"]["nightly_bias"] == "short"
     assert row["details"]["order"]["side"] == "sell"
-    assert row["details"]["order"]["qty"] == "10"
+    assert row["details"]["order"]["qty"] == "7"
     assert row["details"]["api_code"] == "40310000"
     assert row["details"]["api_message"] == "asset is not shortable"
 
@@ -955,7 +957,7 @@ def test_auto_open_uses_whole_share_qty_for_non_fractionable_long():
 
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["side"] == "buy"
-    assert client.orders[0]["qty"] == "8"
+    assert client.orders[0]["qty"] == "6"
     assert "notional" not in client.orders[0]
 
 
