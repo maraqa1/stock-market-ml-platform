@@ -11,6 +11,7 @@ import pandas as pd
 from sqlalchemy import func, insert, select
 from sqlalchemy.engine import Engine
 
+from stockml.autopilot.basket_risk import evaluate_basket_risk
 from stockml.autopilot.candidate_arbitration import arbitrate_candidates, arbitration_score
 from stockml.common.paths import PROJECT_ROOT, TRADING_DIR
 from stockml.db.connection import get_engine
@@ -21,6 +22,7 @@ from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.execution_engine import submit_paper_order_payload
 from stockml.trading.order_builder import validate_order_payload
+from stockml.trading.signal_alignment_gate import evaluate_entry_signal_alignment
 
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "autopilot.yaml"
@@ -857,6 +859,20 @@ def apply_auto_open(
     if not kill.allow:
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "kill_switch_active"}
 
+    basket = evaluate_basket_risk(open_positions)
+    if basket.new_entries_paused:
+        return {
+            "autopilot_open_attempted": 0,
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "basket_new_entries_paused",
+            "basket_state": basket.basket_state,
+            "red_position_pct": basket.red_position_pct,
+            "basket_return": basket.basket_return,
+            "new_entries_paused": basket.new_entries_paused,
+            "basket_risk_reason": basket.reason,
+        }
+
     equity = _float(getattr(trade_cfg, "account_equity", 0), 0)
     if client is not None:
         try:
@@ -887,6 +903,13 @@ def apply_auto_open(
             details["side"] = candidate.get("side")
         if candidate.get("nightly_bias") and not details.get("nightly_bias"):
             details["nightly_bias"] = candidate.get("nightly_bias")
+        alignment = evaluate_entry_signal_alignment(candidate, details)
+        if not alignment.allowed:
+            blocked += 1
+            gate_details = {**details, "entry_alignment_status": "blocked", "entry_alignment_reason": alignment.reason}
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=0.0, verdict="blocked", block_reason=alignment.reason, details=gate_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:{alignment.reason}")
+            continue
         is_fallback = bool(details.get("flat_account_fallback"))
         is_near_miss = bool(details.get("near_miss_fallback"))
         is_per_symbol_forecast = bool(details.get("per_symbol_forecast_fallback"))

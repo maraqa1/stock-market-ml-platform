@@ -8,6 +8,7 @@ from typing import Any, Callable
 import pandas as pd
 from sqlalchemy import desc, select
 
+from stockml.autopilot.basket_risk import evaluate_basket_risk, load_basket_risk_config
 from stockml.autopilot.eod import run_eod_tick
 from stockml.autopilot.open import (
     apply_auto_open,
@@ -704,10 +705,31 @@ def tick(
             "autopilot_open_submitted": 0,
             "autopilot_open_blocked": 0,
             "autopilot_open_notes": "",
+            "basket_state": "normal",
+            "red_position_pct": 0.0,
+            "basket_return": 0.0,
+            "new_entries_paused": False,
+            "basket_risk_reason": "",
         }
+        basket = evaluate_basket_risk(
+            positions.fillna("").to_dict("records") if not positions.empty else [],
+            config=load_basket_risk_config(root),
+            previous_state=str(state.get("basket_state") or ""),
+        )
+        auto_open_result.update(
+            {
+                "basket_state": basket.basket_state,
+                "red_position_pct": basket.red_position_pct,
+                "basket_return": basket.basket_return,
+                "new_entries_paused": basket.new_entries_paused,
+                "basket_risk_reason": basket.reason,
+            }
+        )
         eod_state = str(eod_result.get("eod_state") or "inactive")
         if not allow_auto_open:
             auto_open_result["autopilot_open_notes"] = "auto_open_skipped_market_closed"
+        elif basket.new_entries_paused:
+            auto_open_result["autopilot_open_notes"] = "basket_new_entries_paused"
         elif state.get("mode") == "paper_autopilot" and open_orders == 0 and eod_state == "inactive":
             positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
             candidates = strong_candidate_loader()

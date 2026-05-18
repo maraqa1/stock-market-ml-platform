@@ -1154,6 +1154,55 @@ def test_auto_open_skips_held_symbols_and_opens_next_candidate():
     assert client.orders[0]["symbol"] == "CSTL"
 
 
+def test_auto_open_pauses_new_entries_when_basket_is_broadly_red():
+    engine = _engine()
+    client = FakeClient()
+    positions = [
+        {"symbol": f"R{i}", "cost_basis": 100, "unrealized_pl": -1, "unrealized_plpc": -0.01}
+        for i in range(10)
+    ] + [{"symbol": "GREEN", "cost_basis": 100, "unrealized_pl": 1, "unrealized_plpc": 0.01}]
+
+    result = apply_auto_open(
+        [_candidate("NEW")],
+        positions,
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=20),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["basket_state"] == "new_entries_paused"
+    assert result["new_entries_paused"] is True
+    assert result["autopilot_open_notes"] == "basket_new_entries_paused"
+    assert client.orders == []
+
+
+def test_auto_open_blocks_candidate_with_unknown_latest_signal():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("UNK")
+    candidate["details"]["latest_signal_status"] = "unknown"
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert result["autopilot_open_notes"] == "UNK:blocked:latest_signal_unknown_blocks_entry"
+    assert client.orders == []
+
+
 def test_auto_open_respects_daily_cap():
     engine = _engine()
     now = datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc)

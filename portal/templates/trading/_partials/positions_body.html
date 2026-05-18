@@ -17,7 +17,7 @@
       <td data-sort-value="{{ row.unrealized_plpc or 0 }}">{{ signed_pct(row.unrealized_plpc or 0) }}</td>
       <td class="num" data-sort-value="0">Open</td>
       <td data-sort-value="{{ intel.management_state or '' }}">
-        {{ pill(intel.management_state or "hold") }}
+        {{ pill(row.position_health_status or intel.management_state or "hold") }}
         {% if intel.signal_state %}
           <div class="order-state text-secondary">{{ intel.signal_state|replace("_", " ") }}</div>
         {% endif %}
@@ -32,7 +32,7 @@
         {% else %}
           hard {{ signed_pct(intel.distance_to_hard_stop or 0) }}
         {% endif %}
-        <div class="order-state text-secondary">{{ intel.management_summary or "" }}</div>
+        <div class="order-state text-secondary">{{ (row.position_health_reason or intel.management_summary or "")|replace("_", " ") }}</div>
       </td>
       <td>
         {% if row.broker_order %}

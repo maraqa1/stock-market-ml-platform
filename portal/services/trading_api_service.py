@@ -12,7 +12,10 @@ from portal.services.latest_file_reader import count_rows, latest_file, readable
 from portal.services.trading_service import _position_summary, _status_counts
 from stockml.db.connection import get_engine
 from stockml.db.schema import PIPELINE_STAGE_NAMES, intraday_candidate_snapshots, intraday_promotion_log, pipeline_runs, pipeline_stages, position_events, rotation_recommendation_log
+from stockml.autopilot.basket_risk import evaluate_basket_risk, load_basket_risk_config
+from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
 from stockml.services.events import position_id_for_symbol
+from stockml.autopilot.open import load_auto_open_config
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 from stockml.trading.position_intelligence import enrich_positions
 
@@ -329,6 +332,26 @@ def positions_context(root: Path) -> dict[str, Any]:
     rows = _records(positions)
     autopilot_state = load_autopilot_state(root)
     rows = enrich_positions(rows, decisions=_records(decisions), autopilot_state=autopilot_state)
+    auto_open_config = load_auto_open_config(root=root)
+    health_rules = PositionHealthRules(
+        max_position_loss_pct=float(auto_open_config.max_position_loss_pct),
+        hard_stop_loss_pct=4.0,
+    )
+    for row in rows:
+        intel = row.get("position_intelligence") or {}
+        health = classify_position_health(
+            {
+                **row,
+                "signal_state": intel.get("signal_state"),
+                "decision_reason": intel.get("decision_reason"),
+            },
+            health_rules,
+        )
+        row.update(health)
+        if isinstance(intel, dict):
+            intel.update(health)
+            row["position_intelligence"] = intel
+    basket = evaluate_basket_risk(rows, config=load_basket_risk_config(root), previous_state=str(autopilot_state.get("basket_state") or ""))
     open_position_symbols = {str(row.get("symbol") or "").upper() for row in rows if row.get("symbol")}
     pending_close_orders = _latest_close_orders_by_symbol(actions, tracking, open_position_symbols)
     position_ids: list[str] = []
@@ -351,6 +374,11 @@ def positions_context(root: Path) -> dict[str, Any]:
         "source": "csv_artifacts",
         "refreshed_at": _csv_timestamp(positions_file),
         "summary": _position_summary(positions),
+        "basket_state": basket.basket_state,
+        "red_position_pct": basket.red_position_pct,
+        "basket_return": basket.basket_return,
+        "new_entries_paused": basket.new_entries_paused,
+        "basket_risk_reason": basket.reason,
         "pending_close_order_count": len(pending_close_orders),
         "eod_state": autopilot_state.get("eod_state") or "inactive",
         "eod_banner": autopilot_state.get("eod_banner") or "",

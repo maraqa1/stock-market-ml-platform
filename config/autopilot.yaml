@@ -50,3 +50,7 @@ autopilot:
   max_short_positions: 0
   near_miss_entries_with_open_positions: false
   close_automation_mode: mixed
+basket_risk:
+  pause_new_entries_if_red_position_pct_above: 0.70
+  pause_new_entries_if_basket_return_below: -0.0075
+  resume_new_entries_if_basket_return_above: -0.0025
