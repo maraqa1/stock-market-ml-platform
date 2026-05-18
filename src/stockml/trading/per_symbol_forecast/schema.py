@@ -21,6 +21,8 @@ TIER_A_FIELDS = [
     "intraday_range_position",
     "spread_bps",
     "dollar_volume_today",
+    "liquidity_tier",
+    "volatility_tier",
 ]
 
 TIER_B_FIELDS = [

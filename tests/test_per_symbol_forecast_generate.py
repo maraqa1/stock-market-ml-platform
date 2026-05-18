@@ -33,6 +33,35 @@ def test_forecast_rows_schema_is_stable():
     assert frame.iloc[0]["expected_move_bps_calibrated"] <= frame.iloc[0]["expected_move_bps"]
     assert "expected_5d_return_bps" in frame.columns
     assert "expected_5d_return" not in frame.columns
+    assert frame.iloc[0]["liquidity_tier"] == "high"
+    assert frame.iloc[0]["volatility_tier"] == "low"
+    assert bool(frame.iloc[0]["liquidity_ok"]) is True
+    assert bool(frame.iloc[0]["volatility_ok"]) is True
+
+
+def test_forecast_rows_preserve_short_quality_tiers_for_confirmation():
+    frame = forecast_rows(
+        pd.DataFrame(
+            [
+                _candidate(
+                    "SHORTY",
+                    side="sell",
+                    trade_action="Short",
+                    liquidity_tier="medium",
+                    volatility_tier="medium",
+                )
+            ]
+        ),
+        generated_at="2026-05-14T12:00:00+00:00",
+    )
+
+    row = frame.iloc[0]
+    assert row["current_trade_action"] == "Short"
+    assert row["side_alignment"] == "aligned"
+    assert row["liquidity_tier"] == "medium"
+    assert row["volatility_tier"] == "medium"
+    assert bool(row["liquidity_ok"]) is True
+    assert bool(row["volatility_ok"]) is True
 
 
 def test_generate_per_symbol_forecast_writes_append_only_artifact(tmp_path: Path):

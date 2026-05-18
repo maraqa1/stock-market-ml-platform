@@ -56,4 +56,6 @@ def derived_fields(row: dict[str, Any], generated_at: str) -> dict[str, Any]:
         "intraday_range_position": num(row.get("price_position_in_intraday_range") or row.get("intraday_range_position")),
         "spread_bps": num(row.get("spread_bps")),
         "dollar_volume_today": num(row.get("dollar_volume_today") or row.get("intraday_dollar_volume")),
+        "liquidity_tier": text(row.get("liquidity_tier")),
+        "volatility_tier": text(row.get("volatility_tier")),
     }
