@@ -19,6 +19,7 @@ from stockml.autopilot.open import (
     set_auto_open_enabled,
     set_auto_open_limit_values,
     set_auto_open_max_per_day,
+    set_auto_open_strategy_values,
     set_per_symbol_forecast_fallback_max_per_day,
 )
 from stockml.db.schema import autopilot_open_log, create_all, intraday_candidate_snapshots, intraday_promotion_log, kill_switch_events
@@ -180,6 +181,36 @@ def test_auto_open_limit_values_persist_and_clamp_to_portal_max(tmp_path):
     assert config.flat_account_fallback_max_per_day == 4
     assert config.near_miss_fallback_max_per_day == 6
     assert config.per_symbol_forecast_fallback_max_per_day == 8
+
+
+def test_auto_open_strategy_values_persist_to_root_config(tmp_path):
+    config = set_auto_open_strategy_values(
+        {
+            "max_position_loss_pct": "1.5",
+            "signal_flip_confirmation_clocks": "2",
+            "stale_unknown_loss_close_pct": "1.25",
+            "trailing_profit_arm_pct": "2.5",
+            "trailing_profit_giveback_pct": "0.75",
+            "basket_drawdown_pause_pct": "1.75",
+            "max_long_positions": "6",
+            "max_short_positions": "4",
+            "near_miss_entries_with_open_positions": "true",
+            "close_automation_mode": "automatic",
+        },
+        root=tmp_path,
+    )
+
+    assert config.max_position_loss_pct == 1.5
+    assert config.signal_flip_confirmation_clocks == 2
+    assert config.stale_unknown_loss_close_pct == 1.25
+    assert config.trailing_profit_arm_pct == 2.5
+    assert config.trailing_profit_giveback_pct == 0.75
+    assert config.basket_drawdown_pause_pct == 1.75
+    assert config.max_long_positions == 6
+    assert config.max_short_positions == 4
+    assert config.near_miss_entries_with_open_positions is True
+    assert config.close_automation_mode == "automatic"
+    assert load_auto_open_config(root=tmp_path).close_automation_mode == "automatic"
 
 
 def test_auto_open_is_disabled_by_default_and_writes_no_order():

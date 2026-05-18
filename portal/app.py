@@ -42,7 +42,7 @@ from stockml.intraday.promotion import latest_evaluation
 from stockml.safety.live_disabled import assert_live_disabled
 from stockml.services.events import record_event_safely
 from stockml.autopilot.rotate import confirm_rotation, override_rotation
-from stockml.autopilot.open import set_auto_open_enabled, set_auto_open_limit_values, set_auto_open_max_per_day, set_per_symbol_forecast_fallback_max_per_day
+from stockml.autopilot.open import set_auto_open_enabled, set_auto_open_limit_values, set_auto_open_max_per_day, set_auto_open_strategy_values, set_per_symbol_forecast_fallback_max_per_day
 from stockml.trading.paper_autopilot import action as autopilot_action, context as autopilot_context
 from stockml.trading.snapshot_export import snapshot_csv_payload
 from stockml.trading.timer_settings import save_timer_settings, timer_settings_context
@@ -329,6 +329,38 @@ def create_app(root: Path | None = None) -> Flask:
             max_per_day = 5
         config = set_per_symbol_forecast_fallback_max_per_day(max_per_day, root=root_path())
         payload = {"status": "ok", "per_symbol_forecast_fallback_max_per_day": config.per_symbol_forecast_fallback_max_per_day}
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(payload)
+        return redirect(url_for("trading", _anchor="paper-autopilot"))
+
+    @app.route("/trading/autopilot/feature/strategy-risk", methods=["POST"])
+    def trading_autopilot_strategy_risk():
+        values = {
+            "max_position_loss_pct": request.form.get("max_position_loss_pct", "2"),
+            "signal_flip_confirmation_clocks": request.form.get("signal_flip_confirmation_clocks", "2"),
+            "stale_unknown_loss_close_pct": request.form.get("stale_unknown_loss_close_pct", "2"),
+            "trailing_profit_arm_pct": request.form.get("trailing_profit_arm_pct", "2"),
+            "trailing_profit_giveback_pct": request.form.get("trailing_profit_giveback_pct", "1"),
+            "basket_drawdown_pause_pct": request.form.get("basket_drawdown_pause_pct", "1.5"),
+            "max_long_positions": request.form.get("max_long_positions", "0"),
+            "max_short_positions": request.form.get("max_short_positions", "0"),
+            "near_miss_entries_with_open_positions": request.form.get("near_miss_entries_with_open_positions", ""),
+            "close_automation_mode": request.form.get("close_automation_mode", "mixed"),
+        }
+        config = set_auto_open_strategy_values(values, root=root_path())
+        payload = {
+            "status": "ok",
+            "max_position_loss_pct": config.max_position_loss_pct,
+            "signal_flip_confirmation_clocks": config.signal_flip_confirmation_clocks,
+            "stale_unknown_loss_close_pct": config.stale_unknown_loss_close_pct,
+            "trailing_profit_arm_pct": config.trailing_profit_arm_pct,
+            "trailing_profit_giveback_pct": config.trailing_profit_giveback_pct,
+            "basket_drawdown_pause_pct": config.basket_drawdown_pause_pct,
+            "max_long_positions": config.max_long_positions,
+            "max_short_positions": config.max_short_positions,
+            "near_miss_entries_with_open_positions": config.near_miss_entries_with_open_positions,
+            "close_automation_mode": config.close_automation_mode,
+        }
         if request.accept_mimetypes.best == "application/json":
             return jsonify(payload)
         return redirect(url_for("trading", _anchor="paper-autopilot"))

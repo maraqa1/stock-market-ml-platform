@@ -68,6 +68,16 @@ class AutoOpenConfig:
     per_symbol_forecast_fallback_min_profitability_score: float = 0.0
     per_symbol_forecast_fallback_max_profitability_score: float = 300.0
     per_symbol_forecast_fallback_allowed_confirmations: tuple[str, ...] = ("confirmed",)
+    max_position_loss_pct: float = 2.0
+    signal_flip_confirmation_clocks: int = 2
+    stale_unknown_loss_close_pct: float = 2.0
+    trailing_profit_arm_pct: float = 2.0
+    trailing_profit_giveback_pct: float = 1.0
+    basket_drawdown_pause_pct: float = 1.5
+    max_long_positions: int = 0
+    max_short_positions: int = 0
+    near_miss_entries_with_open_positions: bool = False
+    close_automation_mode: str = "mixed"
 
 
 def _aware(value: datetime | None = None) -> datetime:
@@ -180,6 +190,16 @@ def _default_payload() -> dict[str, Any]:
             "per_symbol_forecast_fallback_min_profitability_score": 0,
             "per_symbol_forecast_fallback_max_profitability_score": 300,
             "per_symbol_forecast_fallback_allowed_confirmations": ["confirmed"],
+            "max_position_loss_pct": 2.0,
+            "signal_flip_confirmation_clocks": 2,
+            "stale_unknown_loss_close_pct": 2.0,
+            "trailing_profit_arm_pct": 2.0,
+            "trailing_profit_giveback_pct": 1.0,
+            "basket_drawdown_pause_pct": 1.5,
+            "max_long_positions": 0,
+            "max_short_positions": 0,
+            "near_miss_entries_with_open_positions": False,
+            "close_automation_mode": "mixed",
         },
     }
 
@@ -258,6 +278,16 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         per_symbol_forecast_fallback_min_profitability_score=float(section.get("per_symbol_forecast_fallback_min_profitability_score", 0)),
         per_symbol_forecast_fallback_max_profitability_score=float(section.get("per_symbol_forecast_fallback_max_profitability_score", 300)),
         per_symbol_forecast_fallback_allowed_confirmations=allowed_confirmation_values,
+        max_position_loss_pct=float(section.get("max_position_loss_pct", 2.0)),
+        signal_flip_confirmation_clocks=int(section.get("signal_flip_confirmation_clocks", 2)),
+        stale_unknown_loss_close_pct=float(section.get("stale_unknown_loss_close_pct", 2.0)),
+        trailing_profit_arm_pct=float(section.get("trailing_profit_arm_pct", 2.0)),
+        trailing_profit_giveback_pct=float(section.get("trailing_profit_giveback_pct", 1.0)),
+        basket_drawdown_pause_pct=float(section.get("basket_drawdown_pause_pct", 1.5)),
+        max_long_positions=int(section.get("max_long_positions", 0)),
+        max_short_positions=int(section.get("max_short_positions", 0)),
+        near_miss_entries_with_open_positions=bool(section.get("near_miss_entries_with_open_positions", False)),
+        close_automation_mode=str(section.get("close_automation_mode", "mixed") or "mixed"),
     )
 
 
@@ -312,6 +342,41 @@ def set_auto_open_limit_values(limits: dict[str, int], *, root: Path | str | Non
         "per_symbol_forecast_fallback_max_per_day",
     }
     clean = {key: _clean_portal_limit(value) for key, value in limits.items() if key in allowed}
+    return _write_auto_open_config_values(clean, root=root, path=path)
+
+
+def _clean_percent(value: Any, *, minimum: float = 0.0, maximum: float = 100.0) -> float:
+    try:
+        parsed = float(value)
+    except Exception:
+        parsed = minimum
+    return round(max(minimum, min(parsed, maximum)), 4)
+
+
+def _clean_strategy_mode(value: Any) -> str:
+    clean = str(value or "").strip().lower()
+    return clean if clean in {"automatic", "mixed", "review_only"} else "mixed"
+
+
+def _clean_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"true", "1", "yes", "on"}
+
+
+def set_auto_open_strategy_values(values: dict[str, Any], *, root: Path | str | None = None, path: Path | str | None = None) -> AutoOpenConfig:
+    clean = {
+        "max_position_loss_pct": _clean_percent(values.get("max_position_loss_pct"), maximum=25.0),
+        "signal_flip_confirmation_clocks": _clean_portal_limit(values.get("signal_flip_confirmation_clocks", 2)),
+        "stale_unknown_loss_close_pct": _clean_percent(values.get("stale_unknown_loss_close_pct"), maximum=25.0),
+        "trailing_profit_arm_pct": _clean_percent(values.get("trailing_profit_arm_pct"), maximum=50.0),
+        "trailing_profit_giveback_pct": _clean_percent(values.get("trailing_profit_giveback_pct"), maximum=50.0),
+        "basket_drawdown_pause_pct": _clean_percent(values.get("basket_drawdown_pause_pct"), maximum=50.0),
+        "max_long_positions": _clean_portal_limit(values.get("max_long_positions", 0)),
+        "max_short_positions": _clean_portal_limit(values.get("max_short_positions", 0)),
+        "near_miss_entries_with_open_positions": _clean_bool(values.get("near_miss_entries_with_open_positions")),
+        "close_automation_mode": _clean_strategy_mode(values.get("close_automation_mode")),
+    }
     return _write_auto_open_config_values(clean, root=root, path=path)
 
 

@@ -40,3 +40,13 @@ autopilot:
   per_symbol_forecast_fallback_max_profitability_score: 300
   per_symbol_forecast_fallback_allowed_confirmations:
   - confirmed
+  max_position_loss_pct: 2.0
+  signal_flip_confirmation_clocks: 2
+  stale_unknown_loss_close_pct: 2.0
+  trailing_profit_arm_pct: 2.0
+  trailing_profit_giveback_pct: 1.0
+  basket_drawdown_pause_pct: 1.5
+  max_long_positions: 0
+  max_short_positions: 0
+  near_miss_entries_with_open_positions: false
+  close_automation_mode: mixed

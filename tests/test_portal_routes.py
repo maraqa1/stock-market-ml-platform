@@ -301,6 +301,42 @@ def test_trading_paper_autopilot_auto_open_limits_persist_config(client):
     assert b'title="Forecast fallback opens per day"' in page.data
 
 
+def test_trading_paper_autopilot_strategy_risk_persists_config(client):
+    post = client.post(
+        "/trading/autopilot/feature/strategy-risk",
+        data={
+            "max_position_loss_pct": "1.5",
+            "signal_flip_confirmation_clocks": "2",
+            "stale_unknown_loss_close_pct": "1.25",
+            "trailing_profit_arm_pct": "2.5",
+            "trailing_profit_giveback_pct": "0.75",
+            "basket_drawdown_pause_pct": "1.75",
+            "max_long_positions": "6",
+            "max_short_positions": "4",
+            "near_miss_entries_with_open_positions": "true",
+            "close_automation_mode": "automatic",
+        },
+    )
+    assert post.status_code == 302
+    config_path = Path("_tmp_portal_routes") / "config" / "autopilot.yaml"
+    text = config_path.read_text(encoding="utf-8")
+    assert "max_position_loss_pct: 1.5" in text
+    assert "signal_flip_confirmation_clocks: 2" in text
+    assert "stale_unknown_loss_close_pct: 1.25" in text
+    assert "trailing_profit_arm_pct: 2.5" in text
+    assert "trailing_profit_giveback_pct: 0.75" in text
+    assert "basket_drawdown_pause_pct: 1.75" in text
+    assert "max_long_positions: 6" in text
+    assert "max_short_positions: 4" in text
+    assert "near_miss_entries_with_open_positions: true" in text
+    assert "close_automation_mode: automatic" in text
+
+    page = client.get("/trading")
+    assert b"Strategy risk" in page.data
+    assert b'name="max_position_loss_pct"' in page.data
+    assert b'name="close_automation_mode"' in page.data
+
+
 def test_trading_positions_zone_shows_eod_banner():
     root = Path("_tmp_eod_banner_routes")
     if root.exists():
