@@ -56,12 +56,16 @@ def _trade_config(**overrides) -> AlpacaConfig:
 
 
 class FakeClient:
-    def __init__(self, equity: str = "1000"):
+    def __init__(self, equity: str = "1000", asset: dict | None = None):
         self.equity = equity
+        self.asset = asset or {"tradable": True, "status": "active", "fractionable": True, "shortable": True}
         self.orders: list[dict] = []
 
     def get_account(self) -> dict:
         return {"equity": self.equity}
+
+    def get_asset(self, symbol: str) -> dict:
+        return dict(self.asset)
 
     def submit_order(self, order: dict) -> dict:
         self.orders.append(order)
@@ -710,6 +714,7 @@ def test_auto_open_uses_per_symbol_forecast_size_and_log_prefix():
         "risk_reward_ok": True,
         "liquidity_ok": True,
         "volatility_ok": True,
+        "current_price": 10,
         "is_first_15_min": False,
         "is_last_30_min": False,
     }
@@ -835,6 +840,8 @@ def test_auto_open_submits_short_when_shorting_enabled():
 
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["side"] == "sell"
+    assert client.orders[0]["qty"] == "10"
+    assert "notional" not in client.orders[0]
     assert "SHORTY:per_symbol_forecast_opened:order-SHORTY" in result["autopilot_open_notes"]
 
 
@@ -852,6 +859,7 @@ def test_auto_open_logs_short_rejection_context():
         "risk_reward_ok": True,
         "liquidity_ok": True,
         "volatility_ok": True,
+        "current_price": 10,
         "is_first_15_min": False,
         "is_last_30_min": False,
     }
@@ -878,8 +886,111 @@ def test_auto_open_logs_short_rejection_context():
     assert row["details"]["side"] == "sell"
     assert row["details"]["nightly_bias"] == "short"
     assert row["details"]["order"]["side"] == "sell"
+    assert row["details"]["order"]["qty"] == "10"
     assert row["details"]["api_code"] == "40310000"
     assert row["details"]["api_message"] == "asset is not shortable"
+
+
+def test_auto_open_blocks_non_shortable_asset_before_submission():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": False})
+    candidate = _candidate("NOSHORT", 100, bias="short")
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
+        "current_price": 10,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(allow_short_selling=True),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert client.orders == []
+    assert "NOSHORT:blocked:asset_not_shortable" in result["autopilot_open_notes"]
+
+
+def test_auto_open_uses_whole_share_qty_for_non_fractionable_long():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": False, "shortable": True})
+    candidate = _candidate("WHOLE", 100)
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
+        "current_price": 12,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["side"] == "buy"
+    assert client.orders[0]["qty"] == "8"
+    assert "notional" not in client.orders[0]
+
+
+def test_auto_open_blocks_whole_share_when_size_below_one_share():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": False, "shortable": True})
+    candidate = _candidate("PRICEY", 100)
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
+        "current_price": 250,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert client.orders == []
+    assert "PRICEY:blocked:whole_share_size_below_one" in result["autopilot_open_notes"]
 
 
 def test_auto_open_blocks_short_when_shorting_disabled():

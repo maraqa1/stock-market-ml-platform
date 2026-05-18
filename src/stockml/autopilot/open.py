@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
 from pathlib import Path
 from typing import Any
 
@@ -509,6 +510,7 @@ def latest_near_miss_fallback_candidates(
             "distance_to_pass": _float(row.get("distance_to_pass")),
             "severity": row.get("severity"),
             "reason": row.get("reason"),
+            "current_price": _float(row.get("current_price") or row.get("last_price") or row.get("close")),
             "is_first_15_min": False,
             "is_last_30_min": False,
         }
@@ -615,6 +617,7 @@ def latest_per_symbol_forecast_fallback_candidates(
             "confirmation_reason": row.get("confirmation_reason"),
             "expected_profitability_score": _float(row.get("expected_profitability_score")),
             "expected_move_bps": _float(row.get("expected_move_bps")),
+            "current_price": _float(row.get("current_price")),
             "magnitude_bucket": row.get("magnitude_bucket"),
             "direction_context": row.get("direction_context"),
             "side_alignment": row.get("side_alignment"),
@@ -724,6 +727,36 @@ def _record_open(
             )
         )
         return result.inserted_primary_key[0] if result.inserted_primary_key else None
+
+
+def _asset_bool(asset: dict[str, Any] | None, key: str, default: bool = True) -> bool:
+    if not isinstance(asset, dict) or key not in asset:
+        return default
+    value = asset.get(key)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes"}
+
+
+def _asset_text(asset: dict[str, Any] | None, key: str) -> str:
+    if not isinstance(asset, dict):
+        return ""
+    return str(asset.get(key) or "").strip()
+
+
+def _candidate_price(candidate: dict[str, Any], details: dict[str, Any]) -> float:
+    for key in ("current_price", "last_price", "close"):
+        value = details.get(key, candidate.get(key))
+        parsed = _float(value, 0.0)
+        if parsed > 0:
+            return parsed
+    return 0.0
+
+
+def _whole_share_qty(order_size: float, current_price: float) -> int:
+    if order_size <= 0 or current_price <= 0:
+        return 0
+    return int(math.floor(float(order_size) / float(current_price)))
 
 
 def apply_auto_open(
@@ -850,31 +883,81 @@ def apply_auto_open(
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="shorting_disabled", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:shorting_disabled")
             continue
+        asset: dict[str, Any] | None = None
+        if hasattr(broker, "get_asset"):
+            try:
+                asset = broker.get_asset(symbol)
+            except Exception as exc:
+                blocked += 1
+                asset_details = {**details, "asset_check_error": str(exc)}
+                _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_check_failed", details=asset_details, engine=db, now=stamp)
+                notes.append(f"{symbol}:blocked:asset_check_failed")
+                continue
+            if asset is None:
+                blocked += 1
+                _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_found", details=details, engine=db, now=stamp)
+                notes.append(f"{symbol}:blocked:asset_not_found")
+                continue
+        asset_status = _asset_text(asset, "status").lower()
+        asset_details = {
+            **details,
+            "asset_status": asset_status or "",
+            "asset_tradable": _asset_bool(asset, "tradable", True),
+            "asset_fractionable": _asset_bool(asset, "fractionable", True),
+            "asset_shortable": _asset_bool(asset, "shortable", True),
+        }
+        if not asset_details["asset_tradable"]:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_tradable", details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:asset_not_tradable")
+            continue
+        if asset_status and asset_status != "active":
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=f"asset_status_{asset_status}", details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:asset_status_{asset_status}")
+            continue
+        if side == "sell" and not asset_details["asset_shortable"]:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_shortable", details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:asset_not_shortable")
+            continue
+        use_whole_qty = side == "sell" or not asset_details["asset_fractionable"]
         order = {
             "symbol": symbol,
-            "notional": str(round(order_size, 2)),
             "side": side,
             "type": "market",
             "time_in_force": "day",
             "extended_hours": False,
             "client_order_id": f"stockml-autopilot-{stamp.strftime('%Y%m%d%H%M%S')}-{symbol}-{side}"[:48],
         }
+        if use_whole_qty:
+            current_price = _candidate_price(candidate, details)
+            qty = _whole_share_qty(order_size, current_price)
+            asset_details = {**asset_details, "current_price_for_qty": current_price, "computed_qty": qty}
+            if qty < 1:
+                blocked += 1
+                _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="whole_share_size_below_one", details=asset_details, engine=db, now=stamp)
+                notes.append(f"{symbol}:blocked:whole_share_size_below_one")
+                continue
+            order["qty"] = str(qty)
+        else:
+            order["notional"] = str(round(order_size, 2))
         validation = validate_order_payload(order, max_order_notional=trade_cfg.max_notional_per_order)
         if not validation.valid:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=validation.reason, details={**details, "order": order}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=validation.reason, details={**asset_details, "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:{validation.reason}")
             continue
         if not trade_cfg.submit_orders:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="submit_orders_disabled", details={**details, "order": order}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="submit_orders_disabled", details={**asset_details, "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:submit_orders_disabled")
             continue
         try:
             paper_only_guard(live_trading_enabled=trade_cfg.live_trading_enabled)
             response = submit_paper_order_payload(order, config=trade_cfg, client=broker)
             order_id = str(response.get("id") or "")
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="opened", order_id=order_id, details={**details, "order": order, "response": response}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="opened", order_id=order_id, details={**asset_details, "order": order, "response": response}, engine=db, now=stamp)
             opened += 1
             held.add(symbol)
             slots -= 1
@@ -882,11 +965,11 @@ def apply_auto_open(
             notes.append(f"{symbol}:{prefix}:{order_id or 'submitted'}")
         except AlpacaAPIError as exc:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="failed", block_reason="alpaca_api_error", details={**details, **exc.as_dict(), "order": order}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="failed", block_reason="alpaca_api_error", details={**asset_details, **exc.as_dict(), "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:failed:alpaca_api_error")
         except Exception as exc:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="failed", block_reason="submit_exception", details={**details, "error": str(exc), "order": order}, engine=db, now=stamp)
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="failed", block_reason="submit_exception", details={**asset_details, "error": str(exc), "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:failed:submit_exception")
     return {
         "autopilot_open_attempted": opened + blocked,
