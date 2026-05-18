@@ -497,7 +497,13 @@ def test_per_symbol_forecast_fallback_candidates_include_qualified_shorts(tmp_pa
     )
 
     assert "SHORTY" in [candidate["symbol"] for candidate in candidates]
-    assert next(candidate for candidate in candidates if candidate["symbol"] == "SHORTY")["nightly_bias"] == "short"
+    short = next(candidate for candidate in candidates if candidate["symbol"] == "SHORTY")
+    assert short["nightly_bias"] == "short"
+    assert short["current_trade_action"] == "Short"
+    assert short["side"] == "sell"
+    assert short["details"]["current_trade_action"] == "Short"
+    assert short["details"]["side"] == "sell"
+    assert short["details"]["nightly_bias"] == "short"
 
 
 def test_ranked_fallback_candidates_blends_forecast_and_near_miss_strength():

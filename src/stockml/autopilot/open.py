@@ -602,9 +602,14 @@ def latest_per_symbol_forecast_fallback_candidates(
     candidates: list[dict[str, Any]] = []
     for row in selected.fillna("").to_dict("records"):
         bias = str(row.get("__bias") or "long")
+        order_side = "sell" if bias == "short" else "buy"
+        trade_action = str(row.get("current_trade_action") or ("Short" if bias == "short" else "Long"))
         details = {
             "per_symbol_forecast_fallback": True,
             "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+            "current_trade_action": trade_action,
+            "side": order_side,
+            "nightly_bias": bias,
             "forecast_confirmation": row.get("forecast_confirmation"),
             "confirmation_score": _float(row.get("confirmation_score")),
             "confirmation_reason": row.get("confirmation_reason"),
@@ -625,6 +630,8 @@ def latest_per_symbol_forecast_fallback_candidates(
                 "symbol": row.get("__symbol"),
                 "promotion_score": _float(row.get("expected_profitability_score") or row.get("confirmation_score")),
                 "nightly_bias": bias,
+                "current_trade_action": trade_action,
+                "side": order_side,
                 "is_held": False,
                 "details": details,
             }
