@@ -79,7 +79,7 @@ class AutoOpenConfig:
     max_long_positions: int = 0
     max_short_positions: int = 0
     near_miss_entries_with_open_positions: bool = False
-    close_automation_mode: str = "mixed"
+    close_automation_mode: str = "automatic"
 
 
 def _aware(value: datetime | None = None) -> datetime:
@@ -201,7 +201,7 @@ def _default_payload() -> dict[str, Any]:
             "max_long_positions": 0,
             "max_short_positions": 0,
             "near_miss_entries_with_open_positions": False,
-            "close_automation_mode": "mixed",
+            "close_automation_mode": "automatic",
         },
     }
 
@@ -289,7 +289,7 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         max_long_positions=int(section.get("max_long_positions", 0)),
         max_short_positions=int(section.get("max_short_positions", 0)),
         near_miss_entries_with_open_positions=bool(section.get("near_miss_entries_with_open_positions", False)),
-        close_automation_mode=str(section.get("close_automation_mode", "mixed") or "mixed"),
+        close_automation_mode=str(section.get("close_automation_mode", "automatic") or "automatic"),
     )
 
 

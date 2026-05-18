@@ -19,6 +19,7 @@ from stockml.autopilot.open import (
     load_auto_open_config,
     ranked_fallback_candidates,
 )
+from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
@@ -87,6 +88,7 @@ TICK_LOG_COLUMNS = [
     "autopilot_close_submitted",
     "autopilot_defensive_close_submitted",
     "autopilot_hard_stop_submitted",
+    "autopilot_health_close_submitted",
     "autopilot_trailing_close_submitted",
     "autopilot_replace_close_submitted",
     "autopilot_action_notes",
@@ -156,6 +158,7 @@ def _default_state() -> dict[str, Any]:
         "autopilot_close_submitted": 0,
         "autopilot_defensive_close_submitted": 0,
         "autopilot_hard_stop_submitted": 0,
+        "autopilot_health_close_submitted": 0,
         "autopilot_trailing_close_submitted": 0,
         "autopilot_replace_close_submitted": 0,
         "autopilot_action_notes": "",
@@ -490,6 +493,29 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
     frame["__plpc"] = pd.to_numeric(frame.get("unrealized_plpc", pd.Series(0, index=frame.index)), errors="coerce").fillna(0)
     peaks = (state or {}).get("position_peak_plpc") if isinstance((state or {}).get("position_peak_plpc"), dict) else {}
     frame["__peak_plpc"] = frame["__symbol"].map(lambda symbol: float((peaks or {}).get(symbol, frame.loc[frame["__symbol"] == symbol, "__plpc"].iloc[-1])))
+    auto_config = load_auto_open_config(root=root)
+    health_rules = PositionHealthRules(
+        max_position_loss_pct=float(auto_config.max_position_loss_pct),
+        hard_stop_loss_pct=abs(HARD_STOP_LOSS_THRESHOLD) * 100.0,
+    )
+    health_rows = [
+        classify_position_health(
+            {
+                **row.to_dict(),
+                "unrealized_plpc": row.get("__plpc"),
+                "decision_reason": row.get("__reason"),
+            },
+            health_rules,
+        )
+        for _, row in frame.iterrows()
+    ]
+    frame["__health_status"] = [str(value.get("position_health_status") or "") for value in health_rows]
+    frame["__health_reason"] = [str(value.get("position_health_reason") or "") for value in health_rows]
+    close_automation_mode = str(auto_config.close_automation_mode or "automatic").lower()
+    health_close_enabled = close_automation_mode != "review_only"
+    health_close_now = frame["__health_status"] == "close_now"
+    health_close_candidate = frame["__health_status"] == "close_candidate"
+    health_close = health_close_enabled & (health_close_now | health_close_candidate)
     explicit_close = frame["__decision"] == "close"
     replace_close = frame["__decision"].isin(["replace", "rotate"])
     hard_stop = frame["__plpc"] <= HARD_STOP_LOSS_THRESHOLD
@@ -509,9 +535,14 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
         & (frame["__peak_plpc"] >= TRAILING_PROFIT_MIN)
         & ((frame["__peak_plpc"] - frame["__plpc"]) >= TRAILING_GIVEBACK_THRESHOLD)
     )
-    rotate_enabled = load_auto_open_config(root=root).rotate_enabled
-    out = frame[(explicit_close | hard_stop | defensive_stale_loss | trailing_profit | (replace_close & rotate_enabled)) & frame["__symbol"].isin(open_symbols)].copy()
+    rotate_enabled = auto_config.rotate_enabled
+    out = frame[
+        (explicit_close | health_close | hard_stop | defensive_stale_loss | trailing_profit | (replace_close & rotate_enabled))
+        & frame["__symbol"].isin(open_symbols)
+    ].copy()
     out["__autopilot_close_reason"] = "monitor_close"
+    out.loc[health_close.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "position_health_close_candidate"
+    out.loc[(health_close_now & health_close_enabled).reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "position_health_close_now"
     out.loc[(replace_close & rotate_enabled).reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "monitor_replace"
     out.loc[hard_stop.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "hard_stop_loss"
     out.loc[defensive_stale_loss.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "defensive_stale_loss"
@@ -541,6 +572,7 @@ def apply_paper_autopilot_decisions(
             "autopilot_close_submitted": 0,
             "autopilot_defensive_close_submitted": 0,
             "autopilot_hard_stop_submitted": 0,
+            "autopilot_health_close_submitted": 0,
             "autopilot_trailing_close_submitted": 0,
             "autopilot_replace_close_submitted": 0,
             "autopilot_action_notes": "",
@@ -555,6 +587,7 @@ def apply_paper_autopilot_decisions(
     submitted = 0
     defensive_submitted = 0
     hard_stop_submitted = 0
+    health_submitted = 0
     trailing_submitted = 0
     replace_submitted = 0
     actions = 0
@@ -575,6 +608,8 @@ def apply_paper_autopilot_decisions(
                 defensive_submitted += 1
             elif reason == "hard_stop_loss":
                 hard_stop_submitted += 1
+            elif reason in {"position_health_close_candidate", "position_health_close_now"}:
+                health_submitted += 1
             elif reason == "trailing_profit_giveback":
                 trailing_submitted += 1
             elif reason == "monitor_replace":
@@ -586,6 +621,7 @@ def apply_paper_autopilot_decisions(
         "autopilot_close_submitted": submitted,
         "autopilot_defensive_close_submitted": defensive_submitted,
         "autopilot_hard_stop_submitted": hard_stop_submitted,
+        "autopilot_health_close_submitted": health_submitted,
         "autopilot_trailing_close_submitted": trailing_submitted,
         "autopilot_replace_close_submitted": replace_submitted,
         "autopilot_action_notes": "; ".join(notes[:10]),
@@ -673,6 +709,7 @@ def tick(
             "autopilot_close_submitted": 0,
             "autopilot_defensive_close_submitted": 0,
             "autopilot_hard_stop_submitted": 0,
+            "autopilot_health_close_submitted": 0,
             "autopilot_trailing_close_submitted": 0,
             "autopilot_replace_close_submitted": 0,
             "autopilot_action_notes": "",

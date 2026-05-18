@@ -657,12 +657,13 @@ def action_queue_context(root: Path) -> dict[str, Any]:
         actionable = actionable.drop(columns="__order")
         items = _records(actionable)
         held_symbols = position_symbols if position_symbols is not None else {str(symbol).upper() for symbol in decisions.get("symbol", pd.Series(dtype=str)).dropna()}
-        rules = PositionHealthRules(max_position_loss_pct=float(load_auto_open_config(root=root).max_position_loss_pct), hard_stop_loss_pct=4.0)
+        auto_config = load_auto_open_config(root=root)
+        rules = PositionHealthRules(max_position_loss_pct=float(auto_config.max_position_loss_pct), hard_stop_loss_pct=4.0)
         for index, item in enumerate(items):
             item["event_id"] = item.get("event_id") or f"queue-{index + 1}"
             item["position_id"] = position_id_for_symbol(str(item.get("symbol") or ""))
             item.update(_operator_call_for_queue_item(item, held_symbols))
-            item.update(classify_action_queue_item(item, held_symbols=held_symbols, rules=rules))
+            item.update(classify_action_queue_item(item, held_symbols=held_symbols, rules=rules, close_automation_mode=auto_config.close_automation_mode))
     items.extend(_candidate_queue_items(evaluations, len(items), held_symbols=position_symbols or set(), root=root))
     items.extend(_rotation_queue_items(len(items), held_symbols=position_symbols))
     counts = _status_counts(pd.DataFrame(items), "decision")
@@ -771,7 +772,9 @@ def _candidate_queue_items(evaluations: pd.DataFrame, offset: int, *, held_symbo
         return []
     actionable = actionable.sort_values(["decision", "candidate_rank"], ascending=[True, True]).head(10)
     items: list[dict[str, Any]] = []
-    rules = PositionHealthRules(max_position_loss_pct=float(load_auto_open_config(root=root).max_position_loss_pct), hard_stop_loss_pct=4.0) if root is not None else PositionHealthRules()
+    auto_config = load_auto_open_config(root=root) if root is not None else None
+    rules = PositionHealthRules(max_position_loss_pct=float(auto_config.max_position_loss_pct), hard_stop_loss_pct=4.0) if auto_config is not None else PositionHealthRules()
+    close_automation_mode = auto_config.close_automation_mode if auto_config is not None else "automatic"
     for index, row in enumerate(_records(actionable), start=offset + 1):
         decision = str(row.get("decision") or "")
         label = "Review open" if decision == "open_candidate" else "Review candidate"
@@ -789,7 +792,7 @@ def _candidate_queue_items(evaluations: pd.DataFrame, offset: int, *, held_symbo
                 "operator_call_reason": reason,
                 "operator_apply_enabled": False,
             }
-        items.append(classify_action_queue_item(item, held_symbols=held_symbols or set(), rules=rules))
+        items.append(classify_action_queue_item(item, held_symbols=held_symbols or set(), rules=rules, close_automation_mode=close_automation_mode))
     return items
 
 

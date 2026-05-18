@@ -17,8 +17,9 @@ def test_fwrd_like_stale_position_at_loss_threshold_becomes_close_candidate():
     result = classify_action_queue_item(item, held_symbols={"FWRD"}, rules=RULES)
 
     assert result["decision"] == "close_candidate"
-    assert result["operator_call_label"] == "Review close"
-    assert result["action_button_label"] == "Review close"
+    assert result["operator_call_label"] == "Auto close"
+    assert result["action_button_label"] == "Auto managed"
+    assert result["operator_apply_enabled"] is False
     assert "loss_threshold_breached" in result["position_health_reason"]
     assert "signal_stale" in result["position_health_reason"]
 
@@ -50,8 +51,25 @@ def test_close_candidate_rows_get_review_close_label():
     result = classify_action_queue_item(item, held_symbols={"AAA"}, rules=RULES)
 
     assert result["decision"] == "close_candidate"
+    assert result["operator_call_label"] == "Auto close"
+    assert result["action_button_label"] == "Auto managed"
+    assert result["operator_apply_enabled"] is False
+
+
+def test_review_only_close_candidate_rows_get_review_close_label():
+    item = {
+        "symbol": "AAA",
+        "decision": "watch",
+        "decision_reason": "latest_signal_unknown",
+        "unrealized_plpc": -0.021,
+    }
+
+    result = classify_action_queue_item(item, held_symbols={"AAA"}, rules=RULES, close_automation_mode="review_only")
+
+    assert result["decision"] == "close_candidate"
     assert result["operator_call_label"] == "Review close"
     assert result["action_button_label"] == "Review close"
+    assert result["operator_apply_enabled"] is True
 
 
 def test_cstl_like_open_candidate_requires_fresh_rescore():
