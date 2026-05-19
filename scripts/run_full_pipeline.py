@@ -49,15 +49,15 @@ def main() -> int:
         finally:
             sys.argv = original_argv
 
-    build_metadata_enriched(limit=limit, provider_name=args.provider)
-    build_feature_panel(limit_tickers=limit)
+    build_metadata_enriched(limit=limit, provider_name=args.provider, exchange=args.exchange)
+    build_feature_panel(limit_tickers=limit, exchange=args.exchange)
 
     try:
         build_sentiment_panel(limit=limit)
     except Exception as exc:
         log(f"Sentiment pipeline failed but full pipeline will continue: {exc}")
 
-    build_gold_dataset(limit_tickers=limit)
+    build_gold_dataset(limit_tickers=limit, exchange=args.exchange)
     build_model_outputs(limit_tickers=limit)
     log("Full stockml pipeline complete")
     return 0

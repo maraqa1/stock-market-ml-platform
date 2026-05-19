@@ -20,11 +20,24 @@ def latest_validated_universe_file() -> Path:
     return path
 
 
-def build_metadata_enriched(limit: Optional[int] = None, sleep_seconds: float = 0.25, provider_name: str | None = None) -> Dict[str, Path]:
+def _filter_universe_exchange(universe: pd.DataFrame, exchange: str | None) -> pd.DataFrame:
+    if not exchange or "listing_exchange" not in universe.columns:
+        return universe
+    target = str(exchange).upper().strip()
+    return universe[universe["listing_exchange"].astype(str).str.upper().str.strip().eq(target)].copy()
+
+
+def build_metadata_enriched(
+    limit: Optional[int] = None,
+    sleep_seconds: float = 0.25,
+    provider_name: str | None = None,
+    exchange: str | None = None,
+) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     universe_path = latest_validated_universe_file()
     universe = pd.read_csv(universe_path, dtype=str)
+    universe = _filter_universe_exchange(universe, exchange)
     metadata = fetch_metadata_for_universe(universe, limit=limit, sleep_seconds=sleep_seconds, provider_name=provider_name)
 
     for col in METADATA_COLUMNS:
@@ -49,8 +62,14 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--sleep-seconds", type=float, default=0.25)
     parser.add_argument("--provider", default=None, help="Market data provider: yahoo_legacy or eodhd. Defaults to config/env.")
+    parser.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NYSE")
     args = parser.parse_args()
-    paths = build_metadata_enriched(limit=args.limit, sleep_seconds=args.sleep_seconds, provider_name=args.provider)
+    paths = build_metadata_enriched(
+        limit=args.limit,
+        sleep_seconds=args.sleep_seconds,
+        provider_name=args.provider,
+        exchange=args.exchange,
+    )
     for name, path in paths.items():
         log(f"{name}: {path}")
     return 0

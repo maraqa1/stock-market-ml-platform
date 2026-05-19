@@ -10,9 +10,12 @@ def test_load_pipeline_profiles():
     assert "nasdaq_500" in profiles
     assert profiles["nasdaq_500"]["exchange"] == "NASDAQ"
     assert profiles["nasdaq_500"]["limit_tickers"] == 500
+    assert "nyse_full" in profiles
+    assert profiles["nyse_full"]["exchange"] == "NYSE"
+    assert profiles["nyse_full"]["limit_tickers"] is None
+    assert profiles["nyse_full"]["provider"] == "eodhd"
 
 
 def test_unknown_profile_has_clear_error():
     with pytest.raises(KeyError, match="Unknown profile"):
         load_profile("does_not_exist")
-

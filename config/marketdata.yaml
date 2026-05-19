@@ -1,5 +1,5 @@
 marketdata:
-  primary_provider: yahoo_legacy
+  primary_provider: eodhd
   fallback_providers: []
   eodhd:
     default_exchange_suffix: US

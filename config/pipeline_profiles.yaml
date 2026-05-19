@@ -43,3 +43,19 @@ profiles:
     run_sentiment: true
     run_gold: true
     run_model: true
+
+  nyse_full:
+    description: Full NYSE tradable common-stock universe using EODHD market data.
+    exchange: NYSE
+    limit_tickers:
+    provider: eodhd
+    start_date: "2018-01-01"
+    batch_size: 75
+    sleep_seconds: 1.0
+    run_universe: true
+    run_price: true
+    run_metadata: true
+    run_features: true
+    run_sentiment: true
+    run_gold: true
+    run_model: true

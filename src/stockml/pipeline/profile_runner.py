@@ -49,10 +49,10 @@ def run_profile(
         build_price_quality_report()
 
     if profile.get("run_metadata", True):
-        build_metadata_enriched(limit=limit, provider_name=provider_name or profile.get("provider"))
+        build_metadata_enriched(limit=limit, provider_name=provider_name or profile.get("provider"), exchange=exchange)
 
     if profile.get("run_features", True):
-        build_feature_panel(limit_tickers=limit)
+        build_feature_panel(limit_tickers=limit, exchange=exchange)
 
     if profile.get("run_sentiment", True) and not skip_sentiment:
         try:
@@ -61,7 +61,7 @@ def run_profile(
             log(f"Sentiment pipeline failed but profile will continue: {exc}")
 
     if profile.get("run_gold", True):
-        build_gold_dataset(limit_tickers=limit)
+        build_gold_dataset(limit_tickers=limit, exchange=exchange)
 
     if profile.get("run_model", True):
         build_model_outputs(limit_tickers=limit)
@@ -75,7 +75,7 @@ def run_profile(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile", default="nasdaq_500")
+    parser.add_argument("--profile", default="nyse_full")
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--skip-sentiment", action="store_true")
     parser.add_argument("--write-database", action="store_true")

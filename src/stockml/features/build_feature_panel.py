@@ -80,7 +80,18 @@ def latest_metadata_file() -> Path:
     return path
 
 
-def build_feature_panel(limit_tickers: Optional[int] = None) -> Dict[str, Path]:
+def _filter_universe_exchange(universe: pd.DataFrame, exchange: str | None) -> pd.DataFrame:
+    if not exchange or "listing_exchange" not in universe.columns:
+        return universe
+    target = str(exchange).upper().strip()
+    return universe[universe["listing_exchange"].astype(str).str.upper().str.strip().eq(target)].copy()
+
+
+def _universe_ticker_column(universe: pd.DataFrame) -> str:
+    return "yahoo_ticker" if "yahoo_ticker" in universe.columns else "ticker"
+
+
+def build_feature_panel(limit_tickers: Optional[int] = None, exchange: str | None = None) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     price_path = RAW_DIR / "03_us_price_history_store.csv"
@@ -93,11 +104,18 @@ def build_feature_panel(limit_tickers: Optional[int] = None) -> Dict[str, Path]:
     prices = pd.read_csv(price_path, low_memory=False)
     universe = pd.read_csv(universe_path, dtype=str)
     metadata = pd.read_csv(latest_metadata_file(), low_memory=False)
+    universe = _filter_universe_exchange(universe, exchange)
+
+    ticker_col = _universe_ticker_column(universe)
+    scope_tickers = universe[ticker_col].astype(str).str.upper().str.strip()
 
     if limit_tickers:
-        tickers = universe["yahoo_ticker" if "yahoo_ticker" in universe.columns else "ticker"].head(limit_tickers).str.upper().tolist()
-        prices = prices[prices["ticker"].astype(str).str.upper().isin(tickers)].copy()
         universe = universe.head(limit_tickers).copy()
+        scope_tickers = universe[ticker_col].astype(str).str.upper().str.strip()
+
+    tickers = scope_tickers.dropna().tolist()
+    if exchange or limit_tickers:
+        prices = prices[prices["ticker"].astype(str).str.upper().str.strip().isin(tickers)].copy()
 
     panel = build_feature_panel_from_frames(prices, universe, metadata)
     panel_path = PROCESSED_DIR / f"05_us_feature_panel_{stamp}.csv"
@@ -119,8 +137,9 @@ def build_feature_panel(limit_tickers: Optional[int] = None) -> Dict[str, Path]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit-tickers", type=int, default=None)
+    parser.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NYSE")
     args = parser.parse_args()
-    paths = build_feature_panel(limit_tickers=args.limit_tickers)
+    paths = build_feature_panel(limit_tickers=args.limit_tickers, exchange=args.exchange)
     for name, path in paths.items():
         log(f"{name}: {path}")
     return 0
@@ -128,4 +147,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

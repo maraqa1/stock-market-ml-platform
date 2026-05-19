@@ -150,10 +150,18 @@ def build_portal_outputs(gold: pd.DataFrame, stamp: str) -> Dict[str, Path]:
     return {"portal_signals": signals_path, "portal_dashboard_metrics": dashboard_path, "portal_sector_breakdown": sector_path}
 
 
-def build_gold_dataset(limit_tickers: Optional[int] = None) -> Dict[str, Path]:
+def _filter_features_exchange(features: pd.DataFrame, exchange: str | None) -> pd.DataFrame:
+    if not exchange or "exchange" not in features.columns:
+        return features
+    target = str(exchange).upper().strip()
+    return features[features["exchange"].astype(str).str.upper().str.strip().eq(target)].copy()
+
+
+def build_gold_dataset(limit_tickers: Optional[int] = None, exchange: str | None = None) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     features = pd.read_csv(latest_feature_panel_file(), low_memory=False)
+    features = _filter_features_exchange(features, exchange)
     if limit_tickers:
         tickers = features["ticker"].astype(str).str.upper().drop_duplicates().head(limit_tickers).tolist()
         features = features[features["ticker"].astype(str).str.upper().isin(tickers)].copy()
@@ -181,8 +189,9 @@ def build_gold_dataset(limit_tickers: Optional[int] = None) -> Dict[str, Path]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit-tickers", type=int, default=None)
+    parser.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NYSE")
     args = parser.parse_args()
-    paths = build_gold_dataset(limit_tickers=args.limit_tickers)
+    paths = build_gold_dataset(limit_tickers=args.limit_tickers, exchange=args.exchange)
     for name, path in paths.items():
         log(f"{name}: {path}")
     return 0
