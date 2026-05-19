@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.marketdata.providers.base import MarketDataProvider
-from stockml.marketdata.providers.eodhd import EodhdProvider, normalize_eodhd_eod_rows, to_eodhd_symbol
+from stockml.marketdata.providers.eodhd import EodhdProvider, normalize_eodhd_eod_rows, scrub_eodhd_secret, to_eodhd_symbol
 from stockml.marketdata.providers.factory import provider_from_name
 from stockml.marketdata.providers.yahoo_legacy import empty_fundamentals_row, normalize_yfinance_download
 from stockml.marketdata.schemas import FUNDAMENTAL_COLUMNS, PRICE_COLUMNS
@@ -112,6 +112,13 @@ def test_provider_factory_selects_eodhd_and_yahoo_aliases():
     assert isinstance(provider_from_name("eodhd", api_key="key"), EodhdProvider)
     assert provider_from_name("yahoo").provider_name == "yahoo_legacy"
     assert to_eodhd_symbol("SEDG") == "SEDG.US"
+
+
+def test_eodhd_error_text_redacts_api_token():
+    text = scrub_eodhd_secret("401 for https://eodhd.com/api/eod/A.US?from=2018-01-01&api_token=secret-key&fmt=json")
+
+    assert "secret-key" not in text
+    assert "api_token=<redacted>" in text
 
 
 def test_legacy_metadata_wrapper_preserves_schema():

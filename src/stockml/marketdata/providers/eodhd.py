@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Iterable
 
 import pandas as pd
 
+from stockml.common.paths import PROJECT_ROOT
 from stockml.marketdata.providers.base import MarketDataProvider
 from stockml.marketdata.providers.yahoo_legacy import empty_fundamentals_row
 from stockml.marketdata.schemas import FUNDAMENTAL_COLUMNS, PRICE_COLUMNS
@@ -28,6 +30,29 @@ def from_eodhd_symbol(symbol: str) -> str:
     if clean.endswith(".US"):
         return clean[:-3]
     return clean
+
+
+def eodhd_api_key_from_env() -> str:
+    existing = os.getenv("EODHD_API_KEY", "").strip()
+    if existing:
+        return existing
+
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return ""
+
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        clean = line.strip()
+        if not clean or clean.startswith("#") or "=" not in clean:
+            continue
+        key, value = clean.split("=", 1)
+        if key.strip() == "EODHD_API_KEY":
+            return value.strip().strip("'\"")
+    return ""
+
+
+def scrub_eodhd_secret(text: object) -> str:
+    return re.sub(r"(api_token=)[^&\s]+", r"\1<redacted>", str(text))
 
 
 def normalize_eodhd_eod_rows(rows: list[dict[str, Any]], ticker: str, download_timestamp: str) -> pd.DataFrame:
@@ -88,7 +113,7 @@ class EodhdProvider(MarketDataProvider):
         default_exchange_suffix: str = "US",
         timeout: int = 30,
     ) -> None:
-        self.api_key = api_key if api_key is not None else os.getenv("EODHD_API_KEY", "")
+        self.api_key = api_key if api_key is not None else eodhd_api_key_from_env()
         self.session = session
         self.base_url = base_url.rstrip("/")
         self.default_exchange_suffix = default_exchange_suffix
@@ -123,7 +148,7 @@ class EodhdProvider(MarketDataProvider):
             try:
                 payload = self._get_json(f"eod/{provider_symbol}", {"from": start})
                 if isinstance(payload, dict) and (payload.get("code") or payload.get("message")):
-                    failures.append({"ticker": ticker, "start": start, "reason": str(payload)[:500]})
+                    failures.append({"ticker": ticker, "start": start, "reason": scrub_eodhd_secret(payload)[:500]})
                     continue
                 if not isinstance(payload, list) or not payload:
                     failures.append({"ticker": ticker, "start": start, "reason": "empty_download"})
@@ -134,7 +159,7 @@ class EodhdProvider(MarketDataProvider):
                 else:
                     all_rows.append(normalized)
             except Exception as exc:
-                failures.append({"ticker": ticker, "start": start, "reason": str(exc)[:500]})
+                failures.append({"ticker": ticker, "start": start, "reason": scrub_eodhd_secret(exc)[:500]})
 
         prices = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame(columns=PRICE_COLUMNS)
         return prices, pd.DataFrame(failures, columns=["ticker", "start", "reason"])
