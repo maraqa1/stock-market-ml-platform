@@ -1,7 +1,8 @@
 import pandas as pd
 
+from stockml.models.build_model_outputs import _combine_shard_artifacts
 from stockml.models.gold_loader import load_gold_dataset
-from stockml.models.ranking_model import train_predict_from_gold
+from stockml.models.ranking_model import ModelArtifacts, train_predict_from_gold
 
 
 def synthetic_gold():
@@ -68,3 +69,34 @@ def test_train_predict_from_gold_writes_ranking_artifacts():
     assert "included" in artifacts.feature_audit.columns
     assert "exclusion_reason" in artifacts.rejected_features.columns
     assert isinstance(artifacts.model_config, dict)
+
+
+def test_shard_combine_does_not_require_walk_forward_history():
+    base = train_predict_from_gold(synthetic_gold(), top_n=5)
+    shards = []
+    for shard_index in range(2):
+        shard = ModelArtifacts(
+            predictions=base.predictions.copy(),
+            signal_table=base.signal_table.copy(),
+            top_long=base.top_long.copy(),
+            top_short=base.top_short.copy(),
+            validation_leaderboard=base.validation_leaderboard.copy(),
+            bucket_performance=base.bucket_performance.copy(),
+            feature_importance=base.feature_importance.copy(),
+            model_status=base.model_status.copy(),
+            data_dictionary=base.data_dictionary.copy(),
+            walk_forward_predictions=pd.DataFrame(columns=base.walk_forward_predictions.columns),
+            fold_metrics=base.fold_metrics.copy(),
+            feature_audit=base.feature_audit.copy(),
+            rejected_features=base.rejected_features.copy(),
+            model_config=dict(base.model_config),
+        )
+        shard.signal_table["ticker"] = shard.signal_table["ticker"].astype(str) + f"S{shard_index}"
+        shard.predictions = shard.signal_table.copy()
+        shards.append(shard)
+
+    combined = _combine_shard_artifacts(shards, top_n=5)
+
+    assert combined.walk_forward_predictions.empty
+    assert "model_shard" in combined.signal_table.columns
+    assert combined.model_config["sharded_model"] is True

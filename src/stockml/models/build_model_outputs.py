@@ -166,18 +166,29 @@ def build_model_outputs(
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
+    meta_paths: Dict[str, Path] = {}
     if model_shards > 1:
         shard_artifacts = []
         for shard_index in range(model_shards):
             gold = load_gold_dataset(gold_file, limit_tickers=limit_tickers, shard_count=model_shards, shard_index=shard_index)
             log(f"Loaded Gold dataset for model shard {shard_index + 1}/{model_shards}: {len(gold):,} rows")
-            shard_artifacts.append(train_predict_from_gold(gold, top_n=top_n))
+            artifact = train_predict_from_gold(gold, top_n=top_n)
+            shard_meta_paths = _add_meta_label_artifacts(artifact, f"{stamp}_shard{shard_index + 1}")
+            meta_paths.update({f"shard_{shard_index + 1}_{name}": path for name, path in shard_meta_paths.items()})
+
+            # The full NYSE walk-forward history is several GB when all shards
+            # are concatenated. Keep shard-level meta outputs on disk and only
+            # combine the lightweight live signal artifacts in memory.
+            artifact.walk_forward_predictions = pd.DataFrame(columns=artifact.walk_forward_predictions.columns)
+            shard_artifacts.append(artifact)
         artifacts = _combine_shard_artifacts(shard_artifacts, top_n=top_n)
+        artifacts.model_config.setdefault("meta_labeling", {})
+        artifacts.model_config["meta_labeling"].update({"mode": "per_shard", "global_validation_skipped": True})
     else:
         gold = load_gold_dataset(gold_file, limit_tickers=limit_tickers)
         log(f"Loaded Gold dataset for model: {len(gold):,} rows")
         artifacts = train_predict_from_gold(gold, top_n=top_n)
-    meta_paths = _add_meta_label_artifacts(artifacts, stamp)
+        meta_paths = _add_meta_label_artifacts(artifacts, stamp)
     paths = _write_artifacts(artifacts, stamp)
     paths.update(meta_paths)
     for name, path in paths.items():
