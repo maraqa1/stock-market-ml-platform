@@ -17,6 +17,7 @@ from stockml.autopilot.action_queue_policy import classify_action_queue_item
 from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
 from stockml.services.events import position_id_for_symbol
 from stockml.autopilot.open import load_auto_open_config
+from stockml.marketdata.providers.factory import configured_provider_name
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 from stockml.trading.position_intelligence import enrich_positions
 
@@ -184,8 +185,13 @@ def _trading_artifact_stages(root: Path) -> tuple[list[dict[str, Any]], str]:
 def _artifact_pipeline_context(root: Path) -> dict[str, Any]:
     trading_stages, trading_stamp = _trading_artifact_stages(root)
     trading_by_name = {stage["stage_name"]: stage for stage in trading_stages}
+    marketdata_provider = configured_provider_name()
+    marketdata_label = marketdata_provider.upper() if marketdata_provider == "eodhd" else marketdata_provider.replace("_", " ").title()
     stages = [
-        _artifact_stage(root, "yahoo", "raw", "03_us_price_history_store*.csv", "price history store"),
+        {
+            **_artifact_stage(root, "yahoo", "raw", "03_us_price_history_store*.csv", f"{marketdata_label} price history store"),
+            "display_name": marketdata_label,
+        },
         _artifact_stage(root, "gold", "gold", "06_us_gold_ml_dataset_*.csv", "gold dataset"),
         _artifact_stage(root, "model", "model_outputs", "advanced_model_signal_table_*.csv", "signal table"),
         trading_by_name["candidates"],
@@ -231,6 +237,8 @@ def pipeline_current_context(root: Path) -> dict[str, Any]:
         stage["output_metadata"] = stage.get("output_metadata") or {}
         stage["output_count"] = int(stage.get("output_count") or 0)
         fallback = artifact_by_name.get(name) or {}
+        if fallback.get("display_name") and not stage.get("display_name"):
+            stage["display_name"] = fallback["display_name"]
         if stage.get("status") == "missing" and fallback.get("status") == "success":
             stage = {
                 **stage,

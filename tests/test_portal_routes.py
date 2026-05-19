@@ -607,7 +607,7 @@ def test_trading_page_renders_spec08_09_10_top_of_page(client):
     assert b"Today" in response.data
     assert b"Net Exposure" in response.data
     assert b"data-pipeline-refresh-url" in response.data
-    assert b"Yahoo" in response.data
+    assert b"EODHD" in response.data
     assert b"Submitted" in response.data
 
 
