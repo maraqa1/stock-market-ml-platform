@@ -518,6 +518,7 @@ daily_report_runs = Table(
 def create_all(engine) -> None:
     metadata.create_all(engine)
     ensure_intraday_candidate_snapshot_float_columns(engine)
+    ensure_intraday_promotion_log_float_columns(engine)
 
 
 INTRADAY_CANDIDATE_SNAPSHOT_FLOAT_COLUMNS = (
@@ -535,6 +536,13 @@ INTRADAY_CANDIDATE_SNAPSHOT_FLOAT_COLUMNS = (
     "distance_from_vwap_bps",
     "intraday_range_position",
     "sector_etf_trend_5m_pct",
+)
+
+
+INTRADAY_PROMOTION_LOG_FLOAT_COLUMNS = (
+    "nightly_score",
+    "intraday_adjustment",
+    "promotion_score",
 )
 
 
@@ -557,6 +565,30 @@ def ensure_intraday_candidate_snapshot_float_columns(engine) -> None:
         END IF;
         """
         for column in INTRADAY_CANDIDATE_SNAPSHOT_FLOAT_COLUMNS
+    )
+    with engine.begin() as conn:
+        conn.execute(text(f"DO $$ BEGIN {statements} END $$;"))
+
+
+def ensure_intraday_promotion_log_float_columns(engine) -> None:
+    if getattr(engine.dialect, "name", "") != "postgresql":
+        return
+    statements = "\n".join(
+        f"""
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'intraday_promotion_log'
+              AND column_name = '{column}'
+              AND data_type = 'numeric'
+        ) THEN
+            ALTER TABLE intraday_promotion_log
+            ALTER COLUMN {column} TYPE double precision
+            USING {column}::double precision;
+        END IF;
+        """
+        for column in INTRADAY_PROMOTION_LOG_FLOAT_COLUMNS
     )
     with engine.begin() as conn:
         conn.execute(text(f"DO $$ BEGIN {statements} END $$;"))

@@ -8,7 +8,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.engine import Engine
 
 from stockml.db.connection import get_engine
-from stockml.db.schema import intraday_candidate_snapshots, intraday_promotion_log
+from stockml.db.schema import ensure_intraday_promotion_log_float_columns, intraday_candidate_snapshots, intraday_promotion_log
 from stockml.intraday.promotion_gate import PROMOTION_RULES, evaluate_promotion_gate, load_promotion_config
 
 
@@ -155,6 +155,7 @@ def record_promotion_decision(
 ) -> int | None:
     db = engine or get_engine(required=True)
     stamp = _aware(logged_at)
+    ensure_intraday_promotion_log_float_columns(db)
     with db.begin() as conn:
         existing = conn.execute(
             select(intraday_promotion_log.c.id).where(intraday_promotion_log.c.snapshot_id == snapshot_id).limit(1)

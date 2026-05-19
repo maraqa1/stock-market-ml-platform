@@ -271,6 +271,17 @@ def test_record_promotion_decision_reuses_existing_snapshot_log():
         assert len(conn.execute(select(intraday_promotion_log)).all()) == 1
 
 
+def test_record_promotion_decision_checks_numeric_column_compatibility(monkeypatch):
+    calls = []
+    monkeypatch.setattr("stockml.intraday.promotion_score.ensure_intraday_promotion_log_float_columns", lambda db: calls.append(db))
+    db = engine()
+    snapshot_id = insert_snapshot(db, symbol="AG", nightly_score=40.924)
+    decision = evaluate_snapshot(row(symbol="AG", nightly_score=40.924))
+
+    assert record_promotion_decision(snapshot_id, decision, engine=db, logged_at=NOW) is not None
+    assert calls == [db]
+
+
 def test_explain_latest_snapshot_evaluates_current_code_without_writing_log():
     db = engine()
     snapshot_id = insert_snapshot(
