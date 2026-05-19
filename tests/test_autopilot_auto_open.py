@@ -997,7 +997,7 @@ def test_auto_open_uses_whole_share_qty_for_non_fractionable_long():
     assert "notional" not in client.orders[0]
 
 
-def test_auto_open_blocks_whole_share_when_size_below_one_share():
+def test_auto_open_rounds_up_to_one_whole_share_when_size_is_small():
     engine = _engine()
     client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": False, "shortable": True})
     candidate = _candidate("PRICEY", 100)
@@ -1025,10 +1025,43 @@ def test_auto_open_blocks_whole_share_when_size_below_one_share():
         now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
     )
 
+    assert result["autopilot_open_submitted"] == 1
+    assert result["autopilot_open_blocked"] == 0
+    assert client.orders[0]["qty"] == "1"
+
+
+def test_auto_open_blocks_when_one_share_exceeds_max_notional():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": False, "shortable": True})
+    candidate = _candidate("TOOHI", 100)
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
+        "current_price": 1500,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(max_notional_per_order=1000),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
     assert result["autopilot_open_submitted"] == 0
     assert result["autopilot_open_blocked"] == 1
     assert client.orders == []
-    assert "PRICEY:blocked:whole_share_size_below_one" in result["autopilot_open_notes"]
+    assert "TOOHI:blocked:whole_share_size_below_one" in result["autopilot_open_notes"]
 
 
 def test_rotation_replacement_sizes_to_at_least_one_whole_share():

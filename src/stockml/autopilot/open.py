@@ -1022,7 +1022,7 @@ def apply_auto_open(
         }
         current_price = _candidate_price(candidate, details)
         qty = _whole_share_qty(order_size, current_price)
-        if is_rotation_replacement and qty < 1 and current_price > 0:
+        if qty < 1 and current_price > 0:
             order_size = round(min(float(trade_cfg.max_notional_per_order), max(order_size, current_price)), 2)
             qty = _whole_share_qty(order_size, current_price)
         asset_details = {**asset_details, "current_price_for_qty": current_price, "computed_qty": qty}
