@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from stockml.common.logging_utils import log
 from stockml.common.profiles import load_profile
+from stockml.common.exchange_scope import exchange_scope_label
 from stockml.db.loaders import load_latest_outputs
 from stockml.features.build_feature_panel import build_feature_panel
 from stockml.gold.build_gold_dataset import build_gold_dataset
@@ -29,10 +30,11 @@ def run_profile(
 ) -> None:
     profile = load_profile(profile_name)
     limit = _limit(profile, override_limit)
-    exchange = profile.get("exchange")
+    exchange = profile.get("exchanges", profile.get("exchange"))
+    effective_provider = provider_name or profile.get("provider")
 
     log(f"Starting profile pipeline: {profile_name}")
-    log(f"Scope: exchange={exchange or 'ALL'} limit={limit or 'FULL'}")
+    log(f"Scope: exchange={exchange_scope_label(exchange)} limit={limit or 'FULL'}")
 
     if profile.get("run_universe", True):
         build_us_equity_universe()
@@ -44,14 +46,14 @@ def run_profile(
             sleep_seconds=float(profile.get("sleep_seconds", 1.0)),
             limit=limit,
             exchange=exchange,
-            provider_name=provider_name or profile.get("provider"),
+            provider_name=effective_provider,
         )
-        build_price_quality_report()
+        build_price_quality_report(provider_name=effective_provider)
 
     if profile.get("run_metadata", True):
         build_metadata_enriched(
             limit=limit,
-            provider_name=provider_name or profile.get("provider"),
+            provider_name=effective_provider,
             fallback_provider_name=profile.get("metadata_fallback_provider"),
             exchange=exchange,
         )

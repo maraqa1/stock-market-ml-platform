@@ -7,6 +7,7 @@ from typing import Dict, Optional
 import pandas as pd
 
 from stockml.common.logging_utils import log
+from stockml.common.exchange_scope import filter_listing_exchange
 from stockml.common.paths import INTERIM_DIR, PROCESSED_DIR, RAW_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.features.liquidity_features import add_liquidity_features
 from stockml.features.market_context_features import add_market_context_features
@@ -80,18 +81,15 @@ def latest_metadata_file() -> Path:
     return path
 
 
-def _filter_universe_exchange(universe: pd.DataFrame, exchange: str | None) -> pd.DataFrame:
-    if not exchange or "listing_exchange" not in universe.columns:
-        return universe
-    target = str(exchange).upper().strip()
-    return universe[universe["listing_exchange"].astype(str).str.upper().str.strip().eq(target)].copy()
+def _filter_universe_exchange(universe: pd.DataFrame, exchange: object = None) -> pd.DataFrame:
+    return filter_listing_exchange(universe, exchange=exchange)
 
 
 def _universe_ticker_column(universe: pd.DataFrame) -> str:
     return "yahoo_ticker" if "yahoo_ticker" in universe.columns else "ticker"
 
 
-def build_feature_panel(limit_tickers: Optional[int] = None, exchange: str | None = None) -> Dict[str, Path]:
+def build_feature_panel(limit_tickers: Optional[int] = None, exchange: object = None) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     price_path = RAW_DIR / "03_us_price_history_store.csv"

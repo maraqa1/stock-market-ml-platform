@@ -7,6 +7,7 @@ from typing import Dict, Optional
 import pandas as pd
 
 from stockml.common.logging_utils import log
+from stockml.common.exchange_scope import filter_listing_exchange
 from stockml.common.paths import INTERIM_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.metadata.yahoo_metadata import METADATA_COLUMNS, build_metadata_quality, fetch_metadata_for_universe
 
@@ -20,11 +21,8 @@ def latest_validated_universe_file() -> Path:
     return path
 
 
-def _filter_universe_exchange(universe: pd.DataFrame, exchange: str | None) -> pd.DataFrame:
-    if not exchange or "listing_exchange" not in universe.columns:
-        return universe
-    target = str(exchange).upper().strip()
-    return universe[universe["listing_exchange"].astype(str).str.upper().str.strip().eq(target)].copy()
+def _filter_universe_exchange(universe: pd.DataFrame, exchange: object = None) -> pd.DataFrame:
+    return filter_listing_exchange(universe, exchange=exchange)
 
 
 def build_metadata_enriched(
@@ -32,7 +30,7 @@ def build_metadata_enriched(
     sleep_seconds: float = 0.25,
     provider_name: str | None = None,
     fallback_provider_name: str | None = None,
-    exchange: str | None = None,
+    exchange: object = None,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()

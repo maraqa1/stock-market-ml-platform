@@ -14,6 +14,7 @@ def build_price_quality_report(
     min_trading_days: int = 252,
     min_price: float = 3.0,
     min_avg_dollar_volume_20d: float = 5_000_000.0,
+    provider_name: str | None = None,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
@@ -23,6 +24,8 @@ def build_price_quality_report(
 
     prices = pd.read_csv(STORE_FILE, parse_dates=["date"], low_memory=False)
     prices["ticker"] = prices["ticker"].astype(str).str.upper().str.strip()
+    if provider_name and "source" in prices.columns:
+        prices = prices[prices["source"].astype(str).str.strip().eq(str(provider_name).strip())].copy()
     prices = prices.sort_values(["ticker", "date"])
 
     latest_rows = prices.groupby("ticker").tail(1).copy()

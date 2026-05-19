@@ -17,6 +17,10 @@ def test_load_pipeline_profiles():
     assert profiles["nyse_full"]["metadata_fallback_provider"] == "yahoo_legacy"
     assert profiles["nyse_full"]["sentiment_provider"] == "eodhd"
     assert profiles["nyse_full"]["model_shards"] == 4
+    assert "us_full" in profiles
+    assert profiles["us_full"]["exchanges"] == ["NYSE", "NASDAQ"]
+    assert profiles["us_full"]["provider"] == "eodhd"
+    assert profiles["us_full"]["model_shards"] == 6
 
 
 def test_unknown_profile_has_clear_error():

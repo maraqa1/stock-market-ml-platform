@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import pandas as pd
 
 from stockml.common.logging_utils import log
+from stockml.common.exchange_scope import exchange_scope_label, filter_listing_exchange
 from stockml.common.paths import INTERIM_DIR, RAW_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.marketdata.providers.factory import provider_from_name
 from stockml.marketdata.schemas import PRICE_COLUMNS
@@ -26,7 +27,7 @@ def latest_tradable_universe_file() -> Path:
     return max(files, key=lambda p: p.stat().st_mtime)
 
 
-def read_tradable_universe(limit: Optional[int] = None, exchange: Optional[str] = None) -> pd.DataFrame:
+def read_tradable_universe(limit: Optional[int] = None, exchange: object = None) -> pd.DataFrame:
     path = latest_tradable_universe_file()
     df = pd.read_csv(path, dtype=str)
     if "yahoo_ticker" not in df.columns:
@@ -36,12 +37,11 @@ def read_tradable_universe(limit: Optional[int] = None, exchange: Optional[str] 
     if exchange:
         if "listing_exchange" not in df.columns:
             raise ValueError(f"{path} missing listing_exchange column required by --exchange")
-        clean_exchange = exchange.upper().strip()
         df["listing_exchange"] = df["listing_exchange"].astype(str).str.upper().str.strip()
-        df = df[df["listing_exchange"].eq(clean_exchange)].copy()
+        df = filter_listing_exchange(df, exchange=exchange)
     if limit:
         df = df.head(limit)
-    scope = f" exchange={exchange.upper().strip()}" if exchange else ""
+    scope = f" exchange={exchange_scope_label(exchange)}" if exchange else ""
     log(f"Loaded tradable universe: {path} ({len(df):,} tickers{scope})")
     return df
 
@@ -143,7 +143,7 @@ def download_price_history(
     sleep_seconds: float = 1.0,
     limit: Optional[int] = None,
     force_full: bool = False,
-    exchange: Optional[str] = None,
+    exchange: object = None,
     provider_name: str | None = None,
 ) -> Dict[str, Path]:
     ensure_data_dirs()

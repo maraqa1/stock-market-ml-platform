@@ -7,6 +7,7 @@ from typing import Dict, Optional
 import pandas as pd
 
 from stockml.common.logging_utils import log
+from stockml.common.exchange_scope import filter_listing_exchange
 from stockml.common.paths import GOLD_DIR, INTERIM_DIR, PORTAL_OUTPUTS_DIR, PROCESSED_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.gold.gold_quality_checks import build_data_dictionary, build_gold_quality
 from stockml.gold.target_engineering import TARGET_COLUMNS, add_ranking_targets
@@ -150,14 +151,11 @@ def build_portal_outputs(gold: pd.DataFrame, stamp: str) -> Dict[str, Path]:
     return {"portal_signals": signals_path, "portal_dashboard_metrics": dashboard_path, "portal_sector_breakdown": sector_path}
 
 
-def _filter_features_exchange(features: pd.DataFrame, exchange: str | None) -> pd.DataFrame:
-    if not exchange or "exchange" not in features.columns:
-        return features
-    target = str(exchange).upper().strip()
-    return features[features["exchange"].astype(str).str.upper().str.strip().eq(target)].copy()
+def _filter_features_exchange(features: pd.DataFrame, exchange: object = None) -> pd.DataFrame:
+    return filter_listing_exchange(features, exchange=exchange, column="exchange")
 
 
-def build_gold_dataset(limit_tickers: Optional[int] = None, exchange: str | None = None) -> Dict[str, Path]:
+def build_gold_dataset(limit_tickers: Optional[int] = None, exchange: object = None) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     features = pd.read_csv(latest_feature_panel_file(), low_memory=False)
