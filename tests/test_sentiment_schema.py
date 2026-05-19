@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 
 from stockml.sentiment.build_sentiment_panel import aggregate_articles
 from stockml.sentiment.build_sentiment_panel import _combine_provider_panels
+from stockml.sentiment.build_sentiment_panel import _providers
 from stockml.sentiment.cnbc_news_provider import _matches_ticker
+from stockml.sentiment.eodhd_news_provider import EodhdNewsProvider, _normalize_eodhd_article
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
 from stockml.sentiment.yahoo_news_provider import _normalize_article
 
@@ -53,3 +55,28 @@ def test_combines_provider_sentiment_without_fabricating_rows():
     assert list(combined.columns) == SENTIMENT_COLUMNS
     assert combined.loc[0, "article_count"] == 2
     assert combined.loc[0, "sentiment_source"] == "cnbc_rss+yahoo"
+
+
+def test_eodhd_article_sentiment_is_normalized_and_scored():
+    article = _normalize_eodhd_article(
+        {
+            "date": "2026-05-19T12:00:00+00:00",
+            "title": "AAPL shares rally",
+            "content": "Provider sentiment is positive.",
+            "sentiment": {"polarity": 0.8},
+            "link": "https://example.com",
+        }
+    )
+
+    panel = aggregate_articles("AAPL", [article], "eodhd_news")
+
+    assert panel.loc[0, "article_count"] == 1
+    assert panel.loc[0, "sentiment_source"] == "eodhd_news"
+    assert panel.loc[0, "sentiment_score_mean"] == 0.8
+
+
+def test_sentiment_provider_factory_selects_eodhd():
+    providers = _providers("eodhd")
+
+    assert len(providers) == 1
+    assert isinstance(providers[0], EodhdNewsProvider)

@@ -14,6 +14,7 @@ def test_load_pipeline_profiles():
     assert profiles["nyse_full"]["exchange"] == "NYSE"
     assert profiles["nyse_full"]["limit_tickers"] is None
     assert profiles["nyse_full"]["provider"] == "eodhd"
+    assert profiles["nyse_full"]["sentiment_provider"] == "eodhd"
 
 
 def test_unknown_profile_has_clear_error():

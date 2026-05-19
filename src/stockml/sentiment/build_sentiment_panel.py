@@ -10,6 +10,8 @@ import pandas as pd
 from stockml.common.logging_utils import log
 from stockml.common.paths import INTERIM_DIR, PROCESSED_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.sentiment.cnbc_news_provider import CnbcRssNewsProvider
+from stockml.sentiment.eodhd_news_provider import EodhdNewsProvider
+from stockml.sentiment.news_provider_base import NewsProviderBase
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
 from stockml.sentiment.simple_sentiment_model import classify_score, score_text
 from stockml.sentiment.yahoo_news_provider import YahooNewsProvider
@@ -45,13 +47,23 @@ def _article_text(article: Dict[str, object]) -> str:
     return " ".join(str(article.get(key, "") or "") for key in ["title", "summary", "publisher"]) + " " + nested
 
 
+def _article_score(article: Dict[str, object]) -> float:
+    provider_score = article.get("providerSentiment")
+    try:
+        if provider_score not in (None, ""):
+            return max(-1.0, min(1.0, float(provider_score)))
+    except Exception:
+        pass
+    return score_text(_article_text(article))
+
+
 def aggregate_articles(ticker: str, articles: List[Dict[str, object]], source: str) -> pd.DataFrame:
     rows = []
     for article in articles:
         article_date = _article_date(article)
         if article_date is None:
             continue
-        score = score_text(_article_text(article))
+        score = _article_score(article)
         label = classify_score(score)
         rows.append({"date": article_date, "ticker": ticker, "score": score, "label": label})
 
@@ -89,8 +101,21 @@ def aggregate_articles(ticker: str, articles: List[Dict[str, object]], source: s
     return grouped[SENTIMENT_COLUMNS]
 
 
-def build_sentiment_panel_for_tickers(tickers: Iterable[str], limit: Optional[int] = None) -> Dict[str, pd.DataFrame]:
-    providers = [YahooNewsProvider(), CnbcRssNewsProvider()]
+def _providers(provider_name: str | None = None) -> List[NewsProviderBase]:
+    clean = str(provider_name or "legacy").lower().strip()
+    if clean in {"eodhd", "eodhd_news"}:
+        return [EodhdNewsProvider()]
+    if clean in {"yahoo", "legacy", "yahoo_cnbc"}:
+        return [YahooNewsProvider(), CnbcRssNewsProvider()]
+    raise ValueError(f"Unknown sentiment provider: {provider_name}")
+
+
+def build_sentiment_panel_for_tickers(
+    tickers: Iterable[str],
+    limit: Optional[int] = None,
+    provider_name: str | None = None,
+) -> Dict[str, pd.DataFrame]:
+    providers = _providers(provider_name)
     clean_tickers = [str(t).upper().strip() for t in tickers if str(t).strip()]
     if limit:
         clean_tickers = clean_tickers[:limit]
@@ -169,12 +194,12 @@ def _combine_provider_panels(ticker: str, provider_panels: List[pd.DataFrame], e
     return out[SENTIMENT_COLUMNS]
 
 
-def build_sentiment_panel(limit: Optional[int] = None) -> Dict[str, Path]:
+def build_sentiment_panel(limit: Optional[int] = None, provider_name: str | None = None) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     universe = pd.read_csv(latest_universe_for_sentiment(), dtype=str)
     ticker_col = "yahoo_ticker" if "yahoo_ticker" in universe.columns else "ticker"
-    result = build_sentiment_panel_for_tickers(universe[ticker_col], limit=limit)
+    result = build_sentiment_panel_for_tickers(universe[ticker_col], limit=limit, provider_name=provider_name)
 
     panel_path = PROCESSED_DIR / f"05_news_sentiment_panel_{stamp}.csv"
     result["panel"].to_csv(panel_path, index=False)
@@ -189,8 +214,9 @@ def build_sentiment_panel(limit: Optional[int] = None) -> Dict[str, Path]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--provider", default=None, help="Sentiment provider: eodhd or legacy.")
     args = parser.parse_args()
-    paths = build_sentiment_panel(limit=args.limit)
+    paths = build_sentiment_panel(limit=args.limit, provider_name=args.provider)
     for name, path in paths.items():
         log(f"{name}: {path}")
     return 0

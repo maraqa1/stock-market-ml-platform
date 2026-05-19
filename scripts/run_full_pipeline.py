@@ -26,6 +26,7 @@ def main() -> int:
     parser.add_argument("--exchange", default=None)
     parser.add_argument("--skip-price-download", action="store_true")
     parser.add_argument("--provider", default=None, help="Market data provider for price and metadata jobs: yahoo_legacy or eodhd.")
+    parser.add_argument("--sentiment-provider", default=None, help="Sentiment provider: eodhd or legacy.")
     args = parser.parse_args()
     limit = args.limit_tickers or args.limit
 
@@ -53,7 +54,7 @@ def main() -> int:
     build_feature_panel(limit_tickers=limit, exchange=args.exchange)
 
     try:
-        build_sentiment_panel(limit=limit)
+        build_sentiment_panel(limit=limit, provider_name=args.sentiment_provider)
     except Exception as exc:
         log(f"Sentiment pipeline failed but full pipeline will continue: {exc}")
 

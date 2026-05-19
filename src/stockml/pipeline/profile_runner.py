@@ -56,7 +56,7 @@ def run_profile(
 
     if profile.get("run_sentiment", True) and not skip_sentiment:
         try:
-            build_sentiment_panel(limit=limit)
+            build_sentiment_panel(limit=limit, provider_name=profile.get("sentiment_provider"))
         except Exception as exc:
             log(f"Sentiment pipeline failed but profile will continue: {exc}")
 

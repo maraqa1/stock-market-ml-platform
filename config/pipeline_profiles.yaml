@@ -49,6 +49,7 @@ profiles:
     exchange: NYSE
     limit_tickers:
     provider: eodhd
+    sentiment_provider: eodhd
     start_date: "2018-01-01"
     batch_size: 75
     sleep_seconds: 1.0
