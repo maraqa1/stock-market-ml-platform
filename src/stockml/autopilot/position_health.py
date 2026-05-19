@@ -27,7 +27,7 @@ def _text(value: Any) -> str:
 def _signal_state(position: dict[str, Any]) -> str:
     state = _text(position.get("latest_signal_status") or position.get("signal_state") or position.get("position_intelligence_signal_state")).lower()
     reason = _text(position.get("decision_reason") or position.get("position_intelligence_decision_reason")).lower()
-    if state in {"unknown", "stale", "fresh"}:
+    if state in {"unknown", "stale", "fresh", "missing"}:
         return state
     if "latest_signal_unknown" in reason:
         return "unknown"
@@ -60,14 +60,18 @@ def classify_position_health(position: dict[str, Any], rules: PositionHealthRule
         status, reason = "close_now", "signal_reversal_confirmed"
     elif risk_tier in {"reject", "rejected", "hard_reject", "block"}:
         status, reason = "close_candidate", "risk_tier_reject"
-    elif signal_state in {"stale", "unknown"} and plpc <= loss_threshold:
-        reason_state = "signal_stale" if signal_state == "stale" else "latest_signal_unknown"
+    elif signal_state in {"stale", "unknown", "missing"} and plpc <= loss_threshold:
+        reason_state = "signal_stale" if signal_state == "stale" else "latest_model_signal_missing" if signal_state == "missing" else "latest_signal_unknown"
         status, reason = "close_candidate", f"loss_threshold_breached;{reason_state}"
     elif plpc <= loss_threshold:
         status, reason = "close_candidate", "loss_threshold_breached"
-    elif signal_state in {"stale", "unknown"} and plpc < 0:
-        reason_state = "signal_stale" if signal_state == "stale" else "latest_signal_unknown"
+    elif signal_state in {"stale", "unknown", "missing"} and plpc < 0:
+        reason_state = "signal_stale" if signal_state == "stale" else "latest_model_signal_missing" if signal_state == "missing" else "latest_signal_unknown"
         status, reason = "watch_loss", f"small_red_above_stop;{reason_state}"
+    elif signal_state == "missing" and plpc > 0:
+        status, reason = "watch", "latest_model_signal_missing_green_position"
+    elif signal_state == "missing":
+        status, reason = "manual_review", "latest_model_signal_missing"
     elif signal_state == "unknown" and plpc > 0:
         status, reason = "watch", "latest_signal_unknown_green_position"
     elif signal_state == "unknown":

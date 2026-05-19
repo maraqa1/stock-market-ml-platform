@@ -105,6 +105,8 @@ def _signal_direction(value: Any) -> str:
         return "long"
     if text in {"short", "sell", "bearish"}:
         return "short"
+    if text in {"hold", "no decision", "no trade", "skip trade", "skip"}:
+        return "hold"
     return ""
 
 
@@ -118,13 +120,14 @@ def _latest_model_signal_map(root: Path) -> dict[str, dict[str, Any]]:
         if not symbol:
             continue
         action = row.get("trade_action") or row.get("latest_signal") or row.get("signal") or row.get("side")
-        direction = _signal_direction(action)
+        signal_label = row.get("signal") or action
+        direction = _signal_direction(signal_label or action)
         model_status = str(row.get("model_status") or row.get("decision_grade") or "").strip()
         if not model_status:
             model_status = "decision_grade" if direction else "no_decision"
         records[symbol] = {
             "latest_signal_status": "fresh",
-            "latest_signal": str(action or "").strip(),
+            "latest_signal": str(signal_label or "").strip(),
             "latest_signal_direction": direction,
             "model_status": model_status,
             "model_score": row.get("model_score") or row.get("risk_adjusted_score") or row.get("side_probability") or "",
@@ -140,17 +143,37 @@ def _fresh_signal_reason(reason: Any) -> str:
     return "|".join(parts)
 
 
+def _missing_signal_reason(reason: Any) -> str:
+    parts = [part.strip() for part in re.split(r"[|;]", str(reason or "")) if part.strip()]
+    parts = [part for part in parts if part not in {"latest_signal_unknown", "signal_stale"}]
+    if "latest_model_signal_missing" not in parts:
+        parts.append("latest_model_signal_missing")
+    return "|".join(parts)
+
+
 def _attach_latest_model_signals_to_records(records: list[dict[str, Any]], root: Path) -> list[dict[str, Any]]:
+    signal_file = _latest_model_signal_file(root)
     signals = _latest_model_signal_map(root)
-    if not records or not signals:
+    if not records or (signal_file is None and not signals):
         return records
     enriched: list[dict[str, Any]] = []
     for row in records:
         item = dict(row)
-        signal = signals.get(_signal_symbol(item))
+        symbol = _signal_symbol(item)
+        signal = signals.get(symbol)
         if signal:
             item.update(signal)
             item["decision_reason"] = _fresh_signal_reason(item.get("decision_reason"))
+        elif signal_file is not None and symbol:
+            item.update(
+                {
+                    "latest_signal_status": "missing",
+                    "latest_signal": "Missing from latest model output",
+                    "latest_signal_direction": "missing",
+                    "model_status": "not_in_latest_model_output",
+                }
+            )
+            item["decision_reason"] = _missing_signal_reason(item.get("decision_reason"))
         enriched.append(item)
     return enriched
 

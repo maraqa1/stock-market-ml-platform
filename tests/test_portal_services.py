@@ -296,6 +296,53 @@ def test_action_queue_uses_latest_model_signal_for_held_positions(tmp_path):
     assert row["position_health_reason"] == "green_position_no_risk_issue"
 
 
+def test_action_queue_labels_no_decision_as_fresh_hold(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "MGT", "qty": 10, "market_value": 150.35}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [{"symbol": "MGT", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": 0.00231}],
+    )
+    write_csv(
+        tmp_path / "data" / "model_outputs" / "model_predictions_latest.csv",
+        [{"ticker": "MGT", "trade_action": "No Decision", "signal": "HOLD", "risk_adjusted_score": 1.23}],
+    )
+
+    ctx = action_queue_context(tmp_path)
+    row = ctx["items"][0]
+
+    assert row["latest_signal_status"] == "fresh"
+    assert row["latest_signal"] == "HOLD"
+    assert row["latest_signal_direction"] == "hold"
+    assert row["decision_reason"] == "latest_signal_fresh"
+
+
+def test_action_queue_labels_missing_latest_model_signal(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "MGT", "qty": 10, "market_value": 150.35}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [{"symbol": "MGT", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": 0.00231}],
+    )
+    write_csv(
+        tmp_path / "data" / "model_outputs" / "model_predictions_latest.csv",
+        [{"ticker": "OTHER", "trade_action": "Long", "signal": "LONG", "risk_adjusted_score": 1.23}],
+    )
+
+    ctx = action_queue_context(tmp_path)
+    row = ctx["items"][0]
+
+    assert row["latest_signal_status"] == "missing"
+    assert row["latest_signal_direction"] == "missing"
+    assert row["model_status"] == "not_in_latest_model_output"
+    assert row["decision_reason"] == "latest_model_signal_missing"
+    assert row["position_health_reason"] == "latest_model_signal_missing_green_position"
+
+
 def test_action_queue_includes_candidate_evaluation_opportunities(tmp_path):
     write_csv(
         tmp_path / "data" / "trading" / "candidate_evaluations" / "candidate_evaluation_1.csv",

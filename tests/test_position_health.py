@@ -22,6 +22,13 @@ def test_unknown_green_position_remains_watch():
     assert result["position_health_reason"] == "latest_signal_unknown_green_position"
 
 
+def test_missing_latest_model_signal_is_named_separately():
+    result = classify_position_health({"symbol": "AAA", "unrealized_plpc": 0.01, "latest_signal_status": "missing"})
+
+    assert result["position_health_status"] == "watch"
+    assert result["position_health_reason"] == "latest_model_signal_missing_green_position"
+
+
 def test_unknown_red_above_threshold_becomes_close_candidate():
     result = classify_position_health({"symbol": "AAA", "unrealized_plpc": -0.0233, "latest_signal_status": "unknown"})
 
