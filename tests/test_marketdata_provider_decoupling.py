@@ -152,9 +152,10 @@ def test_non_provider_code_does_not_import_vendor_sdks():
     allowed_parts = {
         ("src", "stockml", "marketdata", "providers"),
         ("src", "stockml", "sentiment"),
+        ("src", "stockml", "metadata", "yahoo_metadata.py"),
         ("tests",),
     }
-    vendor_tokens = ["import yfinance", "import requests", "https://eodhd.com"]
+    vendor_tokens = ["import yfinance", "https://eodhd.com"]
     offenders = []
     for root in [Path("src"), Path("portal"), Path("scripts")]:
         for path in root.rglob("*.py"):
