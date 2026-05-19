@@ -64,7 +64,7 @@ def run_profile(
         build_gold_dataset(limit_tickers=limit, exchange=exchange)
 
     if profile.get("run_model", True):
-        build_model_outputs(limit_tickers=limit)
+        build_model_outputs(limit_tickers=profile.get("model_limit_tickers", limit), model_shards=int(profile.get("model_shards", 1) or 1))
 
     if write_database:
         counts = load_latest_outputs()

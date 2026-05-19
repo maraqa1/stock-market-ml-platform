@@ -1,5 +1,6 @@
 import pandas as pd
 
+from stockml.models.gold_loader import load_gold_dataset
 from stockml.models.ranking_model import train_predict_from_gold
 
 
@@ -42,6 +43,22 @@ def test_train_predict_from_gold_writes_expected_artifact_frames():
     assert "icir_5d" in artifacts.validation_leaderboard.columns
     assert "turnover_adjusted_avg_gain_5d" in artifacts.validation_leaderboard.columns
     assert "feature" in artifacts.feature_importance.columns
+
+
+def test_gold_loader_shards_cover_all_tickers_without_overlap(tmp_path):
+    path = tmp_path / "gold.csv"
+    frame = synthetic_gold()
+    frame.to_csv(path, index=False)
+
+    left = load_gold_dataset(path, shard_count=2, shard_index=0)
+    right = load_gold_dataset(path, shard_count=2, shard_index=1)
+    left_tickers = set(left["ticker"].unique())
+    right_tickers = set(right["ticker"].unique())
+
+    assert left_tickers
+    assert right_tickers
+    assert left_tickers.isdisjoint(right_tickers)
+    assert left_tickers | right_tickers == set(frame["ticker"].unique())
 
 
 def test_train_predict_from_gold_writes_ranking_artifacts():

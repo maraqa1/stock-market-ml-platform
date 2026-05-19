@@ -33,7 +33,12 @@ def latest_gold_file(gold_dir: Path = GOLD_DIR) -> Path:
     return path
 
 
-def load_gold_dataset(path: Optional[Path] = None, limit_tickers: Optional[int] = None) -> pd.DataFrame:
+def load_gold_dataset(
+    path: Optional[Path] = None,
+    limit_tickers: Optional[int] = None,
+    shard_count: int = 1,
+    shard_index: int = 0,
+) -> pd.DataFrame:
     gold_path = path or latest_gold_file()
     frame = pd.read_csv(gold_path, low_memory=False)
     missing = REQUIRED_GOLD_COLUMNS - set(frame.columns)
@@ -45,6 +50,12 @@ def load_gold_dataset(path: Optional[Path] = None, limit_tickers: Optional[int] 
     if limit_tickers:
         tickers = frame["ticker"].drop_duplicates().head(limit_tickers).tolist()
         frame = frame[frame["ticker"].isin(tickers)].copy()
+    if shard_count > 1:
+        if shard_index < 0 or shard_index >= shard_count:
+            raise ValueError(f"shard_index must be between 0 and {shard_count - 1}")
+        tickers = frame["ticker"].drop_duplicates().tolist()
+        shard_tickers = set(tickers[shard_index::shard_count])
+        frame = frame[frame["ticker"].isin(shard_tickers)].copy()
     return frame
 
 

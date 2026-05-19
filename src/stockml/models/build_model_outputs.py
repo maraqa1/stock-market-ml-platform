@@ -4,6 +4,8 @@ import argparse
 from pathlib import Path
 from typing import Dict, Optional
 
+import pandas as pd
+
 from stockml.common.logging_utils import log
 from stockml.common.paths import MODEL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.models.gold_loader import load_gold_dataset
@@ -54,6 +56,68 @@ def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
     return outputs
 
 
+def _with_shard(frame: pd.DataFrame, shard_index: int) -> pd.DataFrame:
+    out = frame.copy()
+    out["model_shard"] = shard_index
+    return out
+
+
+def _combine_shard_artifacts(shards: list[ModelArtifacts], *, top_n: int) -> ModelArtifacts:
+    if not shards:
+        raise ValueError("No model shards were produced.")
+    base = shards[0]
+
+    predictions = pd.concat([_with_shard(artifact.predictions, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    signal_table = pd.concat([_with_shard(artifact.signal_table, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    validation = pd.concat([_with_shard(artifact.validation_leaderboard, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    buckets = pd.concat([_with_shard(artifact.bucket_performance, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    importance = pd.concat([_with_shard(artifact.feature_importance, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    status = pd.concat([_with_shard(artifact.model_status, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    dictionary = pd.concat([_with_shard(artifact.data_dictionary, i) for i, artifact in enumerate(shards)], ignore_index=True).drop_duplicates("column", keep="first")
+    walk_forward = pd.concat([_with_shard(artifact.walk_forward_predictions, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    fold_metrics = pd.concat([_with_shard(artifact.fold_metrics, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    audit = pd.concat([_with_shard(artifact.feature_audit, i) for i, artifact in enumerate(shards)], ignore_index=True)
+    rejected = pd.concat([_with_shard(artifact.rejected_features, i) for i, artifact in enumerate(shards)], ignore_index=True)
+
+    if not signal_table.empty and "model_score" in signal_table.columns:
+        signal_table = signal_table.sort_values("model_score", ascending=False).reset_index(drop=True)
+        signal_table["rank_overall"] = range(1, len(signal_table) + 1)
+        signal_table["predicted_rank_pct_by_date"] = signal_table["model_score"].rank(pct=True)
+        decision_grade = status.get("decision_grade", pd.Series(dtype=str)).astype(str).eq("decision_grade").any()
+        signal_table["trade_action"] = "No Decision"
+        signal_table["signal"] = "HOLD"
+        signal_table["signal_reason"] = "model_not_decision_grade"
+        signal_table["no_decision_reason"] = "sharded_model_diagnostic"
+        if decision_grade:
+            signal_table["signal_reason"] = "validation_gates_passed"
+            signal_table["no_decision_reason"] = ""
+            signal_table.loc[signal_table["rank_overall"].le(10), ["trade_action", "signal", "signal_reason"]] = ["Long", "LONG", "rank_validation_gate_passed"]
+            signal_table.loc[signal_table["rank_overall"].gt(max(len(signal_table) - 10, 0)), ["trade_action", "signal", "signal_reason"]] = ["Short", "SHORT", "rank_validation_gate_passed"]
+        predictions = signal_table.copy()
+
+    top_long = signal_table[signal_table["trade_action"].eq("Long")].sort_values("rank_overall").head(top_n) if "trade_action" in signal_table.columns else pd.DataFrame()
+    top_short = signal_table[signal_table["trade_action"].eq("Short")].sort_values("rank_overall", ascending=False).head(top_n) if "trade_action" in signal_table.columns else pd.DataFrame()
+
+    config = dict(base.model_config)
+    config.update({"model_shards": len(shards), "sharded_model": True})
+    return ModelArtifacts(
+        predictions=predictions,
+        signal_table=signal_table,
+        top_long=top_long,
+        top_short=top_short,
+        validation_leaderboard=validation,
+        bucket_performance=buckets,
+        feature_importance=importance,
+        model_status=status,
+        data_dictionary=dictionary,
+        walk_forward_predictions=walk_forward,
+        fold_metrics=fold_metrics,
+        feature_audit=audit,
+        rejected_features=rejected,
+        model_config=config,
+    )
+
+
 def _add_meta_label_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
     cfg = load_meta_label_config()
     outputs = {
@@ -94,12 +158,25 @@ def _add_meta_label_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str
     return outputs
 
 
-def build_model_outputs(gold_file: Optional[Path] = None, limit_tickers: Optional[int] = None, top_n: int = 50) -> Dict[str, Path]:
+def build_model_outputs(
+    gold_file: Optional[Path] = None,
+    limit_tickers: Optional[int] = None,
+    top_n: int = 50,
+    model_shards: int = 1,
+) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
-    gold = load_gold_dataset(gold_file, limit_tickers=limit_tickers)
-    log(f"Loaded Gold dataset for model: {len(gold):,} rows")
-    artifacts = train_predict_from_gold(gold, top_n=top_n)
+    if model_shards > 1:
+        shard_artifacts = []
+        for shard_index in range(model_shards):
+            gold = load_gold_dataset(gold_file, limit_tickers=limit_tickers, shard_count=model_shards, shard_index=shard_index)
+            log(f"Loaded Gold dataset for model shard {shard_index + 1}/{model_shards}: {len(gold):,} rows")
+            shard_artifacts.append(train_predict_from_gold(gold, top_n=top_n))
+        artifacts = _combine_shard_artifacts(shard_artifacts, top_n=top_n)
+    else:
+        gold = load_gold_dataset(gold_file, limit_tickers=limit_tickers)
+        log(f"Loaded Gold dataset for model: {len(gold):,} rows")
+        artifacts = train_predict_from_gold(gold, top_n=top_n)
     meta_paths = _add_meta_label_artifacts(artifacts, stamp)
     paths = _write_artifacts(artifacts, stamp)
     paths.update(meta_paths)
@@ -113,8 +190,9 @@ def main() -> int:
     parser.add_argument("--gold-file", type=Path, default=None)
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--top-n", type=int, default=50)
+    parser.add_argument("--model-shards", type=int, default=1)
     args = parser.parse_args()
-    build_model_outputs(gold_file=args.gold_file, limit_tickers=args.limit_tickers, top_n=args.top_n)
+    build_model_outputs(gold_file=args.gold_file, limit_tickers=args.limit_tickers, top_n=args.top_n, model_shards=args.model_shards)
     return 0
 
 
