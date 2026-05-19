@@ -14,6 +14,7 @@ def test_load_pipeline_profiles():
     assert profiles["nyse_full"]["exchange"] == "NYSE"
     assert profiles["nyse_full"]["limit_tickers"] is None
     assert profiles["nyse_full"]["provider"] == "eodhd"
+    assert profiles["nyse_full"]["metadata_fallback_provider"] == "yahoo_legacy"
     assert profiles["nyse_full"]["sentiment_provider"] == "eodhd"
     assert profiles["nyse_full"]["model_shards"] == 4
 

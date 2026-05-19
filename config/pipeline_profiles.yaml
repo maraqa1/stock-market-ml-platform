@@ -49,6 +49,7 @@ profiles:
     exchange: NYSE
     limit_tickers:
     provider: eodhd
+    metadata_fallback_provider: yahoo_legacy
     sentiment_provider: eodhd
     model_shards: 4
     start_date: "2018-01-01"

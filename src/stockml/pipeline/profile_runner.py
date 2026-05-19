@@ -49,7 +49,12 @@ def run_profile(
         build_price_quality_report()
 
     if profile.get("run_metadata", True):
-        build_metadata_enriched(limit=limit, provider_name=provider_name or profile.get("provider"), exchange=exchange)
+        build_metadata_enriched(
+            limit=limit,
+            provider_name=provider_name or profile.get("provider"),
+            fallback_provider_name=profile.get("metadata_fallback_provider"),
+            exchange=exchange,
+        )
 
     if profile.get("run_features", True):
         build_feature_panel(limit_tickers=limit, exchange=exchange)

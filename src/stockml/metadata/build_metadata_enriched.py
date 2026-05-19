@@ -31,6 +31,7 @@ def build_metadata_enriched(
     limit: Optional[int] = None,
     sleep_seconds: float = 0.25,
     provider_name: str | None = None,
+    fallback_provider_name: str | None = None,
     exchange: str | None = None,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
@@ -38,7 +39,13 @@ def build_metadata_enriched(
     universe_path = latest_validated_universe_file()
     universe = pd.read_csv(universe_path, dtype=str)
     universe = _filter_universe_exchange(universe, exchange)
-    metadata = fetch_metadata_for_universe(universe, limit=limit, sleep_seconds=sleep_seconds, provider_name=provider_name)
+    metadata = fetch_metadata_for_universe(
+        universe,
+        limit=limit,
+        sleep_seconds=sleep_seconds,
+        provider_name=provider_name,
+        fallback_provider_name=fallback_provider_name,
+    )
 
     for col in METADATA_COLUMNS:
         if col not in metadata.columns:
@@ -62,12 +69,14 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--sleep-seconds", type=float, default=0.25)
     parser.add_argument("--provider", default=None, help="Market data provider: yahoo_legacy or eodhd. Defaults to config/env.")
+    parser.add_argument("--fallback-provider", default=None, help="Optional metadata fallback provider, e.g. yahoo_legacy.")
     parser.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NYSE")
     args = parser.parse_args()
     paths = build_metadata_enriched(
         limit=args.limit,
         sleep_seconds=args.sleep_seconds,
         provider_name=args.provider,
+        fallback_provider_name=args.fallback_provider,
         exchange=args.exchange,
     )
     for name, path in paths.items():

@@ -25,6 +25,7 @@ def fetch_metadata_for_universe(
     limit: Optional[int] = None,
     sleep_seconds: float = 0.25,
     provider_name: str | None = None,
+    fallback_provider_name: str | None = None,
 ) -> pd.DataFrame:
     if "yahoo_ticker" in universe.columns:
         ticker_col = "yahoo_ticker"
@@ -41,14 +42,24 @@ def fetch_metadata_for_universe(
 
     rows: List[Dict[str, object]] = []
     provider = provider_from_name(provider_name)
+    fallback_provider = None
+    if fallback_provider_name and str(fallback_provider_name).lower().strip() != provider.provider_name:
+        fallback_provider = provider_from_name(fallback_provider_name)
     for _, row in frame.iterrows():
-        rows.append(
-            provider.fetch_fundamentals(
-                ticker=row[ticker_col],
-                company=str(row.get("company", "") or ""),
-                exchange=str(row.get("listing_exchange", row.get("exchange", "")) or ""),
-            )
+        company = str(row.get("company", "") or "")
+        exchange = str(row.get("listing_exchange", row.get("exchange", "")) or "")
+        metadata_row = provider.fetch_fundamentals(
+            ticker=row[ticker_col],
+            company=company,
+            exchange=exchange,
         )
+        if fallback_provider is not None and pd.isna(metadata_row.get("market_cap")):
+            fallback_row = fallback_provider.fetch_fundamentals(ticker=row[ticker_col], company=company, exchange=exchange)
+            if not pd.isna(fallback_row.get("market_cap")):
+                metadata_row = fallback_row
+                metadata_row["company"] = metadata_row.get("company") if not pd.isna(metadata_row.get("company")) else company
+                metadata_row["exchange"] = metadata_row.get("exchange") if not pd.isna(metadata_row.get("exchange")) else exchange
+        rows.append(metadata_row)
         if sleep_seconds > 0:
             time.sleep(sleep_seconds)
 
