@@ -9,12 +9,9 @@ import pandas as pd
 
 from stockml.common.logging_utils import log
 from stockml.common.paths import INTERIM_DIR, PROCESSED_DIR, ensure_data_dirs, latest_file, timestamp
-from stockml.sentiment.cnbc_news_provider import CnbcRssNewsProvider
-from stockml.sentiment.eodhd_news_provider import EodhdNewsProvider
-from stockml.sentiment.news_provider_base import NewsProviderBase
+from stockml.sentiment.provider_factory import sentiment_providers_from_name
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
 from stockml.sentiment.simple_sentiment_model import classify_score, score_text
-from stockml.sentiment.yahoo_news_provider import YahooNewsProvider
 
 
 def latest_universe_for_sentiment() -> Path:
@@ -101,21 +98,12 @@ def aggregate_articles(ticker: str, articles: List[Dict[str, object]], source: s
     return grouped[SENTIMENT_COLUMNS]
 
 
-def _providers(provider_name: str | None = None) -> List[NewsProviderBase]:
-    clean = str(provider_name or "legacy").lower().strip()
-    if clean in {"eodhd", "eodhd_news"}:
-        return [EodhdNewsProvider()]
-    if clean in {"yahoo", "legacy", "yahoo_cnbc"}:
-        return [YahooNewsProvider(), CnbcRssNewsProvider()]
-    raise ValueError(f"Unknown sentiment provider: {provider_name}")
-
-
 def build_sentiment_panel_for_tickers(
     tickers: Iterable[str],
     limit: Optional[int] = None,
     provider_name: str | None = None,
 ) -> Dict[str, pd.DataFrame]:
-    providers = _providers(provider_name)
+    providers = sentiment_providers_from_name(provider_name)
     clean_tickers = [str(t).upper().strip() for t in tickers if str(t).strip()]
     if limit:
         clean_tickers = clean_tickers[:limit]

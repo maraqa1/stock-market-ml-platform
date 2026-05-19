@@ -2,9 +2,9 @@ from datetime import datetime, timezone
 
 from stockml.sentiment.build_sentiment_panel import aggregate_articles
 from stockml.sentiment.build_sentiment_panel import _combine_provider_panels
-from stockml.sentiment.build_sentiment_panel import _providers
 from stockml.sentiment.cnbc_news_provider import _matches_ticker
 from stockml.sentiment.eodhd_news_provider import EodhdNewsProvider, _normalize_eodhd_article
+from stockml.sentiment.provider_factory import sentiment_providers_from_name
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
 from stockml.sentiment.yahoo_news_provider import _normalize_article
 
@@ -76,7 +76,7 @@ def test_eodhd_article_sentiment_is_normalized_and_scored():
 
 
 def test_sentiment_provider_factory_selects_eodhd():
-    providers = _providers("eodhd")
+    providers = sentiment_providers_from_name("eodhd")
 
     assert len(providers) == 1
     assert isinstance(providers[0], EodhdNewsProvider)

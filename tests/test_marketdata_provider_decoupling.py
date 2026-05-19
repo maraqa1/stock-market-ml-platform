@@ -146,3 +146,24 @@ def test_portal_has_no_vendor_provider_imports():
                 offenders.append(f"{path}:{token}")
 
     assert offenders == []
+
+
+def test_non_provider_code_does_not_import_vendor_sdks():
+    allowed_parts = {
+        ("src", "stockml", "marketdata", "providers"),
+        ("src", "stockml", "sentiment"),
+        ("tests",),
+    }
+    vendor_tokens = ["import yfinance", "import requests", "https://eodhd.com"]
+    offenders = []
+    for root in [Path("src"), Path("portal"), Path("scripts")]:
+        for path in root.rglob("*.py"):
+            parts = path.parts
+            if any(parts[:len(allowed)] == allowed for allowed in allowed_parts):
+                continue
+            text = path.read_text(encoding="utf-8")
+            for token in vendor_tokens:
+                if token in text:
+                    offenders.append(f"{path}:{token}")
+
+    assert offenders == []

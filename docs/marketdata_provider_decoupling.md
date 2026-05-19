@@ -14,7 +14,14 @@ Downstream code must consume canonical artifacts and schemas:
   `dividend_yield`, `average_volume`, `quote_type`, `currency`, `country`,
   `metadata_status`, `metadata_error`
 
-Provider SDK calls belong only under `src/stockml/marketdata/providers/`.
+Provider SDK/API calls belong only in provider adapters:
+
+- market data: `src/stockml/marketdata/providers/`
+- news sentiment: `src/stockml/sentiment/*_provider.py`
+
+Pipeline, feature, gold, model, trading, and portal code should choose providers
+through factories and consume canonical artifacts. They should not import vendor
+SDKs or call vendor URLs directly.
 
 ## Phase 1
 
@@ -67,6 +74,14 @@ The full NYSE EODHD profile is:
 PYTHONPATH=src python scripts/run_profile_pipeline.py --profile nyse_full
 ```
 
+The NYSE profile uses EODHD for both prices and sentiment:
+
+```yaml
+nyse_full:
+  provider: eodhd
+  sentiment_provider: eodhd
+```
+
 Metadata can be run explicitly with:
 
 ```bash
@@ -83,3 +98,23 @@ Before disabling Yahoo, run a coverage comparison:
 - provider failures by reason
 
 Portal code must remain provider-independent.
+
+## Adding Another Provider
+
+To add a new EOD/fundamentals provider:
+
+1. Implement `MarketDataProvider` in `src/stockml/marketdata/providers/`.
+2. Return exactly the canonical `PRICE_COLUMNS` and `FUNDAMENTAL_COLUMNS`.
+3. Keep vendor symbols internal to the adapter and emit canonical tickers.
+4. Register aliases in `stockml.marketdata.providers.factory.provider_from_name`.
+5. Add provider schema/normalization tests.
+
+To add a new sentiment provider:
+
+1. Implement `NewsProviderBase` in `src/stockml/sentiment/`.
+2. Return article dictionaries with `title`, `summary`, `providerPublishTime`,
+   `link`, and optionally `providerSentiment`.
+3. Register aliases in
+   `stockml.sentiment.provider_factory.sentiment_providers_from_name`.
+4. Reuse `build_sentiment_panel` so output remains `SENTIMENT_COLUMNS`.
+5. Add provider normalization and factory tests.
