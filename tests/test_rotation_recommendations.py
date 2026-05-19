@@ -9,6 +9,7 @@ from portal.app import create_app
 from scripts import run_rotation_recommendations
 from stockml.autopilot.rotate import (
     RotationConfig,
+    apply_auto_rotations,
     confirm_rotation,
     evaluate_rotations,
     expire_old_rotations,
@@ -134,6 +135,38 @@ def test_confirm_rotation_requires_explicit_paper_open_path_and_can_confirm_with
     )
 
     assert result["status"] == "confirmed"
+
+
+def test_auto_rotations_confirm_and_size_with_injected_paths(monkeypatch):
+    db = engine()
+    rotation = evaluate_rotations([promoted(symbol="KNTK", score=0.75)], [position(symbol="BPOP", score=0.20)], now=NOW, kill_switch_gate=allow_gate)[0]
+    rotation_id = record_rotation(rotation, engine=db, now=NOW)
+    monkeypatch.setattr(
+        "stockml.autopilot.rotate.load_rotation_config",
+        lambda: RotationConfig(require_operator_confirm=False, max_rotations_per_day=3),
+    )
+    monkeypatch.setattr(
+        "stockml.autopilot.rotate.latest_strong_candidates",
+        lambda **kwargs: [{"symbol": "KNTK", "promotion_score": 0.75, "nightly_bias": "long", "current_price": 55, "details": {}}],
+    )
+    opened = []
+    closed = []
+
+    result = apply_auto_rotations(
+        [position(symbol="BPOP", score=0.20)],
+        engine=db,
+        now=NOW,
+        close_func=lambda symbol: closed.append(symbol) or {"status": "submitted", "symbol": symbol},
+        open_func=lambda candidates, positions: opened.append((candidates, positions)) or {"autopilot_open_submitted": 1, "autopilot_open_notes": "KNTK:opened:order-1"},
+    )
+
+    assert result["auto_rotations_confirmed"] == 1
+    assert opened[0][0][0]["details"]["rotation_replacement"] is True
+    assert opened[0][1] == []
+    assert closed == ["BPOP"]
+    with db.connect() as conn:
+        verdict = conn.execute(select(rotation_recommendation_log.c.verdict).where(rotation_recommendation_log.c.id == rotation_id)).scalar()
+    assert verdict == "confirmed"
 
 
 def test_action_queue_surfaces_rotation_recommendations(monkeypatch, tmp_path):

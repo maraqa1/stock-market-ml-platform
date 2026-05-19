@@ -407,6 +407,7 @@ def latest_strong_candidates(*, engine: Engine | None = None, limit: int = 20) -
                 intraday_promotion_log.c.promotion_score,
                 intraday_candidate_snapshots.c.nightly_bias,
                 intraday_candidate_snapshots.c.is_held,
+                intraday_candidate_snapshots.c.last_price.label("current_price"),
                 intraday_candidate_snapshots.c.details,
             )
             .select_from(joined)
@@ -848,7 +849,8 @@ def apply_auto_open(
 
     if mode != "paper_autopilot":
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "mode_not_paper_autopilot"}
-    if not cfg.open_enabled:
+    rotation_candidates = any(bool((candidate.get("details") or {}).get("rotation_replacement")) for candidate in candidates)
+    if not cfg.open_enabled and not (rotation_candidates and cfg.rotate_enabled):
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "auto_open_disabled"}
     if trade_cfg.live_trading_enabled:
         raise RuntimeError("live trading is disabled for paper autopilot auto-open")
@@ -860,7 +862,7 @@ def apply_auto_open(
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "kill_switch_active"}
 
     basket = evaluate_basket_risk(open_positions)
-    if basket.new_entries_paused:
+    if basket.new_entries_paused and not rotation_candidates:
         return {
             "autopilot_open_attempted": 0,
             "autopilot_open_submitted": 0,
@@ -885,7 +887,7 @@ def apply_auto_open(
 
     remaining_slots = max(0, cfg.max_positions - len(held))
     daily_remaining = max(0, cfg.max_auto_opens_per_day - _todays_open_count(db, stamp))
-    slots = min(remaining_slots, daily_remaining)
+    slots = len(candidates) if rotation_candidates else min(remaining_slots, daily_remaining)
     if slots <= 0:
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "auto_open_cap_or_basket_full"}
 
@@ -897,6 +899,7 @@ def apply_auto_open(
         if not symbol or symbol in held or bool(candidate.get("is_held")):
             continue
         details = dict(candidate.get("details") or {})
+        is_rotation_replacement = bool(details.get("rotation_replacement"))
         if candidate.get("current_trade_action") and not details.get("current_trade_action"):
             details["current_trade_action"] = candidate.get("current_trade_action")
         if candidate.get("side") and not details.get("side"):
@@ -1019,6 +1022,9 @@ def apply_auto_open(
         }
         current_price = _candidate_price(candidate, details)
         qty = _whole_share_qty(order_size, current_price)
+        if is_rotation_replacement and qty < 1 and current_price > 0:
+            order_size = round(min(float(trade_cfg.max_notional_per_order), max(order_size, current_price)), 2)
+            qty = _whole_share_qty(order_size, current_price)
         asset_details = {**asset_details, "current_price_for_qty": current_price, "computed_qty": qty}
         if qty < 1:
             blocked += 1

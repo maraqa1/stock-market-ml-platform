@@ -15,7 +15,9 @@ from stockml.common.paths import PROJECT_ROOT
 from stockml.db.connection import get_engine
 from stockml.db.schema import rotation_recommendation_log
 from stockml.intraday import kill_switch
+from stockml.autopilot.open import apply_auto_open, latest_strong_candidates, load_auto_open_config
 from stockml.services.events import position_id_for_symbol, record_event_safely
+from stockml.trading.manual_position_actions import apply_manual_position_action
 
 
 MONITOR_CONFIG_PATH = PROJECT_ROOT / "config" / "monitor.yaml"
@@ -404,3 +406,136 @@ def confirm_rotation(
         {"replace_symbol": row["replace_symbol"], "with_symbol": row["with_symbol"], "rotation_id": rotation_id},
     )
     return {"status": "confirmed", "message": "rotation_confirmed", "close_result": close_result, "open_result": open_result}
+
+
+def _proposed_rotation_rows(engine: Engine, limit: int) -> list[dict[str, Any]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(rotation_recommendation_log)
+            .where(rotation_recommendation_log.c.verdict == "proposed")
+            .order_by(rotation_recommendation_log.c.score_delta.desc(), rotation_recommendation_log.c.logged_at.asc())
+            .limit(limit)
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _rotation_candidate(row: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    with_symbol = _text(row.get("with_symbol")).upper()
+    for candidate in candidates:
+        if _text(candidate.get("symbol")).upper() != with_symbol:
+            continue
+        payload = dict(candidate)
+        bias = _bias(payload.get("nightly_bias") or payload.get("bias") or "long")
+        side = "sell" if bias == "short" else "buy"
+        action = "Short" if bias == "short" else "Long"
+        details = dict(payload.get("details") or {})
+        details.update(
+            {
+                "rotation_replacement": True,
+                "replace_symbol": _text(row.get("replace_symbol")).upper(),
+                "rotation_id": row.get("id"),
+                "latest_signal_status": "fresh",
+                "latest_signal_direction": bias,
+                "model_status": "decision_grade",
+                "current_trade_action": action,
+                "side": side,
+            }
+        )
+        payload.update({"details": details, "side": side, "current_trade_action": action})
+        return payload
+    return None
+
+
+def apply_auto_rotations(
+    open_positions: list[dict[str, Any]],
+    *,
+    engine: Engine | None = None,
+    now: datetime | None = None,
+    close_func: Callable[[str], dict[str, Any]] | None = None,
+    open_func: Callable[[list[dict[str, Any]], list[dict[str, Any]]], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    db = engine or get_engine(required=True)
+    stamp = _aware(now)
+    cfg = load_rotation_config()
+    if not cfg.enabled or cfg.require_operator_confirm:
+        return {"auto_rotations_attempted": 0, "auto_rotations_confirmed": 0, "auto_rotation_notes": "operator_confirmation_required" if cfg.require_operator_confirm else "rotation_disabled"}
+
+    proposed = _proposed_rotation_rows(db, cfg.max_rotations_per_day)
+    if not proposed:
+        return {"auto_rotations_attempted": 0, "auto_rotations_confirmed": 0, "auto_rotation_notes": ""}
+
+    candidates = latest_strong_candidates(engine=db, limit=100)
+    close_position = close_func or (lambda symbol: apply_manual_position_action(symbol, "close"))
+    open_replacement = open_func or (
+        lambda rows, positions: apply_auto_open(
+            rows,
+            positions,
+            mode="paper_autopilot",
+            engine=db,
+            config=load_auto_open_config(),
+            now=stamp,
+        )
+    )
+    attempted = 0
+    confirmed = 0
+    notes: list[str] = []
+    consumed_replacements: set[str] = set()
+    consumed_replaces: set[str] = set()
+    for row in proposed:
+        replace_symbol = _text(row.get("replace_symbol")).upper()
+        with_symbol = _text(row.get("with_symbol")).upper()
+        if not replace_symbol or not with_symbol or replace_symbol in consumed_replaces or with_symbol in consumed_replacements:
+            continue
+        candidate = _rotation_candidate(row, candidates)
+        attempted += 1
+        if candidate is None:
+            with db.begin() as conn:
+                conn.execute(
+                    update(rotation_recommendation_log)
+                    .where(rotation_recommendation_log.c.id == row["id"])
+                    .values(verdict="blocked", operator_id="paper_autopilot", operator_at=stamp, details={**(row.get("details") or {}), "block_reason": "replacement_candidate_not_found"})
+                )
+            notes.append(f"{replace_symbol}->{with_symbol}:blocked:replacement_candidate_not_found")
+            continue
+        positions_after_replace = [pos for pos in open_positions if _text(pos.get("symbol")).upper() != replace_symbol]
+        open_result = open_replacement([candidate], positions_after_replace)
+        if int(open_result.get("autopilot_open_submitted") or 0) <= 0:
+            with db.begin() as conn:
+                conn.execute(
+                    update(rotation_recommendation_log)
+                    .where(rotation_recommendation_log.c.id == row["id"])
+                    .values(verdict="blocked", operator_id="paper_autopilot", operator_at=stamp, details={**(row.get("details") or {}), "open_result": open_result})
+                )
+            notes.append(f"{replace_symbol}->{with_symbol}:blocked:{open_result.get('autopilot_open_notes') or 'open_not_submitted'}")
+            continue
+        close_result = close_position(replace_symbol)
+        if str(close_result.get("status") or "").lower() not in {"submitted", "dry_run", "recorded"}:
+            with db.begin() as conn:
+                conn.execute(
+                    update(rotation_recommendation_log)
+                    .where(rotation_recommendation_log.c.id == row["id"])
+                    .values(verdict="blocked", operator_id="paper_autopilot", operator_at=stamp, details={**(row.get("details") or {}), "open_result": open_result, "close_result": close_result})
+                )
+            notes.append(f"{replace_symbol}->{with_symbol}:open_submitted_close_failed")
+            continue
+        with db.begin() as conn:
+            conn.execute(
+                update(rotation_recommendation_log)
+                .where(rotation_recommendation_log.c.id == row["id"])
+                .values(verdict="confirmed", operator_id="paper_autopilot", operator_at=stamp, details={**(row.get("details") or {}), "open_result": open_result, "close_result": close_result})
+            )
+        consumed_replacements.add(with_symbol)
+        consumed_replaces.add(replace_symbol)
+        confirmed += 1
+        notes.append(f"{replace_symbol}->{with_symbol}:confirmed")
+        record_event_safely(
+            str(row.get("replace_position_id") or position_id_for_symbol(replace_symbol)),
+            "monitor_rotate",
+            "paper_autopilot_rotation",
+            {"replace_symbol": replace_symbol, "with_symbol": with_symbol, "rotation_id": row.get("id")},
+        )
+    return {
+        "auto_rotations_attempted": attempted,
+        "auto_rotations_confirmed": confirmed,
+        "auto_rotation_notes": "; ".join(notes[:10]),
+    }

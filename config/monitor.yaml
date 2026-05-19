@@ -5,4 +5,4 @@ rotation:
   promotion_min_score_delta: 0.10
   min_hold_minutes: 60
   max_rotations_per_day: 3
-  require_operator_confirm: true
+  require_operator_confirm: false

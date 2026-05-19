@@ -1031,6 +1031,35 @@ def test_auto_open_blocks_whole_share_when_size_below_one_share():
     assert "PRICEY:blocked:whole_share_size_below_one" in result["autopilot_open_notes"]
 
 
+def test_rotation_replacement_sizes_to_at_least_one_whole_share():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": False, "shortable": True})
+    candidate = _candidate("UNP", 0.65)
+    candidate["current_price"] = 250
+    candidate["details"] = {
+        "rotation_replacement": True,
+        "latest_signal_status": "fresh",
+        "latest_signal_direction": "long",
+        "model_status": "decision_grade",
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [{"symbol": f"HELD{i}"} for i in range(10)],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=False, rotate_enabled=True, max_positions=5),
+        alpaca_cfg=_trade_config(max_notional_per_order=1000),
+        client=client,
+        now=datetime(2026, 5, 15, 14, 41, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["qty"] == "1"
+
+
 def test_auto_open_blocks_short_when_shorting_disabled():
     engine = _engine()
     client = FakeClient()

@@ -19,6 +19,7 @@ from stockml.autopilot.open import (
     load_auto_open_config,
     ranked_fallback_candidates,
 )
+from stockml.autopilot.rotate import apply_auto_rotations
 from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
 from stockml.db.connection import get_engine
@@ -664,6 +665,7 @@ def tick(
     fallback_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_flat_account_fallback_candidates,
     near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
     per_symbol_forecast_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
+    auto_rotation_applier: Callable[[list[dict[str, Any]]], dict[str, Any]] | None = None,
     allow_auto_open: bool = True,
 ) -> dict[str, Any]:
     """Advance Paper Autopilot by one safe tracking step.
@@ -748,6 +750,11 @@ def tick(
             "new_entries_paused": False,
             "basket_risk_reason": "",
         }
+        auto_rotation_result = {
+            "auto_rotations_attempted": 0,
+            "auto_rotations_confirmed": 0,
+            "auto_rotation_notes": "",
+        }
         basket = evaluate_basket_risk(
             positions.fillna("").to_dict("records") if not positions.empty else [],
             config=load_basket_risk_config(root),
@@ -763,6 +770,21 @@ def tick(
             }
         )
         eod_state = str(eod_result.get("eod_state") or "inactive")
+        if (
+            allow_auto_open
+            and state.get("mode") == "paper_autopilot"
+            and open_orders == 0
+            and open_positions > 0
+            and eod_state == "inactive"
+        ):
+            positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
+            if auto_rotation_applier is not None:
+                auto_rotation_result = auto_rotation_applier(positions_records)
+            else:
+                auto_rotation_result = apply_auto_rotations(positions_records)
+            if int(auto_rotation_result.get("auto_rotations_confirmed") or 0) > 0:
+                open_orders = max(open_orders, int(auto_rotation_result.get("auto_rotations_confirmed") or 0))
+                broker_open_orders = max(broker_open_orders, int(auto_rotation_result.get("auto_rotations_confirmed") or 0))
         if not allow_auto_open:
             auto_open_result["autopilot_open_notes"] = "auto_open_skipped_market_closed"
         elif basket.new_entries_paused:
@@ -840,6 +862,7 @@ def tick(
                 **intraday_summary,
                 **monitor_summary,
                 **autopilot_result,
+                **auto_rotation_result,
                 **auto_open_result,
                 **eod_result,
                 "live_trading_enabled": False,
