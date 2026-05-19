@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, insert, select
 
-from stockml.db.schema import create_all, intraday_candidate_snapshots, pipeline_runs, shortlist_snapshots
+from stockml.db.schema import create_all, intraday_candidate_snapshots, intraday_promotion_log, pipeline_runs, shortlist_snapshots
 from stockml.intraday.features import Bar, Quote
 from stockml.intraday.provider import MarketCalendar
 from stockml.intraday.refresh import build_snapshot, candidate_refresh_tick, prune_old_snapshots, write_snapshot
@@ -227,6 +227,35 @@ def test_prune_old_snapshots_removes_rows_older_than_retention_window():
 
     assert prune_old_snapshots(engine=db, now=NOW, retention_days=7) == 1
     with db.connect() as conn:
+        rows = conn.execute(select(intraday_candidate_snapshots.c.symbol)).all()
+    assert rows == [("NVDA",)]
+
+
+def test_prune_old_snapshots_removes_dependent_promotion_rows():
+    db = engine()
+    provider = FakeProvider()
+    row = {"symbol": "TSLA", "bias": "long", "score": 0.8, "is_held": False}
+    old_snapshot = build_snapshot(row, provider.fetch_quote("TSLA"), provider.fetch_bars("TSLA"), now=NOW - timedelta(days=8))
+    new_snapshot = build_snapshot({**row, "symbol": "NVDA"}, provider.fetch_quote("NVDA"), provider.fetch_bars("NVDA"), now=NOW)
+    assert write_snapshot(old_snapshot, engine=db)
+    assert write_snapshot(new_snapshot, engine=db)
+    with db.begin() as conn:
+        old_id = conn.execute(select(intraday_candidate_snapshots.c.id).where(intraday_candidate_snapshots.c.symbol == "TSLA")).scalar_one()
+        conn.execute(
+            insert(intraday_promotion_log).values(
+                snapshot_id=old_id,
+                symbol="TSLA",
+                verdict="watch",
+                nightly_score=0.8,
+                intraday_adjustment=0.1,
+                promotion_score=0.9,
+                contributing=[],
+            )
+        )
+
+    assert prune_old_snapshots(engine=db, now=NOW, retention_days=7) == 1
+    with db.connect() as conn:
+        assert conn.execute(select(intraday_promotion_log)).all() == []
         rows = conn.execute(select(intraday_candidate_snapshots.c.symbol)).all()
     assert rows == [("NVDA",)]
 

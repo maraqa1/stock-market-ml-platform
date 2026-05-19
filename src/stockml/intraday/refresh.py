@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
 from stockml.db.connection import get_engine
-from stockml.db.schema import ensure_intraday_candidate_snapshot_float_columns, intraday_candidate_snapshots
+from stockml.db.schema import ensure_intraday_candidate_snapshot_float_columns, intraday_candidate_snapshots, intraday_promotion_log
 from stockml.intraday import kill_switch
 from stockml.intraday.config import load_intraday_config
 from stockml.intraday.features import Bar, Quote
@@ -199,7 +199,9 @@ def write_snapshot(snapshot: CandidateSnapshot, *, engine: Engine | None = None)
 def prune_old_snapshots(*, engine: Engine | None = None, now: datetime | None = None, retention_days: int = 7) -> int:
     db = engine or get_engine(required=True)
     cutoff = _aware(now) - timedelta(days=retention_days)
+    old_snapshot_ids = select(intraday_candidate_snapshots.c.id).where(intraday_candidate_snapshots.c.snapshot_at < cutoff)
     with db.begin() as conn:
+        conn.execute(delete(intraday_promotion_log).where(intraday_promotion_log.c.snapshot_id.in_(old_snapshot_ids)))
         result = conn.execute(delete(intraday_candidate_snapshots).where(intraday_candidate_snapshots.c.snapshot_at < cutoff))
     return int(result.rowcount or 0)
 
