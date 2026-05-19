@@ -54,6 +54,19 @@ Price download can be run explicitly with:
 PYTHONPATH=src python -m stockml.prices.download_price_history --provider eodhd --limit 20 --force-full
 ```
 
+The price store is bootstrapped once per provider, then updated by delta runs.
+The downloader uses the `source` column to decide whether that provider already
+has history in the canonical store. For example, a Yahoo-populated store does
+not count as an EODHD bootstrap; the first EODHD production run downloads the
+complete requested universe from `start_date`, and later EODHD runs request only
+the missing window with a small overlap for corrections.
+
+The full NYSE EODHD profile is:
+
+```bash
+PYTHONPATH=src python scripts/run_profile_pipeline.py --profile nyse_full
+```
+
 Metadata can be run explicitly with:
 
 ```bash

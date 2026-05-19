@@ -75,8 +75,12 @@ def determine_download_plan(
     store: pd.DataFrame,
     start_date: str,
     force_full: bool = False,
+    provider_name: str | None = None,
 ) -> Tuple[Dict[str, str], bool]:
     tickers = sorted({str(t).upper().strip() for t in tickers if str(t).strip()})
+    if provider_name and not store.empty and "source" in store.columns:
+        clean_provider = str(provider_name).strip()
+        store = store[store["source"].astype(str).str.strip().eq(clean_provider)].copy()
     full_mode = force_full or store.empty
 
     if full_mode:
@@ -149,7 +153,14 @@ def download_price_history(
     tickers = universe["yahoo_ticker"].dropna().astype(str).str.upper().unique().tolist()
 
     store = load_price_store()
-    plan, full_mode = determine_download_plan(tickers, store, start_date=start_date, force_full=force_full)
+    provider = provider_from_name(provider_name)
+    plan, full_mode = determine_download_plan(
+        tickers,
+        store,
+        start_date=start_date,
+        force_full=force_full,
+        provider_name=provider.provider_name,
+    )
 
     mode = "full" if full_mode else "delta"
     log(f"Download mode: {mode}")
@@ -164,7 +175,7 @@ def download_price_history(
         grouped.setdefault(start, []).append(ticker)
 
     for start, group_tickers in sorted(grouped.items()):
-        prices, failed = download_group(group_tickers, start=start, batch_size=batch_size, sleep_seconds=sleep_seconds, provider_name=provider_name)
+        prices, failed = download_group(group_tickers, start=start, batch_size=batch_size, sleep_seconds=sleep_seconds, provider_name=provider.provider_name)
         if not prices.empty:
             all_new.append(prices)
         if not failed.empty:

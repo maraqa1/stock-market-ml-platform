@@ -35,6 +35,37 @@ def test_delta_run_downloads_existing_from_latest_with_overlap_and_new_ticker_fu
     assert plan["MSFT"] <= "2024-01-06"
 
 
+def test_provider_scoped_plan_requires_one_full_transfer_per_provider():
+    store = pd.DataFrame(
+        {
+            "ticker": ["AAPL", "MSFT"],
+            "date": pd.to_datetime(["2026-05-18", "2026-05-18"]),
+            "source": ["yahoo_legacy", "yahoo_legacy"],
+        }
+    )
+
+    plan, full = determine_download_plan(["AAPL", "MSFT"], store, "2018-01-01", provider_name="eodhd")
+
+    assert full is True
+    assert plan == {"AAPL": "2018-01-01", "MSFT": "2018-01-01"}
+
+
+def test_provider_scoped_plan_uses_delta_after_provider_bootstrap():
+    store = pd.DataFrame(
+        {
+            "ticker": ["AAPL", "MSFT", "AAPL"],
+            "date": pd.to_datetime(["2026-05-18", "2026-05-18", "2024-01-02"]),
+            "source": ["eodhd", "eodhd", "yahoo_legacy"],
+        }
+    )
+
+    plan, full = determine_download_plan(["AAPL", "MSFT"], store, "2018-01-01", provider_name="eodhd")
+
+    assert full is False
+    assert plan["AAPL"] >= "2026-05-14"
+    assert plan["MSFT"] >= "2026-05-14"
+
+
 def test_force_full_ignores_existing_store():
     store = pd.DataFrame(
         {
