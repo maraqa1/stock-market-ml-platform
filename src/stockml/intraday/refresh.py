@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
 from stockml.db.connection import get_engine
-from stockml.db.schema import intraday_candidate_snapshots
+from stockml.db.schema import ensure_intraday_candidate_snapshot_float_columns, intraday_candidate_snapshots
 from stockml.intraday import kill_switch
 from stockml.intraday.config import load_intraday_config
 from stockml.intraday.features import Bar, Quote
@@ -178,6 +178,7 @@ def build_snapshot(
 
 def write_snapshot(snapshot: CandidateSnapshot, *, engine: Engine | None = None) -> bool:
     db = engine or get_engine(required=True)
+    ensure_intraday_candidate_snapshot_float_columns(db)
     row = asdict(snapshot)
     with db.begin() as conn:
         exists = conn.execute(

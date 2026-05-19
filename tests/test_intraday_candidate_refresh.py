@@ -204,6 +204,18 @@ def test_write_snapshot_rejects_duplicate_symbol_bar_close():
     assert write_snapshot(snapshot, engine=db) is False
 
 
+def test_write_snapshot_checks_numeric_column_compatibility(monkeypatch):
+    calls = []
+    monkeypatch.setattr("stockml.intraday.refresh.ensure_intraday_candidate_snapshot_float_columns", lambda db: calls.append(db))
+    db = engine()
+    provider = FakeProvider()
+    row = {"symbol": "AG", "bias": "long", "score": 40.924, "is_held": False}
+    snapshot = build_snapshot(row, provider.fetch_quote("TSLA"), provider.fetch_bars("TSLA"), now=NOW)
+
+    assert write_snapshot(snapshot, engine=db) is True
+    assert calls == [db]
+
+
 def test_prune_old_snapshots_removes_rows_older_than_retention_window():
     db = engine()
     provider = FakeProvider()

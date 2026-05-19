@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 
@@ -516,3 +517,46 @@ daily_report_runs = Table(
 
 def create_all(engine) -> None:
     metadata.create_all(engine)
+    ensure_intraday_candidate_snapshot_float_columns(engine)
+
+
+INTRADAY_CANDIDATE_SNAPSHOT_FLOAT_COLUMNS = (
+    "nightly_score",
+    "bid",
+    "ask",
+    "last_price",
+    "spread_bps",
+    "dollar_volume_today",
+    "liquidity_ratio",
+    "trend_5m_pct",
+    "trend_15m_pct",
+    "trend_30m_pct",
+    "vwap_today",
+    "distance_from_vwap_bps",
+    "intraday_range_position",
+    "sector_etf_trend_5m_pct",
+)
+
+
+def ensure_intraday_candidate_snapshot_float_columns(engine) -> None:
+    if getattr(engine.dialect, "name", "") != "postgresql":
+        return
+    statements = "\n".join(
+        f"""
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'intraday_candidate_snapshots'
+              AND column_name = '{column}'
+              AND data_type = 'numeric'
+        ) THEN
+            ALTER TABLE intraday_candidate_snapshots
+            ALTER COLUMN {column} TYPE double precision
+            USING {column}::double precision;
+        END IF;
+        """
+        for column in INTRADAY_CANDIDATE_SNAPSHOT_FLOAT_COLUMNS
+    )
+    with engine.begin() as conn:
+        conn.execute(text(f"DO $$ BEGIN {statements} END $$;"))
