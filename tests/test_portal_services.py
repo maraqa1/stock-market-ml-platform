@@ -248,6 +248,54 @@ def test_positions_context_adds_position_management_intelligence(tmp_path):
     assert row["position_intelligence"]["signal_state"] == "unknown"
 
 
+def test_positions_context_uses_latest_model_signal_for_management_health(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "MGT", "qty": 10, "market_value": 150.35, "cost_basis": 150, "unrealized_pl": 0.35, "unrealized_plpc": 0.00231}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [{"symbol": "MGT", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": 0.00231}],
+    )
+    write_csv(
+        tmp_path / "data" / "model_outputs" / "model_predictions_latest.csv",
+        [{"ticker": "MGT", "trade_action": "Long", "risk_adjusted_score": 1.23}],
+    )
+
+    ctx = positions_context(tmp_path)
+    row = ctx["positions"][0]
+
+    assert row["latest_signal_status"] == "fresh"
+    assert row["latest_signal_direction"] == "long"
+    assert row["model_status"] == "decision_grade"
+    assert row["position_health_status"] == "healthy_hold"
+    assert row["position_health_reason"] == "green_position_no_risk_issue"
+
+
+def test_action_queue_uses_latest_model_signal_for_held_positions(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "MGT", "qty": 10, "market_value": 150.35}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [{"symbol": "MGT", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": 0.00231}],
+    )
+    write_csv(
+        tmp_path / "data" / "model_outputs" / "model_predictions_latest.csv",
+        [{"ticker": "MGT", "trade_action": "Long", "risk_adjusted_score": 1.23}],
+    )
+
+    ctx = action_queue_context(tmp_path)
+    row = ctx["items"][0]
+
+    assert row["latest_signal_status"] == "fresh"
+    assert row["latest_signal_direction"] == "long"
+    assert row["model_status"] == "decision_grade"
+    assert row["decision_reason"] == "latest_signal_fresh"
+    assert row["position_health_reason"] == "green_position_no_risk_issue"
+
+
 def test_action_queue_includes_candidate_evaluation_opportunities(tmp_path):
     write_csv(
         tmp_path / "data" / "trading" / "candidate_evaluations" / "candidate_evaluation_1.csv",

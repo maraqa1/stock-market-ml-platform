@@ -88,6 +88,79 @@ def _csv_timestamp(path: Path | None) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(timespec="seconds")
 
 
+def _latest_model_signal_file(root: Path) -> Path | None:
+    latest_pointer = latest_file(root, "model_outputs", "model_predictions_latest.csv")
+    if latest_pointer is not None and latest_pointer.exists():
+        return latest_pointer
+    return latest_file(root, "model_outputs", "advanced_model_signal_table_*.csv")
+
+
+def _signal_symbol(row: dict[str, Any]) -> str:
+    return str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+
+
+def _signal_direction(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("_", " ")
+    if text in {"long", "buy", "bullish"}:
+        return "long"
+    if text in {"short", "sell", "bearish"}:
+        return "short"
+    return ""
+
+
+def _latest_model_signal_map(root: Path) -> dict[str, dict[str, Any]]:
+    signals = safe_read_csv(_latest_model_signal_file(root), nrows=20000)
+    if signals.empty:
+        return {}
+    records: dict[str, dict[str, Any]] = {}
+    for row in _records(signals, limit=20000):
+        symbol = _signal_symbol(row)
+        if not symbol:
+            continue
+        action = row.get("trade_action") or row.get("latest_signal") or row.get("signal") or row.get("side")
+        direction = _signal_direction(action)
+        model_status = str(row.get("model_status") or row.get("decision_grade") or "").strip()
+        if not model_status:
+            model_status = "decision_grade" if direction else "no_decision"
+        records[symbol] = {
+            "latest_signal_status": "fresh",
+            "latest_signal": str(action or "").strip(),
+            "latest_signal_direction": direction,
+            "model_status": model_status,
+            "model_score": row.get("model_score") or row.get("risk_adjusted_score") or row.get("side_probability") or "",
+        }
+    return records
+
+
+def _fresh_signal_reason(reason: Any) -> str:
+    parts = [part.strip() for part in re.split(r"[|;]", str(reason or "")) if part.strip()]
+    parts = [part for part in parts if part not in {"latest_signal_unknown", "signal_stale"}]
+    if "latest_signal_fresh" not in parts:
+        parts.append("latest_signal_fresh")
+    return "|".join(parts)
+
+
+def _attach_latest_model_signals_to_records(records: list[dict[str, Any]], root: Path) -> list[dict[str, Any]]:
+    signals = _latest_model_signal_map(root)
+    if not records or not signals:
+        return records
+    enriched: list[dict[str, Any]] = []
+    for row in records:
+        item = dict(row)
+        signal = signals.get(_signal_symbol(item))
+        if signal:
+            item.update(signal)
+            item["decision_reason"] = _fresh_signal_reason(item.get("decision_reason"))
+        enriched.append(item)
+    return enriched
+
+
+def _attach_latest_model_signals(frame: pd.DataFrame, root: Path) -> pd.DataFrame:
+    if frame.empty or "symbol" not in frame.columns:
+        return frame
+    return pd.DataFrame(_attach_latest_model_signals_to_records(_records(frame, limit=len(frame)), root))
+
+
 def _rows_from_db(statement, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     engine = _engine()
     if engine is None:
@@ -340,7 +413,9 @@ def positions_context(root: Path) -> dict[str, Any]:
     decisions = safe_read_csv(decisions_file, nrows=1000)
     rows = _records(positions)
     autopilot_state = load_autopilot_state(root)
+    decisions = _attach_latest_model_signals(decisions, root)
     rows = enrich_positions(rows, decisions=_records(decisions), autopilot_state=autopilot_state)
+    rows = _attach_latest_model_signals_to_records(rows, root)
     auto_open_config = load_auto_open_config(root=root)
     health_rules = PositionHealthRules(
         max_position_loss_pct=float(auto_open_config.max_position_loss_pct),
@@ -663,6 +738,7 @@ def action_queue_context(root: Path) -> dict[str, Any]:
             actionable["unrealized_plpc"] = 0
         actionable = actionable.sort_values(["__order", "unrealized_plpc"], ascending=[True, True], na_position="last")
         actionable = actionable.drop(columns="__order")
+        actionable = _attach_latest_model_signals(actionable, root)
         items = _records(actionable)
         held_symbols = position_symbols if position_symbols is not None else {str(symbol).upper() for symbol in decisions.get("symbol", pd.Series(dtype=str)).dropna()}
         auto_config = load_auto_open_config(root=root)
