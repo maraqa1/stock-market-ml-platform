@@ -419,18 +419,36 @@ def _liquidity_strength(frame: pd.DataFrame) -> pd.Series:
     return pd.Series(0.5, index=frame.index)
 
 
-def train_predict_from_gold(gold: pd.DataFrame, top_n: int = 50, config: RankingConfig | None = None) -> ModelArtifacts:
+def train_predict_from_gold(
+    gold: pd.DataFrame,
+    top_n: int = 50,
+    config: RankingConfig | None = None,
+    live_signal_mode: bool = False,
+    baseline_only: bool = False,
+) -> ModelArtifacts:
     cfg = config or config_from_env()
     prepared = construct_ranking_targets(gold)
     trainable = prepared.dropna(subset=["target_return_5d", "target_rank_pct_5d"]).copy()
     features, audit, rejected = feature_audit(trainable)
     if not features:
         raise ValueError("No usable non-leaking numeric features found for ranking model.")
-    fold_metrics, wf_predictions, leaderboard, warnings = walk_forward_validate(trainable, features, cfg)
-    gates_passed, gate_reason = _decision_gates(leaderboard, cfg)
+    if live_signal_mode:
+        fold_metrics = pd.DataFrame()
+        wf_predictions = pd.DataFrame()
+        leaderboard = pd.DataFrame()
+        warnings = ["walk_forward_validation_skipped_live_signal_mode"]
+        gates_passed, gate_reason = True, "live_signal_mode_validation_skipped"
+    else:
+        fold_metrics, wf_predictions, leaderboard, warnings = walk_forward_validate(trainable, features, cfg)
+        gates_passed, gate_reason = _decision_gates(leaderboard, cfg)
     latest_date = prepared["date"].max()
     latest = prepared[prepared["date"].eq(latest_date)].copy()
-    scores, top_prob, selected_model = _train_final_scores(trainable, latest, features, cfg)
+    if baseline_only:
+        scores = _baseline_scores(latest).get("equal_weight_momentum_composite", pd.Series(0, index=latest.index))
+        top_prob = None
+        selected_model = "equal_weight_momentum_composite"
+    else:
+        scores, top_prob, selected_model = _train_final_scores(trainable, latest, features, cfg)
     latest["model_score"] = scores
     latest["rank_overall"] = latest["model_score"].rank(ascending=False, method="first")
     latest["rank_by_sector"] = latest.groupby("sector")["model_score"].rank(ascending=False, method="first") if "sector" in latest.columns else latest["rank_overall"]

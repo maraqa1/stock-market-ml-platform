@@ -118,7 +118,7 @@ def _combine_shard_artifacts(shards: list[ModelArtifacts], *, top_n: int) -> Mod
     )
 
 
-def _add_meta_label_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
+def _add_meta_label_artifacts(artifacts: ModelArtifacts, stamp: str, *, skip_validation: bool = False) -> Dict[str, Path]:
     cfg = load_meta_label_config()
     outputs = {
         "meta_label_predictions": MODEL_OUTPUTS_DIR / f"meta_label_predictions_{stamp}.csv",
@@ -126,6 +126,23 @@ def _add_meta_label_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str
         "meta_label_bucket_performance": MODEL_OUTPUTS_DIR / f"meta_label_bucket_performance_{stamp}.csv",
     }
     history = artifacts.walk_forward_predictions.copy()
+    if skip_validation:
+        artifacts.signal_table["meta_label_probability"] = pd.NA
+        artifacts.signal_table["meta_label_decision"] = "Take Trade"
+        artifacts.signal_table["meta_label_reason"] = "live_signal_mode_meta_label_skipped"
+        artifacts.predictions = artifacts.signal_table.copy()
+        artifacts.top_long = artifacts.signal_table[artifacts.signal_table["trade_action"].eq("Long")].sort_values("rank_overall").head(len(artifacts.top_long) or 50)
+        artifacts.top_short = artifacts.signal_table[artifacts.signal_table["trade_action"].eq("Short")].sort_values("rank_overall", ascending=False).head(len(artifacts.top_short) or 50)
+        pd.DataFrame().to_csv(outputs["meta_label_predictions"], index=False)
+        pd.DataFrame().to_csv(outputs["meta_label_validation"], index=False)
+        pd.DataFrame().to_csv(outputs["meta_label_bucket_performance"], index=False)
+        artifacts.model_config["meta_labeling"] = {
+            "enabled": cfg.enabled,
+            "fitted": False,
+            "reason": "live_signal_mode_meta_label_skipped",
+            "validation_rows": 0,
+        }
+        return outputs
     if not history.empty and "trade_action" not in history.columns and "model_score" in history.columns:
         history["rank_overall"] = history.groupby("date")["model_score"].rank(ascending=False, method="first")
         history["trade_action"] = "No Decision"
@@ -163,6 +180,8 @@ def build_model_outputs(
     limit_tickers: Optional[int] = None,
     top_n: int = 50,
     model_shards: int = 1,
+    live_signal_mode: bool = False,
+    baseline_only: bool = False,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
@@ -172,8 +191,17 @@ def build_model_outputs(
         for shard_index in range(model_shards):
             gold = load_gold_dataset(gold_file, limit_tickers=limit_tickers, shard_count=model_shards, shard_index=shard_index)
             log(f"Loaded Gold dataset for model shard {shard_index + 1}/{model_shards}: {len(gold):,} rows")
-            artifact = train_predict_from_gold(gold, top_n=top_n)
-            shard_meta_paths = _add_meta_label_artifacts(artifact, f"{stamp}_shard{shard_index + 1}")
+            artifact = train_predict_from_gold(
+                gold,
+                top_n=top_n,
+                live_signal_mode=live_signal_mode,
+                baseline_only=baseline_only,
+            )
+            shard_meta_paths = _add_meta_label_artifacts(
+                artifact,
+                f"{stamp}_shard{shard_index + 1}",
+                skip_validation=live_signal_mode,
+            )
             meta_paths.update({f"shard_{shard_index + 1}_{name}": path for name, path in shard_meta_paths.items()})
 
             # The full NYSE walk-forward history is several GB when all shards
@@ -184,11 +212,13 @@ def build_model_outputs(
         artifacts = _combine_shard_artifacts(shard_artifacts, top_n=top_n)
         artifacts.model_config.setdefault("meta_labeling", {})
         artifacts.model_config["meta_labeling"].update({"mode": "per_shard", "global_validation_skipped": True})
+        artifacts.model_config["live_signal_mode"] = live_signal_mode
+        artifacts.model_config["baseline_only"] = baseline_only
     else:
         gold = load_gold_dataset(gold_file, limit_tickers=limit_tickers)
         log(f"Loaded Gold dataset for model: {len(gold):,} rows")
-        artifacts = train_predict_from_gold(gold, top_n=top_n)
-        meta_paths = _add_meta_label_artifacts(artifacts, stamp)
+        artifacts = train_predict_from_gold(gold, top_n=top_n, live_signal_mode=live_signal_mode, baseline_only=baseline_only)
+        meta_paths = _add_meta_label_artifacts(artifacts, stamp, skip_validation=live_signal_mode)
     paths = _write_artifacts(artifacts, stamp)
     paths.update(meta_paths)
     for name, path in paths.items():
@@ -202,8 +232,17 @@ def main() -> int:
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument("--model-shards", type=int, default=1)
+    parser.add_argument("--live-signal-mode", action="store_true", help="Skip expensive walk-forward/meta validation and produce live rankings.")
+    parser.add_argument("--baseline-only", action="store_true", help="Use baseline feature ranking instead of fitting LightGBM.")
     args = parser.parse_args()
-    build_model_outputs(gold_file=args.gold_file, limit_tickers=args.limit_tickers, top_n=args.top_n, model_shards=args.model_shards)
+    build_model_outputs(
+        gold_file=args.gold_file,
+        limit_tickers=args.limit_tickers,
+        top_n=args.top_n,
+        model_shards=args.model_shards,
+        live_signal_mode=args.live_signal_mode,
+        baseline_only=args.baseline_only,
+    )
     return 0
 
 

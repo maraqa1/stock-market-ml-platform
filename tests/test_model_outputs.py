@@ -71,6 +71,15 @@ def test_train_predict_from_gold_writes_ranking_artifacts():
     assert isinstance(artifacts.model_config, dict)
 
 
+def test_train_predict_from_gold_live_signal_mode_skips_walk_forward():
+    artifacts = train_predict_from_gold(synthetic_gold(), top_n=5, live_signal_mode=True, baseline_only=True)
+    assert artifacts.walk_forward_predictions.empty
+    assert artifacts.fold_metrics.empty
+    assert artifacts.model_status.iloc[0]["decision_grade"] == "decision_grade"
+    assert artifacts.model_status.iloc[0]["reason"] == "live_signal_mode_validation_skipped"
+    assert artifacts.model_status.iloc[0]["selected_model"] == "equal_weight_momentum_composite"
+
+
 def test_shard_combine_does_not_require_walk_forward_history():
     base = train_predict_from_gold(synthetic_gold(), top_n=5)
     shards = []
