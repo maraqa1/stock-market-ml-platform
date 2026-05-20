@@ -16,6 +16,7 @@ PRICE_COLUMNS = ["date", "ticker", "open", "high", "low", "close", "adj_close", 
 RISK_FEATURE_COLUMNS = ["date", "ticker", "avg_dollar_volume_20d", "volatility_20d", "market_cap", "sector"]
 SOURCE_MARKET_COLUMNS = ["close", "open", "high", "low", "volume"]
 QUALITY_MARKET_COLUMNS = ["current_price", "open_price", "intraday_high", "intraday_low", "intraday_volume"]
+ROUND_UP_RISK_TIERS = {"high_quality", "medium", "large_liquid", "mid_risk"}
 
 
 def _has_inline_market_context(signals: pd.DataFrame) -> bool:
@@ -185,6 +186,26 @@ def _prepare_market_context(
     return out
 
 
+def _directional_round_up_allowed(row: pd.Series, config: AlpacaConfig, price: float) -> bool:
+    if not bool(getattr(config, "directional_round_up_enabled", True)):
+        return False
+    if price <= 0:
+        return False
+    action = str(row.get("trade_action", "")).strip().lower()
+    directional_action = str(row.get("directional_action", "")).strip().lower()
+    if action not in {"long", "short"} or directional_action != action:
+        return False
+    if str(row.get("risk_tier", "")).strip().lower() not in ROUND_UP_RISK_TIERS:
+        return False
+    if str(row.get("liquidity_tier", "")).strip().lower() not in {"high", "medium"}:
+        return False
+    strength = numeric(row.get("directional_strength"), default=0)
+    if strength < float(getattr(config, "directional_round_up_min_strength", 0.97)):
+        return False
+    max_notional = float(config.account_equity) * float(getattr(config, "directional_round_up_max_equity_pct", 0.05))
+    return price <= max_notional
+
+
 def apply_trade_quality_gate(
     signals: pd.DataFrame,
     config: AlpacaConfig,
@@ -226,17 +247,24 @@ def apply_trade_quality_gate(
         side = "sell" if str(row.get("trade_action", "")).lower() == "short" else "buy"
         hard_reject = bool(reasons) or row["risk_tier"] == "reject"
         notional = approved_notional(base, row["risk_tier"], numeric(row.get("side_probability"), default=0)) if not hard_reject else 0.0
-        quantity = suggested_quantity(notional, numeric(row.get("current_price"), default=0))
+        current_price = numeric(row.get("current_price"), default=0)
+        quantity = suggested_quantity(notional, current_price)
+        sizing_reason = "standard_floor_quantity"
         stop = {"stop_loss_price": pd.NA, "take_profit_price": pd.NA, "max_holding_days": pd.NA}
         try:
-            if numeric(row.get("current_price"), default=0) > 0:
+            if current_price > 0:
                 stop = stop_take_profit_prices(float(row["current_price"]), side, str(row["volatility_tier"]), str(row["risk_tier"]))
         except Exception:
             reasons.extend(["stop_loss_unavailable", "take_profit_unavailable"])
             hard_reject = True
         if notional > 0 and quantity <= 0:
-            reasons.append("quantity_below_one")
-            hard_reject = True
+            if not hard_reject and _directional_round_up_allowed(row, config, current_price):
+                quantity = 1
+                notional = round(current_price, 2)
+                sizing_reason = "directional_one_share_round_up"
+            else:
+                reasons.append("quantity_below_one")
+                hard_reject = True
         status = "rejected"
         if not hard_reject and not reasons:
             status = "approved" if row["risk_tier"] == "high_quality" else "reduced"
@@ -246,6 +274,7 @@ def apply_trade_quality_gate(
                 "risk_tier": row.get("risk_tier", "reject"),
                 "approved_notional": notional if status in {"approved", "reduced"} else 0.0,
                 "suggested_quantity": quantity if status in {"approved", "reduced"} else 0,
+                "position_sizing_reason": sizing_reason if status in {"approved", "reduced"} else "rejected",
                 **stop,
                 "trade_quality_status": status,
                 "trade_quality_reason": status if status in {"approved", "reduced"} else "|".join(dict.fromkeys(reasons or ["risk_tier_reject"])),

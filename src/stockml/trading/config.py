@@ -33,6 +33,9 @@ class AlpacaConfig:
     paper_trading_enabled: bool = True
     candidate_pool_size: int = 50
     directional_candidate_long_fraction: float = 0.70
+    directional_round_up_enabled: bool = True
+    directional_round_up_min_strength: float = 0.97
+    directional_round_up_max_equity_pct: float = 0.05
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -92,4 +95,7 @@ def alpaca_config() -> AlpacaConfig:
         paper_trading_enabled=_bool_env("STOCKML_PAPER_TRADING_ENABLED", default=True),
         candidate_pool_size=_int_env("STOCKML_CANDIDATE_POOL_SIZE", 50, minimum=1),
         directional_candidate_long_fraction=_float_env("STOCKML_DIRECTIONAL_CANDIDATE_LONG_FRACTION", 0.70, minimum=0.0, maximum=1.0),
+        directional_round_up_enabled=_bool_env("STOCKML_DIRECTIONAL_ROUND_UP_ENABLED", default=True),
+        directional_round_up_min_strength=_float_env("STOCKML_DIRECTIONAL_ROUND_UP_MIN_STRENGTH", 0.97, minimum=0.0, maximum=1.0),
+        directional_round_up_max_equity_pct=_float_env("STOCKML_DIRECTIONAL_ROUND_UP_MAX_EQUITY_PCT", 0.05, minimum=0.0, maximum=1.0),
     )

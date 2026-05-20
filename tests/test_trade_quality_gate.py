@@ -90,6 +90,60 @@ def test_speculative_stock_gets_reduced_notional():
     assert 0 < row["approved_notional"] < 1000
 
 
+def test_strong_directional_candidate_rounds_up_to_one_share_when_safe():
+    row = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(
+                    ticker="MU",
+                    close=700,
+                    open=695,
+                    high=705,
+                    low=690,
+                    trade_action="Long",
+                    directional_action="Long",
+                    directional_strength=0.98,
+                    market_cap=500_000_000_000,
+                    avg_dollar_volume_20d=200_000_000,
+                    volume=2_000_000,
+                )
+            ]
+        ),
+        config(account_equity=20_000, max_position_pct=0.01, max_total_notional=1_000, max_orders=10),
+    ).iloc[0]
+
+    assert row["trade_quality_status"] == "approved"
+    assert row["suggested_quantity"] == 1
+    assert row["approved_notional"] == 700
+    assert row["position_sizing_reason"] == "directional_one_share_round_up"
+
+
+def test_directional_round_up_does_not_apply_to_speculative_candidates():
+    row = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(
+                    ticker="SPEC",
+                    close=700,
+                    open=695,
+                    high=705,
+                    low=690,
+                    trade_action="Long",
+                    directional_action="Long",
+                    directional_strength=0.99,
+                    market_cap=600_000_000,
+                    avg_dollar_volume_20d=6_000_000,
+                    volume=120_000,
+                )
+            ]
+        ),
+        config(account_equity=20_000, max_position_pct=0.01, max_total_notional=1_000, max_orders=10),
+    ).iloc[0]
+
+    assert row["trade_quality_status"] == "rejected"
+    assert "quantity_below_one" in row["trade_quality_reason"]
+
+
 def test_missing_price_rejects():
     row = apply_trade_quality_gate(pd.DataFrame([signal(close=pd.NA)]), config(), price_snapshot=pd.DataFrame()).iloc[0]
     assert row["trade_quality_status"] == "rejected"

@@ -139,6 +139,7 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
         "risk_tier": row.get("risk_tier", ""),
         "approved_notional": notional,
         "suggested_quantity": int(row.get("suggested_quantity", 0) or 0),
+        "position_sizing_reason": row.get("position_sizing_reason", ""),
         "stop_loss_price": row.get("stop_loss_price", ""),
         "take_profit_price": row.get("take_profit_price", ""),
         "max_holding_days": row.get("max_holding_days", ""),
