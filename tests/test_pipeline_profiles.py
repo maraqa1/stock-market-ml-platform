@@ -21,7 +21,7 @@ def test_load_pipeline_profiles():
     assert "us_full" in profiles
     assert profiles["us_full"]["exchanges"] == ["NYSE", "NASDAQ"]
     assert profiles["us_full"]["provider"] == "eodhd"
-    assert profiles["us_full"]["model_shards"] == 6
+    assert profiles["us_full"]["model_shards"] == 8
 
 
 def test_unknown_profile_has_clear_error():
