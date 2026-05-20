@@ -43,6 +43,9 @@ class RankingConfig:
     min_positive_spread_folds: int = 3
     min_long_short_spread_ir: float = 0.0
     require_positive_full_ic: bool = False
+    directional_long_max_rank: int = 300
+    directional_short_max_rank: int = 300
+    directional_min_side_probability: float = 0.0
 
 
 @dataclass
@@ -85,7 +88,55 @@ def config_from_env() -> RankingConfig:
         min_positive_spread_folds=int(os.environ.get("STOCKML_RANKER_MIN_POSITIVE_SPREAD_FOLDS", "3")),
         min_long_short_spread_ir=float(os.environ.get("STOCKML_RANKER_MIN_LONG_SHORT_SPREAD_IR", "0")),
         require_positive_full_ic=_bool_env("STOCKML_RANKER_REQUIRE_POSITIVE_FULL_IC", False),
+        directional_long_max_rank=int(os.environ.get("STOCKML_DIRECTIONAL_LONG_MAX_RANK", "300")),
+        directional_short_max_rank=int(os.environ.get("STOCKML_DIRECTIONAL_SHORT_MAX_RANK", "300")),
+        directional_min_side_probability=float(os.environ.get("STOCKML_DIRECTIONAL_MIN_SIDE_PROBABILITY", "0")),
     )
+
+
+def apply_directional_signal_fields(frame: pd.DataFrame, cfg: RankingConfig, *, gates_passed: bool) -> pd.DataFrame:
+    out = frame.copy()
+    out["directional_action"] = "Hold"
+    out["directional_signal"] = "HOLD"
+    out["directional_reason"] = "model_not_decision_grade" if not gates_passed else "outside_directional_rank_window"
+    out["directional_strength"] = 0.0
+
+    if out.empty or "rank_overall" not in out.columns:
+        return out
+
+    rank = pd.to_numeric(out["rank_overall"], errors="coerce")
+    rank_pct = pd.to_numeric(out.get("predicted_rank_pct_by_date", pd.Series(pd.NA, index=out.index)), errors="coerce")
+    side_probability = pd.to_numeric(out.get("side_probability", pd.Series(pd.NA, index=out.index)), errors="coerce")
+    probability_ok = side_probability.isna() | side_probability.ge(cfg.directional_min_side_probability)
+
+    if not gates_passed:
+        return out
+
+    long_mask = rank.le(max(cfg.directional_long_max_rank, cfg.long_top_n)) & probability_ok
+    short_cutoff = max(len(out) - max(cfg.directional_short_max_rank, cfg.short_bottom_n), 0)
+    short_mask = (
+        rank.gt(short_cutoff)
+        & probability_ok
+        & (pd.Series(True, index=out.index) if cfg.allow_short_selling else pd.Series(False, index=out.index))
+    )
+
+    out.loc[long_mask, ["directional_action", "directional_signal", "directional_reason"]] = [
+        "Long",
+        "LONG",
+        "rank_within_directional_long_window",
+    ]
+    out.loc[short_mask, ["directional_action", "directional_signal", "directional_reason"]] = [
+        "Short",
+        "SHORT",
+        "rank_within_directional_short_window",
+    ]
+
+    long_strength = rank_pct.fillna(0.0).clip(0, 1)
+    short_strength = (1 - rank_pct.fillna(1.0)).clip(0, 1)
+    out.loc[long_mask, "directional_strength"] = long_strength[long_mask]
+    out.loc[short_mask, "directional_strength"] = short_strength[short_mask]
+
+    return out
 
 
 def construct_ranking_targets(gold: pd.DataFrame) -> pd.DataFrame:
@@ -478,6 +529,7 @@ def train_predict_from_gold(
     return_scale = float(trainable["target_return_5d"].std(skipna=True) or 0)
     latest["expected_trade_return"] = latest["model_score"] * return_scale
     latest["risk_adjusted_score"] = latest["expected_trade_return"] / (1 + latest["rank_overall"])
+    latest = apply_directional_signal_fields(latest, cfg, gates_passed=gates_passed)
     predictions = latest.copy()
     top_long = latest[latest["trade_action"].eq("Long")].sort_values("rank_overall").head(top_n)
     top_short = latest[latest["trade_action"].eq("Short")].sort_values("rank_overall", ascending=False).head(top_n)

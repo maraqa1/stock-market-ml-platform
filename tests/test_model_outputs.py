@@ -66,6 +66,8 @@ def test_train_predict_from_gold_writes_ranking_artifacts():
     artifacts = train_predict_from_gold(synthetic_gold(), top_n=5)
     assert "rank_overall" in artifacts.signal_table.columns
     assert "model_score" in artifacts.signal_table.columns
+    assert "directional_action" in artifacts.signal_table.columns
+    assert "directional_strength" in artifacts.signal_table.columns
     assert "included" in artifacts.feature_audit.columns
     assert "exclusion_reason" in artifacts.rejected_features.columns
     assert isinstance(artifacts.model_config, dict)
@@ -108,4 +110,5 @@ def test_shard_combine_does_not_require_walk_forward_history():
 
     assert combined.walk_forward_predictions.empty
     assert "model_shard" in combined.signal_table.columns
+    assert "directional_action" in combined.signal_table.columns
     assert combined.model_config["sharded_model"] is True

@@ -11,7 +11,13 @@ from stockml.common.paths import MODEL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.models.gold_loader import load_gold_dataset
 from stockml.models.meta_labeling import add_meta_label_predictions, load_meta_label_config, train_meta_label_model
 from stockml.models.meta_label_validation import walk_forward_validate_meta_labels
-from stockml.models.ranking_model import ModelArtifacts, model_config_json, train_predict_from_gold
+from stockml.models.ranking_model import (
+    ModelArtifacts,
+    apply_directional_signal_fields,
+    config_from_env,
+    model_config_json,
+    train_predict_from_gold,
+)
 
 
 def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
@@ -93,6 +99,7 @@ def _combine_shard_artifacts(shards: list[ModelArtifacts], *, top_n: int) -> Mod
             signal_table["no_decision_reason"] = ""
             signal_table.loc[signal_table["rank_overall"].le(10), ["trade_action", "signal", "signal_reason"]] = ["Long", "LONG", "rank_validation_gate_passed"]
             signal_table.loc[signal_table["rank_overall"].gt(max(len(signal_table) - 10, 0)), ["trade_action", "signal", "signal_reason"]] = ["Short", "SHORT", "rank_validation_gate_passed"]
+        signal_table = apply_directional_signal_fields(signal_table, config_from_env(), gates_passed=decision_grade)
         predictions = signal_table.copy()
 
     top_long = signal_table[signal_table["trade_action"].eq("Long")].sort_values("rank_overall").head(top_n) if "trade_action" in signal_table.columns else pd.DataFrame()
