@@ -32,6 +32,7 @@ class AlpacaConfig:
     live_trading_enabled: bool = False
     paper_trading_enabled: bool = True
     candidate_pool_size: int = 50
+    directional_candidate_long_fraction: float = 0.70
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -48,6 +49,18 @@ def _int_env(name: str, default: int, minimum: int | None = None) -> int:
         value = default
     if minimum is not None:
         return max(minimum, value)
+    return value
+
+
+def _float_env(name: str, default: float, minimum: float | None = None, maximum: float | None = None) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except ValueError:
+        value = default
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
     return value
 
 
@@ -78,4 +91,5 @@ def alpaca_config() -> AlpacaConfig:
         live_trading_enabled=_bool_env("STOCKML_LIVE_TRADING_ENABLED", default=False),
         paper_trading_enabled=_bool_env("STOCKML_PAPER_TRADING_ENABLED", default=True),
         candidate_pool_size=_int_env("STOCKML_CANDIDATE_POOL_SIZE", 50, minimum=1),
+        directional_candidate_long_fraction=_float_env("STOCKML_DIRECTIONAL_CANDIDATE_LONG_FRACTION", 0.70, minimum=0.0, maximum=1.0),
     )

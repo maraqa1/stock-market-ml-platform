@@ -215,6 +215,48 @@ def test_candidate_pool_size_is_configurable():
     assert pool["trade_action"].value_counts().to_dict() == {"Long": 6, "Short": 6}
 
 
+def test_candidate_pool_uses_directional_action_window_when_available():
+    signals = pd.DataFrame(
+        [
+            trade_signal(
+                f"L{i:02d}",
+                "No Decision",
+                score=1.0 - (i * 0.01),
+                rank_overall=i + 1,
+                directional_action="Long",
+                directional_strength=1.0 - (i * 0.001),
+                directional_reason="rank_within_directional_long_window",
+                probability_edge=0.2,
+                sector="Technology",
+            )
+            for i in range(12)
+        ]
+        + [
+            trade_signal(
+                f"S{i:02d}",
+                "No Decision",
+                score=-1.0 + (i * 0.01),
+                rank_overall=1000 - i,
+                directional_action="Short",
+                directional_strength=1.0 - (i * 0.001),
+                directional_reason="rank_within_directional_short_window",
+                probability_edge=-0.2,
+                sector="Healthcare",
+            )
+            for i in range(12)
+        ]
+    )
+    pool = build_candidate_pool(
+        signals,
+        config(candidate_pool_size=10, max_orders=4, allow_short_selling=True, directional_candidate_long_fraction=0.70),
+    )
+
+    assert len(pool) == 10
+    assert pool["trade_action"].value_counts().to_dict() == {"Long": 7, "Short": 3}
+    assert set(pool.loc[pool["trade_action"].eq("Long"), "symbol"]).issuperset({"L00", "L06"})
+    assert "directional_strength" in pool.columns
+
+
 def test_candidate_pool_still_shows_ranked_long_and_short_research_shortlist_when_shorting_disabled():
     signals = pd.DataFrame(
         [

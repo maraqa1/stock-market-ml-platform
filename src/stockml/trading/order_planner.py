@@ -148,6 +148,11 @@ def _ranked_shortlist(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFra
         return filter_tradeable_signals(signals, config, limit=max(config.candidate_pool_size, config.max_orders))
 
     size = max(config.candidate_pool_size, config.max_orders)
+    if "directional_action" in frame.columns:
+        directional = frame[frame["directional_action"].map(_valid_action)].copy()
+        if not directional.empty:
+            return _directional_shortlist(directional, config, size)
+
     long_slots = (size + 1) // 2
     short_slots = size // 2
     longs = frame.sort_values("rank_overall", ascending=True).head(long_slots).copy()
@@ -162,6 +167,37 @@ def _ranked_shortlist(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFra
     shortlist["_sort_score"] = shortlist["risk_adjusted_score"].abs()
     shortlist = shortlist.sort_values(["trade_action", "rank_overall"], ascending=[True, True])
     return shortlist.drop(columns=["_sort_score"], errors="ignore").head(size)
+
+
+def _directional_shortlist(frame: pd.DataFrame, config: AlpacaConfig, size: int) -> pd.DataFrame:
+    out = frame.copy()
+    out["trade_action"] = out["directional_action"].astype(str).str.strip().str.title()
+    out["directional_strength"] = _numeric_column(out, "directional_strength")
+    out["side_probability"] = _numeric_column(out, "side_probability")
+    out["probability_edge"] = _numeric_column(out, "probability_edge")
+    out["risk_adjusted_score"] = _numeric_column(out, "risk_adjusted_score")
+    out["_sort_score"] = (
+        out["directional_strength"].mul(100.0)
+        + out["side_probability"].fillna(0.0)
+        + out["risk_adjusted_score"].abs().fillna(0.0)
+    )
+
+    actions = out["trade_action"].astype(str).str.strip().str.lower()
+    longs = out[actions.eq("long")].sort_values(["_sort_score", "rank_overall"], ascending=[False, True]).copy()
+    shorts = out[actions.eq("short")].sort_values(["_sort_score", "rank_overall"], ascending=[False, False]).copy()
+
+    long_fraction = min(max(float(getattr(config, "directional_candidate_long_fraction", 0.70)), 0.0), 1.0)
+    long_slots = min(len(longs), max(0, int(round(size * long_fraction))))
+    short_slots = min(len(shorts), max(0, size - long_slots))
+    selected = pd.concat([longs.head(long_slots), shorts.head(short_slots)], ignore_index=False)
+    if len(selected) < size:
+        remaining = out.drop(index=selected.index, errors="ignore").sort_values("_sort_score", ascending=False)
+        selected = pd.concat([selected, remaining.head(size - len(selected))], ignore_index=False)
+
+    selected["signal_reason"] = selected.get("signal_reason", pd.Series("", index=selected.index)).fillna("").astype(str)
+    directional_reason = selected.get("directional_reason", pd.Series("", index=selected.index)).fillna("").astype(str)
+    selected.loc[selected["signal_reason"].eq(""), "signal_reason"] = directional_reason
+    return selected.sort_values("_sort_score", ascending=False).drop(columns=["_sort_score"], errors="ignore").head(size)
 
 
 def _limit_sector_concentration(frame: pd.DataFrame, config: AlpacaConfig, limit: int | None = None) -> pd.DataFrame:
