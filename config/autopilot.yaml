@@ -40,6 +40,8 @@ autopilot:
   per_symbol_forecast_fallback_max_profitability_score: 300
   per_symbol_forecast_fallback_allowed_confirmations:
   - confirmed
+  holding_review_gate_enabled: true
+  holding_review_allow_watch: true
   max_position_loss_pct: 2.0
   signal_flip_confirmation_clocks: 2
   stale_unknown_loss_close_pct: 2.0

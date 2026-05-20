@@ -13,7 +13,7 @@ from sqlalchemy.engine import Engine
 
 from stockml.autopilot.basket_risk import evaluate_basket_risk
 from stockml.autopilot.candidate_arbitration import arbitrate_candidates, arbitration_score
-from stockml.common.paths import PROJECT_ROOT, TRADING_DIR
+from stockml.common.paths import HOLDING_PERIOD_DIR, PROJECT_ROOT, TRADING_DIR, latest_file
 from stockml.db.connection import get_engine
 from stockml.db.schema import autopilot_open_log, intraday_candidate_snapshots, intraday_promotion_log
 from stockml.intraday import kill_switch
@@ -70,6 +70,8 @@ class AutoOpenConfig:
     per_symbol_forecast_fallback_min_profitability_score: float = 0.0
     per_symbol_forecast_fallback_max_profitability_score: float = 300.0
     per_symbol_forecast_fallback_allowed_confirmations: tuple[str, ...] = ("confirmed",)
+    holding_review_gate_enabled: bool = True
+    holding_review_allow_watch: bool = True
     max_position_loss_pct: float = 2.0
     signal_flip_confirmation_clocks: int = 2
     stale_unknown_loss_close_pct: float = 2.0
@@ -143,6 +145,50 @@ def per_symbol_forecast_quality_block_reason(details: dict[str, Any], cfg: AutoO
     return ""
 
 
+def _holding_review_dir(root: Path | str | None = None) -> Path:
+    if root is None:
+        return HOLDING_PERIOD_DIR
+    return Path(root) / "data" / "trading" / "holding_period"
+
+
+def latest_holding_review_map(root: Path | str | None = None) -> dict[str, dict[str, Any]]:
+    path = latest_file(_holding_review_dir(root), "holding_review_*.csv")
+    if path is None or not path.exists():
+        return {}
+    try:
+        frame = pd.read_csv(path, low_memory=False)
+    except Exception:
+        return {}
+    if frame.empty or "symbol" not in frame.columns:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in frame.fillna("").to_dict("records"):
+        symbol = str(row.get("symbol") or "").upper().strip()
+        if symbol:
+            out[symbol] = row
+    return out
+
+
+def holding_review_block_reason(
+    symbol: str,
+    review: dict[str, Any] | None,
+    cfg: AutoOpenConfig,
+) -> str:
+    if not cfg.holding_review_gate_enabled:
+        return ""
+    if not review:
+        return "holding_review_missing"
+    quality = str(review.get("holding_quality") or "").strip().lower()
+    passed = _bool_flag(review.get("holding_gate_pass"))
+    if quality == "avoid" or passed is False:
+        return str(review.get("holding_gate_reason") or "holding_review_blocked")
+    if quality == "watch" and not cfg.holding_review_allow_watch:
+        return "holding_review_watch_requires_confirmation"
+    if quality not in {"strong", "watch"} and passed is not True:
+        return "holding_review_not_confirmed"
+    return ""
+
+
 def auto_open_config_path(root: Path | str | None = None) -> Path:
     if root is None:
         return CONFIG_PATH
@@ -192,6 +238,8 @@ def _default_payload() -> dict[str, Any]:
             "per_symbol_forecast_fallback_min_profitability_score": 0,
             "per_symbol_forecast_fallback_max_profitability_score": 300,
             "per_symbol_forecast_fallback_allowed_confirmations": ["confirmed"],
+            "holding_review_gate_enabled": True,
+            "holding_review_allow_watch": True,
             "max_position_loss_pct": 2.0,
             "signal_flip_confirmation_clocks": 2,
             "stale_unknown_loss_close_pct": 2.0,
@@ -280,6 +328,8 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         per_symbol_forecast_fallback_min_profitability_score=float(section.get("per_symbol_forecast_fallback_min_profitability_score", 0)),
         per_symbol_forecast_fallback_max_profitability_score=float(section.get("per_symbol_forecast_fallback_max_profitability_score", 300)),
         per_symbol_forecast_fallback_allowed_confirmations=allowed_confirmation_values,
+        holding_review_gate_enabled=bool(section.get("holding_review_gate_enabled", True)),
+        holding_review_allow_watch=bool(section.get("holding_review_allow_watch", True)),
         max_position_loss_pct=float(section.get("max_position_loss_pct", 2.0)),
         signal_flip_confirmation_clocks=int(section.get("signal_flip_confirmation_clocks", 2)),
         stale_unknown_loss_close_pct=float(section.get("stale_unknown_loss_close_pct", 2.0)),
@@ -837,6 +887,7 @@ def apply_auto_open(
     alpaca_cfg: AlpacaConfig | None = None,
     client: AlpacaPaperClient | None = None,
     now: datetime | None = None,
+    root: Path | str | None = None,
 ) -> dict[str, Any]:
     db = engine or get_engine(required=True)
     stamp = _aware(now)
@@ -846,6 +897,7 @@ def apply_auto_open(
     opened = 0
     blocked = 0
     notes: list[str] = []
+    holding_reviews = latest_holding_review_map(root) if cfg.holding_review_gate_enabled and root is not None else {}
 
     if mode != "paper_autopilot":
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "mode_not_paper_autopilot"}
@@ -931,6 +983,29 @@ def apply_auto_open(
                 quality_details = {**details, "quality_gate_status": "blocked", "quality_block_reason": quality_block_reason}
                 _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=quality_block_reason, details=quality_details, engine=db, now=stamp)
                 notes.append(f"{symbol}:blocked:{quality_block_reason}")
+                continue
+        if (is_per_symbol_forecast or is_near_miss or is_fallback) and holding_reviews:
+            review = holding_reviews.get(symbol)
+            holding_block_reason = holding_review_block_reason(symbol, review, cfg)
+            if holding_block_reason:
+                blocked += 1
+                holding_details = {
+                    **details,
+                    "holding_review_status": "blocked",
+                    "holding_review_reason": holding_block_reason,
+                }
+                if review:
+                    holding_details.update(
+                        {
+                            "holding_quality": review.get("holding_quality"),
+                            "holding_gate_pass": review.get("holding_gate_pass"),
+                            "recommended_holding_days": review.get("recommended_holding_days"),
+                            "max_holding_days": review.get("max_holding_days"),
+                            "holding_gate_reason": review.get("holding_gate_reason"),
+                        }
+                    )
+                _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=holding_block_reason, details=holding_details, engine=db, now=stamp)
+                notes.append(f"{symbol}:blocked:{holding_block_reason}")
                 continue
         if is_fallback and open_positions:
             blocked += 1

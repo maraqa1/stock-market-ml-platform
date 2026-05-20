@@ -775,6 +775,106 @@ def test_auto_open_uses_per_symbol_forecast_size_and_log_prefix():
     assert row["details"]["per_symbol_forecast_fallback"] is True
 
 
+def test_auto_open_blocks_fallback_candidate_missing_from_holding_review(tmp_path):
+    engine = _engine()
+    client = FakeClient()
+    review_dir = tmp_path / "data" / "trading" / "holding_period"
+    review_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "DDOG",
+                "holding_quality": "strong",
+                "holding_gate_pass": True,
+                "holding_gate_reason": "positive_holding_edge_strong",
+                "recommended_holding_days": 10,
+                "max_holding_days": 10,
+            }
+        ]
+    ).to_csv(review_dir / "holding_review_20260520_120000.csv", index=False)
+    candidate = _candidate("TNDM", 100)
+    candidate["details"] = {
+        "per_symbol_forecast_fallback": True,
+        "fallback_reason": "per_symbol_forecast_confirmed_candidate",
+        "expected_profitability_score": 100,
+        "profitability_ok": True,
+        "risk_reward_ok": True,
+        "liquidity_ok": True,
+        "volatility_ok": True,
+        "current_price": 10,
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 20, 14, 41, tzinfo=timezone.utc),
+        root=tmp_path,
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "TNDM:blocked:holding_review_missing" in result["autopilot_open_notes"]
+    assert client.orders == []
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["block_reason"] == "holding_review_missing"
+    assert row["details"]["holding_review_status"] == "blocked"
+
+
+def test_auto_open_blocks_fallback_candidate_with_avoid_holding_review(tmp_path):
+    engine = _engine()
+    client = FakeClient()
+    review_dir = tmp_path / "data" / "trading" / "holding_period"
+    review_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "DGXX",
+                "holding_quality": "avoid",
+                "holding_gate_pass": False,
+                "holding_gate_reason": "holding_edge_not_confirmed",
+                "recommended_holding_days": 10,
+                "max_holding_days": 10,
+            }
+        ]
+    ).to_csv(review_dir / "holding_review_20260520_120000.csv", index=False)
+    candidate = _candidate("DGXX", 100)
+    candidate["details"] = {
+        "near_miss_fallback": True,
+        "fallback_reason": "near_miss_diagnostic_candidate",
+        "is_first_15_min": False,
+        "is_last_30_min": False,
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 20, 14, 41, tzinfo=timezone.utc),
+        root=tmp_path,
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "DGXX:blocked:holding_edge_not_confirmed" in result["autopilot_open_notes"]
+    assert client.orders == []
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["block_reason"] == "holding_edge_not_confirmed"
+    assert row["details"]["holding_quality"] == "avoid"
+
+
 def test_auto_open_blocks_out_of_range_forecast_profitability_score():
     engine = _engine()
     client = FakeClient()
