@@ -66,7 +66,9 @@ def _eligible_order_mask(frame: pd.DataFrame) -> pd.Series:
 def _add_final_selection_sort(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     out["_sort_score"] = pd.to_numeric(out.get("risk_adjusted_score", 0), errors="coerce").abs().fillna(0)
+    out["_directional_strength_sort"] = pd.to_numeric(out.get("directional_strength", 0), errors="coerce").fillna(0)
     out["_eligible_sort"] = _eligible_order_mask(out).astype(int)
+    out["_quality_sort"] = out.get("trade_quality_status", pd.Series("", index=out.index)).astype(str).str.lower().map({"approved": 2, "reduced": 1}).fillna(0)
     if "candidate_rank" in out.columns:
         out["_candidate_rank_sort"] = pd.to_numeric(out["candidate_rank"], errors="coerce").fillna(999_999)
     else:
@@ -75,13 +77,13 @@ def _add_final_selection_sort(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _drop_selection_sort(frame: pd.DataFrame) -> pd.DataFrame:
-    return frame.drop(columns=["_sort_score", "_eligible_sort", "_candidate_rank_sort"], errors="ignore")
+    return frame.drop(columns=["_sort_score", "_directional_strength_sort", "_eligible_sort", "_quality_sort", "_candidate_rank_sort"], errors="ignore")
 
 
 def _sort_final_candidates(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.sort_values(
-        ["_eligible_sort", "_sort_score", "_candidate_rank_sort"],
-        ascending=[False, False, True],
+        ["_eligible_sort", "_directional_strength_sort", "_quality_sort", "_sort_score", "_candidate_rank_sort"],
+        ascending=[False, False, False, False, True],
     )
 
 

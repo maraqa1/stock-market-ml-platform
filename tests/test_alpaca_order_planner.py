@@ -318,6 +318,35 @@ def test_order_plan_applies_price_and_total_notional_guards():
     assert set(approved["symbol"]) == {"BBB", "CCC"}
 
 
+def test_order_plan_prioritizes_directional_strength_before_risk_score():
+    signals = pd.DataFrame(
+        [
+            trade_signal(
+                "LOW",
+                "No Decision",
+                score=10.0,
+                rank_overall=1,
+                directional_action="Long",
+                directional_strength=0.91,
+                directional_reason="rank_within_directional_long_window",
+            ),
+            trade_signal(
+                "HIGH",
+                "No Decision",
+                score=0.1,
+                rank_overall=2,
+                directional_action="Long",
+                directional_strength=0.99,
+                directional_reason="rank_within_directional_long_window",
+            ),
+        ]
+    )
+
+    plan = build_order_plan(signals, config(max_orders=1, candidate_pool_size=2))
+
+    assert list(plan["symbol"]) == ["HIGH"]
+
+
 def test_order_plan_limits_sector_concentration_when_sector_is_available():
     signals = pd.DataFrame(
         [
