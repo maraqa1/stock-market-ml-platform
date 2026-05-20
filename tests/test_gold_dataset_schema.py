@@ -1,6 +1,6 @@
 import pandas as pd
 
-from stockml.gold.build_gold_dataset import GOLD_COLUMNS, _read_feature_panel, build_gold_dataset_from_frames
+from stockml.gold.build_gold_dataset import GOLD_COLUMNS, _read_feature_panel, build_gold_dataset, build_gold_dataset_from_frames
 
 
 def test_gold_dataset_required_columns():
@@ -91,3 +91,51 @@ def test_read_feature_panel_uses_only_gold_input_columns(tmp_path):
     frame = _read_feature_panel(path)
     assert "unused_debug_column" not in frame.columns
     assert {"date", "ticker", "adj_close", "feature_missing_ratio"}.issubset(frame.columns)
+
+
+def test_sharded_gold_build_writes_complete_dataset(tmp_path, monkeypatch):
+    for attr, name in [
+        ("GOLD_DIR", "gold"),
+        ("INTERIM_DIR", "interim"),
+        ("PORTAL_OUTPUTS_DIR", "portal_outputs"),
+    ]:
+        path = tmp_path / name
+        path.mkdir()
+        monkeypatch.setattr(f"stockml.gold.build_gold_dataset.{attr}", path)
+
+    feature_path = tmp_path / "features.csv"
+    dates = pd.date_range("2024-01-01", periods=14, freq="B")
+    pd.DataFrame(
+        [
+            {
+                "date": date,
+                "ticker": ticker,
+                "company": ticker,
+                "exchange": "NASDAQ",
+                "sector": "Tech",
+                "industry": "Software",
+                "open": 10 + i,
+                "high": 11 + i,
+                "low": 9 + i,
+                "close": 10 + i,
+                "adj_close": 10 + i,
+                "volume": 1000,
+                "feature_missing_ratio": 0,
+                "liquidity_score": 0.8,
+                "sector_relative_momentum_score": 0.7,
+                "volume_confirmation_score": 0.6,
+            }
+            for ticker in ["AAA", "BBB", "CCC"]
+            for i, date in enumerate(dates)
+        ]
+    ).to_csv(feature_path, index=False)
+
+    paths = build_gold_dataset(
+        exchange="NASDAQ",
+        feature_file=feature_path,
+        skip_sentiment=True,
+        shard_rows=15,
+    )
+    gold = pd.read_csv(paths["gold_dataset"])
+    assert len(gold) == 42
+    assert set(GOLD_COLUMNS).issubset(gold.columns)
