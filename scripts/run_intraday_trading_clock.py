@@ -14,6 +14,7 @@ if str(SRC) not in sys.path:
 from stockml.intraday.refresh import candidate_refresh_tick, prune_old_snapshots
 from stockml.intraday.promotion_score import score_unscored_snapshots
 from stockml.trading.per_symbol_forecast import generate_per_symbol_forecast
+from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 from stockml.trading.paper_autopilot import start as start_autopilot
 from stockml.trading.paper_autopilot import tick as autopilot_tick
@@ -42,6 +43,14 @@ def main() -> int:
     print("per_symbol_forecast_status:", forecast.get("status"))
     print("per_symbol_forecast_rows:", forecast.get("rows", 0))
     print("per_symbol_forecast_path:", forecast.get("path", ""))
+
+    try:
+        holding = generate_holding_period_report(ROOT)
+    except Exception as exc:
+        holding = {"status": "error", "reason": str(exc), "rows": 0, "path": ""}
+    print("holding_period_status:", holding.get("status"))
+    print("holding_period_rows:", holding.get("rows", 0))
+    print("holding_period_path:", holding.get("path", ""))
 
     run_rotation_recommendations()
 

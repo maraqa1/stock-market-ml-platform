@@ -22,6 +22,7 @@ AGENT_DECISIONS_DIR = TRADING_DIR / "agent_decisions"
 EXECUTION_REPORTS_DIR = TRADING_DIR / "execution_reports"
 OPERATOR_ACTIONS_DIR = TRADING_DIR / "operator_actions"
 PER_SYMBOL_FORECAST_DIR = TRADING_DIR / "per_symbol_forecast"
+HOLDING_PERIOD_DIR = TRADING_DIR / "holding_period"
 
 
 def timestamp() -> str:
@@ -45,6 +46,7 @@ def ensure_data_dirs() -> None:
         EXECUTION_REPORTS_DIR,
         OPERATOR_ACTIONS_DIR,
         PER_SYMBOL_FORECAST_DIR,
+        HOLDING_PERIOD_DIR,
     ]:
         path.mkdir(parents=True, exist_ok=True)
 
