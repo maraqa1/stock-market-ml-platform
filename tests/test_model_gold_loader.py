@@ -58,5 +58,8 @@ def test_load_gold_dataset_filters_shard_from_file(tmp_path):
         ]
     ).to_csv(path, index=False)
 
-    shard = load_gold_dataset(path, shard_count=2, shard_index=1)
-    assert shard["ticker"].tolist() == ["BBB", "DDD"]
+    shard_0 = load_gold_dataset(path, shard_count=2, shard_index=0)
+    shard_1 = load_gold_dataset(path, shard_count=2, shard_index=1)
+    combined = sorted(set(shard_0["ticker"]) | set(shard_1["ticker"]))
+    assert combined == ["AAA", "BBB", "CCC", "DDD"]
+    assert set(shard_0["ticker"]).isdisjoint(set(shard_1["ticker"]))

@@ -5,6 +5,7 @@ from typing import Iterable, Optional
 
 import numpy as np
 import pandas as pd
+from pandas.util import hash_pandas_object
 
 from stockml.common.paths import GOLD_DIR, latest_file
 from stockml.gold.target_engineering import TARGET_COLUMNS, leakage_columns
@@ -47,15 +48,11 @@ def load_gold_dataset(
     if shard_count > 1:
         if shard_index < 0 or shard_index >= shard_count:
             raise ValueError(f"shard_index must be between 0 and {shard_count - 1}")
-        tickers = pd.read_csv(gold_path, usecols=["ticker"], low_memory=False)["ticker"].astype(str).str.upper().str.strip()
-        unique_tickers = tickers.drop_duplicates().tolist()
-        shard_tickers = set(unique_tickers[shard_index::shard_count])
-        if limit_tickers:
-            shard_tickers = set(list(shard_tickers)[:limit_tickers])
         frames = []
         for chunk in pd.read_csv(gold_path, chunksize=250_000, low_memory=False):
             chunk["ticker"] = chunk["ticker"].astype(str).str.upper().str.strip()
-            chunk = chunk[chunk["ticker"].isin(shard_tickers)]
+            ticker_hash = hash_pandas_object(chunk["ticker"], index=False).astype("uint64")
+            chunk = chunk[(ticker_hash % shard_count).eq(shard_index)]
             if not chunk.empty:
                 frames.append(chunk)
         frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=header.columns)
