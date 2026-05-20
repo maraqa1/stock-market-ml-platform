@@ -52,9 +52,9 @@ def trading_header_context(root: Path) -> dict[str, Any]:
     }
 
 
-def trading_cadence_context(root: Path) -> dict[str, Any]:
+def trading_cadence_context(root: Path, *, pipeline: dict[str, Any] | None = None) -> dict[str, Any]:
     timers = load_timer_settings(root)
-    pipeline = pipeline_current_context(root)
+    pipeline = pipeline if pipeline is not None else pipeline_current_context(root)
     run = pipeline.get("run") or {}
     next_monitor = _next_seconds_interval(timers["monitor_interval_seconds"])
     last_run = run.get("started_at") or run.get("run_id") or "No recorded run"
@@ -71,12 +71,18 @@ def trading_cadence_context(root: Path) -> dict[str, Any]:
     }
 
 
-def trading_kpi_context(root: Path) -> dict[str, Any]:
+def trading_kpi_context(
+    root: Path,
+    *,
+    positions: dict[str, Any] | None = None,
+    basket: dict[str, Any] | None = None,
+    queue: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     config = alpaca_config()
     account = account_snapshot(config)
-    positions = positions_context(root)
-    basket = basket_today_context(root)
-    queue = action_queue_context(root)
+    positions = positions if positions is not None else positions_context(root)
+    basket = basket if basket is not None else basket_today_context(root)
+    queue = queue if queue is not None else action_queue_context(root)
     summary = positions["summary"]
     position_count = int(summary.get("position_count") or 0)
     market_value = float(summary.get("position_market_value") or 0.0)

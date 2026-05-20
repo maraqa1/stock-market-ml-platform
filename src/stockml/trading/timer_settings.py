@@ -9,7 +9,7 @@ from stockml.common.paths import AGENT_DECISIONS_DIR, PORTAL_OUTPUTS_DIR, PROJEC
 
 
 DEFAULT_TIMER_SETTINGS = {
-    "positions_refresh_seconds": 5,
+    "positions_refresh_seconds": 30,
     "monitor_interval_seconds": 30,
     "pipeline_refresh_seconds": 60,
 }

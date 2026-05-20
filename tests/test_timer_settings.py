@@ -31,6 +31,14 @@ def test_timer_settings_are_clamped_and_persisted():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_default_position_refresh_is_not_aggressive():
+    root = temp_root()
+    try:
+        assert load_timer_settings(root)["positions_refresh_seconds"] == 30
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def test_monitor_should_skip_until_configured_interval_elapsed():
     root = temp_root()
     try:

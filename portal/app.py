@@ -218,17 +218,21 @@ def create_app(root: Path | None = None) -> Flask:
     def trading():
         root = root_path()
         context = trading_context(root)
+        pipeline_current = pipeline_current_context(root)
+        positions_api = positions_context(root)
+        action_queue = action_queue_context(root)
+        basket_today = basket_today_context(root)
         context.update(
             {
                 "trading_header": trading_header_context(root),
-                "trading_cadence": trading_cadence_context(root),
-                "trading_kpis": trading_kpi_context(root),
-                "pipeline_current": pipeline_current_context(root),
+                "trading_cadence": trading_cadence_context(root, pipeline=pipeline_current),
+                "trading_kpis": trading_kpi_context(root, positions=positions_api, basket=basket_today, queue=action_queue),
+                "pipeline_current": pipeline_current,
                 "pipeline_history": pipeline_history_context(root, days=14),
                 "basket_integrity": basket_integrity_context(root),
                 "monitor_activity": monitor_today_context(root),
-                "action_queue": action_queue_context(root),
-                "positions_api": positions_context(root),
+                "action_queue": action_queue,
+                "positions_api": positions_api,
                 "intraday_promotion": intraday_promotion_context(root),
                 "near_miss": near_miss_context(root),
                 "per_symbol_forecast": per_symbol_forecast_context(root),
