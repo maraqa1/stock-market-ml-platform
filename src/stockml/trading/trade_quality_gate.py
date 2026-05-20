@@ -51,11 +51,48 @@ def latest_price_snapshot(tickers: list[str], price_file: Optional[Path] = None)
     return prices.sort_values(["ticker", "date"]).groupby("ticker", as_index=False).tail(1)
 
 
-def latest_metadata_snapshot(metadata_file: Optional[Path] = None) -> pd.DataFrame:
+def latest_metadata_snapshot(metadata_file: Optional[Path] = None, tickers: Optional[list[str]] = None) -> pd.DataFrame:
     path = metadata_file or latest_file(INTERIM_DIR, "04_us_metadata_enriched_*.csv")
     if path is None or not path.exists():
         return pd.DataFrame()
     cols = ["ticker", "market_cap"]
+    wanted = {str(ticker).upper().strip() for ticker in tickers or [] if str(ticker).strip()}
+
+    def read_one(item: Path) -> pd.DataFrame:
+        try:
+            frame = pd.read_csv(item, usecols=lambda col: col in cols, low_memory=False)
+        except Exception:
+            return pd.DataFrame()
+        if "ticker" not in frame.columns:
+            return pd.DataFrame()
+        frame["ticker"] = frame["ticker"].astype(str).str.upper().str.strip()
+        if wanted:
+            frame = frame[frame["ticker"].isin(wanted)].copy()
+        if "market_cap" not in frame.columns:
+            frame["market_cap"] = pd.NA
+        frame["market_cap"] = pd.to_numeric(frame["market_cap"], errors="coerce")
+        return frame.dropna(subset=["market_cap"]).drop_duplicates("ticker", keep="last")
+
+    if metadata_file is not None:
+        return read_one(path)
+
+    files = sorted(INTERIM_DIR.glob("04_us_metadata_enriched_*.csv"), key=lambda item: item.stat().st_mtime, reverse=True)
+    rows = []
+    seen: set[str] = set()
+    for item in files[:8]:
+        frame = read_one(item)
+        if frame.empty:
+            continue
+        if seen:
+            frame = frame[~frame["ticker"].isin(seen)].copy()
+        if frame.empty:
+            continue
+        rows.append(frame)
+        seen.update(frame["ticker"].tolist())
+        if wanted and wanted.issubset(seen):
+            break
+    if rows:
+        return pd.concat(rows, ignore_index=True).drop_duplicates("ticker", keep="first")
     try:
         frame = pd.read_csv(path, usecols=lambda col: col in cols, low_memory=False)
     except Exception:
@@ -161,7 +198,7 @@ def apply_trade_quality_gate(
     if price_snapshot is None and not _has_inline_market_context(signals):
         price_snapshot = latest_price_snapshot(tickers)
     if metadata is None:
-        metadata = latest_metadata_snapshot()
+        metadata = latest_metadata_snapshot(tickers=tickers)
     if risk_features is None:
         risk_features = latest_risk_feature_snapshot(tickers)
     out = _prepare_market_context(signals, price_snapshot, metadata, risk_features)

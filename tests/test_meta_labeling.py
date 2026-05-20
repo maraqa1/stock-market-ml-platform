@@ -83,6 +83,25 @@ def test_high_meta_label_probability_allows_trade_only_if_risk_gate_passes():
     assert evaluate_meta_label_gate(row, MetaLabelGateConfig(), risk_gate_passed=False) == (False, "risk_gate_failed")
 
 
+def test_live_signal_mode_meta_label_skip_allows_trade_after_risk_gate():
+    row = pd.Series(
+        {
+            "trade_action": "Long",
+            "decision_grade": "decision_grade",
+            "meta_label_probability": pd.NA,
+            "meta_label_decision": "Take Trade",
+            "meta_label_reason": "live_signal_mode_meta_label_skipped",
+            "expected_trade_return": 0.02,
+        }
+    )
+
+    assert evaluate_meta_label_gate(row, MetaLabelGateConfig(), risk_gate_passed=True) == (
+        True,
+        "meta_label_gate_skipped_live_signal_mode",
+    )
+    assert evaluate_meta_label_gate(row, MetaLabelGateConfig(), risk_gate_passed=False) == (False, "risk_gate_failed")
+
+
 def test_short_meta_label_gate_uses_directional_expected_return():
     row = pd.Series(
         {

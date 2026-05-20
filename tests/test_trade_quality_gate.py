@@ -1,8 +1,11 @@
+import os
+
 import pandas as pd
 
 from stockml.trading.config import AlpacaConfig
 from stockml.trading.order_planner import build_order_plan
-from stockml.trading.trade_quality_gate import apply_trade_quality_gate
+from stockml.trading import trade_quality_gate
+from stockml.trading.trade_quality_gate import apply_trade_quality_gate, latest_metadata_snapshot
 
 
 def config(**overrides):
@@ -174,3 +177,17 @@ def test_missing_risk_fields_are_enriched_from_feature_snapshot():
     assert row["trade_quality_status"] == "approved"
     assert row["avg_dollar_volume_20d"] == 100_000_000
     assert row["volatility_20d"] == 0.02
+
+
+def test_latest_metadata_snapshot_backfills_from_recent_full_file(tmp_path, monkeypatch):
+    older = tmp_path / "04_us_metadata_enriched_20260519_201330.csv"
+    newer = tmp_path / "04_us_metadata_enriched_20260520_043845.csv"
+    older.write_text("ticker,market_cap\nDDOG,20000000000\nVPG,500000000\n", encoding="utf-8")
+    newer.write_text("ticker,market_cap\nOTHER,1000000000\n", encoding="utf-8")
+    os.utime(older, (1, 1))
+    os.utime(newer, (2, 2))
+    monkeypatch.setattr(trade_quality_gate, "INTERIM_DIR", tmp_path)
+
+    frame = latest_metadata_snapshot(tickers=["DDOG"])
+
+    assert frame.set_index("ticker").loc["DDOG", "market_cap"] == 20_000_000_000

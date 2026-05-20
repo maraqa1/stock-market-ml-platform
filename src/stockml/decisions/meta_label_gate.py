@@ -30,6 +30,12 @@ def evaluate_meta_label_gate(row: pd.Series, config: MetaLabelGateConfig | None 
         return False, "model_not_decision_grade"
     probability = pd.to_numeric(pd.Series([row.get("meta_label_probability")]), errors="coerce").iloc[0]
     if pd.isna(probability):
+        reason = str(row.get("meta_label_reason") or "").strip().lower()
+        decision = str(row.get("meta_label_decision") or "").strip().lower()
+        if reason == "live_signal_mode_meta_label_skipped" and decision == "take trade":
+            if not risk_gate_passed:
+                return False, "risk_gate_failed"
+            return True, "meta_label_gate_skipped_live_signal_mode"
         return False, "meta_label_probability_missing"
     if float(probability) < cfg.min_meta_label_probability:
         return False, "meta_label_probability_below_threshold"
