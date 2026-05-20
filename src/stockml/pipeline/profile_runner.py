@@ -87,6 +87,7 @@ def run_profile(
             exchange=exchange,
             feature_file=feature_paths.get("feature_panel"),
             sentiment_file=sentiment_paths.get("sentiment_panel"),
+            skip_sentiment=bool(profile.get("skip_gold_sentiment", False)),
         )
     else:
         gold_paths = {}

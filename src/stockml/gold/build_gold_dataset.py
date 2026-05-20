@@ -91,6 +91,8 @@ def build_gold_dataset_from_frames(features: pd.DataFrame, sentiment: Optional[p
         sent = sentiment.copy()
         sent["date"] = pd.to_datetime(sent["date"], errors="coerce")
         sent["ticker"] = sent["ticker"].astype(str).str.upper().str.strip()
+        sent = sent.dropna(subset=["date", "ticker"])
+        sent = sent.drop_duplicates(["date", "ticker"], keep="last")
         out = out.merge(sent, on=["date", "ticker"], how="left", suffixes=("", "_sentiment"))
 
     sentiment_defaults = {
@@ -160,6 +162,7 @@ def build_gold_dataset(
     exchange: object = None,
     feature_file: Optional[Path] = None,
     sentiment_file: Optional[Path] = None,
+    skip_sentiment: bool = False,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
@@ -168,7 +171,7 @@ def build_gold_dataset(
     if limit_tickers:
         tickers = features["ticker"].astype(str).str.upper().drop_duplicates().head(limit_tickers).tolist()
         features = features[features["ticker"].astype(str).str.upper().isin(tickers)].copy()
-    sentiment_path = sentiment_file or latest_sentiment_panel_file()
+    sentiment_path = None if skip_sentiment else sentiment_file or latest_sentiment_panel_file()
     sentiment = pd.read_csv(sentiment_path, low_memory=False) if sentiment_path else None
     gold = build_gold_dataset_from_frames(features, sentiment)
 
@@ -195,12 +198,14 @@ def main() -> int:
     parser.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NYSE")
     parser.add_argument("--feature-file", type=Path, default=None, help="Optional feature panel CSV to use instead of latest.")
     parser.add_argument("--sentiment-file", type=Path, default=None, help="Optional sentiment panel CSV to use instead of latest.")
+    parser.add_argument("--skip-sentiment", action="store_true", help="Build gold without merging the sentiment panel.")
     args = parser.parse_args()
     paths = build_gold_dataset(
         limit_tickers=args.limit_tickers,
         exchange=args.exchange,
         feature_file=args.feature_file,
         sentiment_file=args.sentiment_file,
+        skip_sentiment=args.skip_sentiment,
     )
     for name, path in paths.items():
         log(f"{name}: {path}")
