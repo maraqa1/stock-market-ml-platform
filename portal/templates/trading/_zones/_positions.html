@@ -9,14 +9,14 @@
     <p class="zone__description">Current broker paper positions. This state is the feedback loop for monitor decisions, rotation comparisons, auto-close/EOD checks, and held-symbol filtering.</p>
     <div class="kpi-row positions-summary" aria-label="Open positions money summary">
       <article class="kpi-card">
-        <span class="kpi-card__label">Open Value</span>
+        <span class="kpi-card__label">Gross Value</span>
         <strong class="kpi-card__value" data-position-summary="market_value">{{ money(positions_api.summary.position_market_value or 0) }}</strong>
         <small class="kpi-card__detail" data-position-summary="count">{{ positions_api.summary.position_count or 0 }} open positions</small>
       </article>
       <article class="kpi-card">
-        <span class="kpi-card__label">Cost Basis</span>
+        <span class="kpi-card__label">Gross Basis</span>
         <strong class="kpi-card__value" data-position-summary="cost_basis">{{ money(positions_api.summary.position_cost_basis or 0) }}</strong>
-        <small class="kpi-card__detail">Paper capital at entry</small>
+        <small class="kpi-card__detail">Long + short capital at entry</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Money Made</span>

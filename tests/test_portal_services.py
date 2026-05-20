@@ -149,6 +149,23 @@ def test_trading_context_rejected_trimmed_sources(tmp_path):
     assert rows["CCC"]["source"] == "Broker"
 
 
+def test_position_summary_uses_gross_exposure_for_short_positions(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [
+            {"symbol": "LONG", "qty": 2, "market_value": 110, "cost_basis": 100, "unrealized_pl": 10},
+            {"symbol": "SHORT", "qty": -2, "market_value": -90, "cost_basis": -100, "unrealized_pl": 10},
+        ],
+    )
+
+    ctx = trading_context(tmp_path)
+
+    assert ctx["position_market_value"] == 200
+    assert ctx["position_cost_basis"] == 200
+    assert ctx["position_unrealized_pl"] == 20
+    assert ctx["position_unrealized_plpc"] == 0.1
+
+
 def test_trading_context_sorts_plan_by_confidence(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",

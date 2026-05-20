@@ -32,6 +32,17 @@ def test_basket_return_below_threshold_pauses_new_entries():
     assert state.reason == "basket_drawdown_pause"
 
 
+def test_basket_return_uses_gross_basis_for_short_positions():
+    rows = [
+        {"symbol": "LONG", "cost_basis": 100, "unrealized_pl": -1, "unrealized_plpc": -0.01},
+        {"symbol": "SHORT", "cost_basis": -100, "unrealized_pl": -1, "unrealized_plpc": -0.01},
+    ]
+
+    state = evaluate_basket_risk(rows)
+
+    assert state.basket_return == -0.01
+
+
 def test_basket_risk_does_not_pause_when_recovered():
     rows = [_position("AAA", -0.001), _position("BBB", 0.004)]
 

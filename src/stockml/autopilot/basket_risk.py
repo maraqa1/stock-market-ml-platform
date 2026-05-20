@@ -66,7 +66,7 @@ def evaluate_basket_risk(
 
     red_count = sum(1 for row in rows if _float(row.get("unrealized_plpc")) < 0)
     red_pct = red_count / len(rows)
-    cost_basis = sum(_float(row.get("cost_basis")) for row in rows)
+    cost_basis = sum(abs(_float(row.get("cost_basis"))) for row in rows)
     unrealized_pl = sum(_float(row.get("unrealized_pl")) for row in rows)
     if cost_basis:
         basket_return = unrealized_pl / cost_basis

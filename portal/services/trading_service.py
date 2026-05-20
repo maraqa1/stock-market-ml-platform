@@ -90,6 +90,12 @@ def _sum_column(frame: pd.DataFrame, column: str) -> float:
     return float(pd.to_numeric(frame[column], errors="coerce").fillna(0).sum())
 
 
+def _sum_abs_column(frame: pd.DataFrame, column: str) -> float:
+    if frame.empty or column not in frame.columns:
+        return 0.0
+    return float(pd.to_numeric(frame[column], errors="coerce").fillna(0).abs().sum())
+
+
 def _numeric_value(value, default: float = 0.0) -> float:
     parsed = pd.to_numeric(value, errors="coerce")
     return float(default if pd.isna(parsed) else parsed)
@@ -238,14 +244,18 @@ def _execution_quality(results: pd.DataFrame, tracking: pd.DataFrame) -> list[di
 
 
 def _position_summary(positions: pd.DataFrame) -> dict[str, float | int]:
-    market_value = _sum_column(positions, "market_value")
-    cost_basis = _sum_column(positions, "cost_basis")
+    net_market_value = _sum_column(positions, "market_value")
+    net_cost_basis = _sum_column(positions, "cost_basis")
+    market_value = _sum_abs_column(positions, "market_value")
+    cost_basis = _sum_abs_column(positions, "cost_basis")
     unrealized_pl = _sum_column(positions, "unrealized_pl")
     unrealized_plpc = unrealized_pl / cost_basis if cost_basis else 0.0
     return {
         "position_count": int(len(positions)),
         "position_market_value": market_value,
         "position_cost_basis": cost_basis,
+        "position_net_market_value": net_market_value,
+        "position_net_cost_basis": net_cost_basis,
         "position_unrealized_pl": unrealized_pl,
         "position_unrealized_plpc": unrealized_plpc,
         "position_pnl_class": "positive" if unrealized_pl > 0 else "negative" if unrealized_pl < 0 else "flat",
