@@ -48,30 +48,55 @@ def run_profile(
             exchange=exchange,
             provider_name=effective_provider,
         )
-        build_price_quality_report(provider_name=effective_provider)
+        price_paths = build_price_quality_report(provider_name=effective_provider)
+    else:
+        price_paths = {}
 
     if profile.get("run_metadata", True):
-        build_metadata_enriched(
+        metadata_paths = build_metadata_enriched(
             limit=limit,
             provider_name=effective_provider,
             fallback_provider_name=profile.get("metadata_fallback_provider"),
             exchange=exchange,
         )
+    else:
+        metadata_paths = {}
 
     if profile.get("run_features", True):
-        build_feature_panel(limit_tickers=limit, exchange=exchange)
+        feature_paths = build_feature_panel(
+            limit_tickers=limit,
+            exchange=exchange,
+            universe_file=price_paths.get("validated_universe"),
+            metadata_file=metadata_paths.get("metadata_enriched"),
+        )
+    else:
+        feature_paths = {}
 
     if profile.get("run_sentiment", True) and not skip_sentiment:
         try:
-            build_sentiment_panel(limit=limit, provider_name=profile.get("sentiment_provider"))
+            sentiment_paths = build_sentiment_panel(limit=limit, provider_name=profile.get("sentiment_provider"))
         except Exception as exc:
+            sentiment_paths = {}
             log(f"Sentiment pipeline failed but profile will continue: {exc}")
+    else:
+        sentiment_paths = {}
 
     if profile.get("run_gold", True):
-        build_gold_dataset(limit_tickers=limit, exchange=exchange)
+        gold_paths = build_gold_dataset(
+            limit_tickers=limit,
+            exchange=exchange,
+            feature_file=feature_paths.get("feature_panel"),
+            sentiment_file=sentiment_paths.get("sentiment_panel"),
+        )
+    else:
+        gold_paths = {}
 
     if profile.get("run_model", True):
-        build_model_outputs(limit_tickers=profile.get("model_limit_tickers", limit), model_shards=int(profile.get("model_shards", 1) or 1))
+        build_model_outputs(
+            gold_file=gold_paths.get("gold_dataset"),
+            limit_tickers=profile.get("model_limit_tickers", limit),
+            model_shards=int(profile.get("model_shards", 1) or 1),
+        )
 
     if write_database:
         counts = load_latest_outputs()

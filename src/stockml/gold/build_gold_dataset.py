@@ -155,15 +155,20 @@ def _filter_features_exchange(features: pd.DataFrame, exchange: object = None) -
     return filter_listing_exchange(features, exchange=exchange, column="exchange")
 
 
-def build_gold_dataset(limit_tickers: Optional[int] = None, exchange: object = None) -> Dict[str, Path]:
+def build_gold_dataset(
+    limit_tickers: Optional[int] = None,
+    exchange: object = None,
+    feature_file: Optional[Path] = None,
+    sentiment_file: Optional[Path] = None,
+) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
-    features = pd.read_csv(latest_feature_panel_file(), low_memory=False)
+    features = pd.read_csv(feature_file or latest_feature_panel_file(), low_memory=False)
     features = _filter_features_exchange(features, exchange)
     if limit_tickers:
         tickers = features["ticker"].astype(str).str.upper().drop_duplicates().head(limit_tickers).tolist()
         features = features[features["ticker"].astype(str).str.upper().isin(tickers)].copy()
-    sentiment_path = latest_sentiment_panel_file()
+    sentiment_path = sentiment_file or latest_sentiment_panel_file()
     sentiment = pd.read_csv(sentiment_path, low_memory=False) if sentiment_path else None
     gold = build_gold_dataset_from_frames(features, sentiment)
 
@@ -188,8 +193,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NYSE")
+    parser.add_argument("--feature-file", type=Path, default=None, help="Optional feature panel CSV to use instead of latest.")
+    parser.add_argument("--sentiment-file", type=Path, default=None, help="Optional sentiment panel CSV to use instead of latest.")
     args = parser.parse_args()
-    paths = build_gold_dataset(limit_tickers=args.limit_tickers, exchange=args.exchange)
+    paths = build_gold_dataset(
+        limit_tickers=args.limit_tickers,
+        exchange=args.exchange,
+        feature_file=args.feature_file,
+        sentiment_file=args.sentiment_file,
+    )
     for name, path in paths.items():
         log(f"{name}: {path}")
     return 0

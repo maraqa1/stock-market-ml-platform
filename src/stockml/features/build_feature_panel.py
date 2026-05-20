@@ -89,11 +89,16 @@ def _universe_ticker_column(universe: pd.DataFrame) -> str:
     return "yahoo_ticker" if "yahoo_ticker" in universe.columns else "ticker"
 
 
-def build_feature_panel(limit_tickers: Optional[int] = None, exchange: object = None) -> Dict[str, Path]:
+def build_feature_panel(
+    limit_tickers: Optional[int] = None,
+    exchange: object = None,
+    universe_file: Optional[Path] = None,
+    metadata_file: Optional[Path] = None,
+) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     price_path = RAW_DIR / "03_us_price_history_store.csv"
-    universe_path = latest_file(INTERIM_DIR, "03_us_price_validated_universe_*.csv")
+    universe_path = universe_file or latest_file(INTERIM_DIR, "03_us_price_validated_universe_*.csv")
     if universe_path is None:
         raise FileNotFoundError("No 03_us_price_validated_universe_*.csv file found. Run price validation first.")
     if not price_path.exists():
@@ -101,7 +106,7 @@ def build_feature_panel(limit_tickers: Optional[int] = None, exchange: object = 
 
     prices = pd.read_csv(price_path, low_memory=False)
     universe = pd.read_csv(universe_path, dtype=str)
-    metadata = pd.read_csv(latest_metadata_file(), low_memory=False)
+    metadata = pd.read_csv(metadata_file or latest_metadata_file(), low_memory=False)
     universe = _filter_universe_exchange(universe, exchange)
 
     ticker_col = _universe_ticker_column(universe)
@@ -136,8 +141,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NYSE")
+    parser.add_argument("--universe-file", type=Path, default=None, help="Optional validated universe CSV to use instead of latest.")
+    parser.add_argument("--metadata-file", type=Path, default=None, help="Optional metadata CSV to use instead of latest.")
     args = parser.parse_args()
-    paths = build_feature_panel(limit_tickers=args.limit_tickers, exchange=args.exchange)
+    paths = build_feature_panel(
+        limit_tickers=args.limit_tickers,
+        exchange=args.exchange,
+        universe_file=args.universe_file,
+        metadata_file=args.metadata_file,
+    )
     for name, path in paths.items():
         log(f"{name}: {path}")
     return 0
