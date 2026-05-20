@@ -51,6 +51,9 @@ def main() -> int:
     print("holding_period_status:", holding.get("status"))
     print("holding_period_rows:", holding.get("rows", 0))
     print("holding_period_path:", holding.get("path", ""))
+    print("holding_review_path:", holding.get("review_path", ""))
+    print("holding_review_passed:", holding.get("review_passed", 0))
+    print("holding_review_blocked:", holding.get("review_blocked", 0))
 
     run_rotation_recommendations()
 

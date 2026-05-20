@@ -16,6 +16,10 @@ def main() -> int:
     print("holding_period_status:", result["status"])
     print("rows:", result["rows"])
     print("path:", result["path"])
+    print("review_rows:", result["review_rows"])
+    print("review_path:", result["review_path"])
+    print("review_passed:", result["review_passed"])
+    print("review_blocked:", result["review_blocked"])
     print("plan_path:", result["plan_path"])
     print("gold_path:", result["gold_path"])
     return 0

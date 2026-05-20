@@ -36,6 +36,14 @@ OUTPUT_COLUMNS = [
     "holding_period_reason",
 ]
 
+REVIEW_COLUMNS = [
+    *OUTPUT_COLUMNS,
+    "holding_quality",
+    "recommended_action",
+    "holding_gate_pass",
+    "holding_gate_reason",
+]
+
 
 @dataclass(frozen=True)
 class HorizonStats:
@@ -199,11 +207,54 @@ def build_holding_period_report(plan: pd.DataFrame, history: pd.DataFrame) -> pd
     return pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
 
 
+def classify_holding_quality(row: pd.Series) -> tuple[str, str, bool, str]:
+    median = pd.to_numeric(row.get("median_directional_return_bps"), errors="coerce")
+    hit_rate = pd.to_numeric(row.get("hit_rate"), errors="coerce")
+    sample_count = pd.to_numeric(row.get("sample_count"), errors="coerce")
+    if pd.isna(sample_count) or sample_count < 250:
+        return "watch", "manual_review", False, "insufficient_holding_sample"
+    if pd.isna(median) or pd.isna(hit_rate):
+        return "watch", "manual_review", False, "holding_stats_missing"
+    if median > 50 and hit_rate >= 0.55:
+        return "strong", "trade_normal_size", True, "positive_holding_edge_strong"
+    if median > 0 and hit_rate >= 0.52:
+        return "watch", "trade_reduced_size_or_wait_for_intraday_confirmation", True, "positive_holding_edge_watch"
+    return "avoid", "skip_or_require_manual_override", False, "holding_edge_not_confirmed"
+
+
+def build_holding_review(plan: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
+    report = build_holding_period_report(plan, history)
+    if report.empty:
+        return pd.DataFrame(columns=REVIEW_COLUMNS)
+    rows = []
+    for _, row in report.iterrows():
+        quality, action, passed, reason = classify_holding_quality(row)
+        rows.append(
+            {
+                **row.to_dict(),
+                "holding_quality": quality,
+                "recommended_action": action,
+                "holding_gate_pass": passed,
+                "holding_gate_reason": reason,
+            }
+        )
+    return pd.DataFrame(rows, columns=REVIEW_COLUMNS)
+
+
 def write_holding_period_report(frame: pd.DataFrame, output_dir: Path | None = None, stamp: str | None = None) -> Path:
     ensure_data_dirs()
     directory = output_dir or HOLDING_PERIOD_DIR
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"holding_period_report_{stamp or timestamp()}.csv"
+    frame.to_csv(path, index=False)
+    return path
+
+
+def write_holding_review(frame: pd.DataFrame, output_dir: Path | None = None, stamp: str | None = None) -> Path:
+    ensure_data_dirs()
+    directory = output_dir or HOLDING_PERIOD_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"holding_review_{stamp or timestamp()}.csv"
     frame.to_csv(path, index=False)
     return path
 
@@ -219,16 +270,23 @@ def generate_holding_period_report(
     gold_path = gold_file or latest_gold_path(base)
     if plan_path is None or gold_path is None:
         frame = pd.DataFrame(columns=OUTPUT_COLUMNS)
+        review = pd.DataFrame(columns=REVIEW_COLUMNS)
     else:
         plan = _read_csv(plan_path)
         history = load_gold_history_for_symbols(gold_path, _symbol_set(plan))
         frame = build_holding_period_report(plan, history)
+        review = build_holding_review(plan, history)
     output_dir = (base / "data" / "trading" / "holding_period") if base else HOLDING_PERIOD_DIR
     output_path = write_holding_period_report(frame, output_dir=output_dir, stamp=stamp)
+    review_path = write_holding_review(review, output_dir=output_dir, stamp=stamp)
     return {
         "status": "ok",
         "rows": int(len(frame)),
         "path": str(output_path),
+        "review_rows": int(len(review)),
+        "review_path": str(review_path),
+        "review_passed": int(review["holding_gate_pass"].sum()) if "holding_gate_pass" in review.columns else 0,
+        "review_blocked": int((~review["holding_gate_pass"].astype(bool)).sum()) if "holding_gate_pass" in review.columns else 0,
         "plan_path": str(plan_path or ""),
         "gold_path": str(gold_path or ""),
     }

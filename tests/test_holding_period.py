@@ -3,7 +3,9 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.trading.holding_period import (
+    build_holding_review,
     build_holding_period_report,
+    classify_holding_quality,
     generate_holding_period_report,
     horizon_stats,
     load_gold_history_for_symbols,
@@ -78,6 +80,8 @@ def test_generate_holding_period_report_writes_artifact(tmp_path: Path):
     output = Path(result["path"])
     written = pd.read_csv(output)
     assert result["rows"] == 1
+    assert result["review_rows"] == 1
+    assert Path(result["review_path"]).name == "holding_review_20260520_091500.csv"
     assert output.name == "holding_period_report_20260520_091500.csv"
     assert written.iloc[0]["symbol"] == "AAA"
 
@@ -89,3 +93,35 @@ def test_load_gold_history_for_symbols_reads_only_selected_tickers(tmp_path: Pat
     loaded = load_gold_history_for_symbols(gold_path, ["BBB"], chunksize=10)
 
     assert set(loaded["ticker"]) == {"BBB"}
+
+
+def test_classify_holding_quality_marks_strong_watch_and_avoid():
+    strong = pd.Series({"median_directional_return_bps": 75, "hit_rate": 0.56, "sample_count": 500})
+    watch = pd.Series({"median_directional_return_bps": 10, "hit_rate": 0.53, "sample_count": 500})
+    avoid = pd.Series({"median_directional_return_bps": -5, "hit_rate": 0.49, "sample_count": 500})
+
+    assert classify_holding_quality(strong) == (
+        "strong",
+        "trade_normal_size",
+        True,
+        "positive_holding_edge_strong",
+    )
+    assert classify_holding_quality(watch) == (
+        "watch",
+        "trade_reduced_size_or_wait_for_intraday_confirmation",
+        True,
+        "positive_holding_edge_watch",
+    )
+    assert classify_holding_quality(avoid) == (
+        "avoid",
+        "skip_or_require_manual_override",
+        False,
+        "holding_edge_not_confirmed",
+    )
+
+
+def test_build_holding_review_adds_actionable_gate_fields():
+    review = build_holding_review(_plan(), _history())
+
+    assert {"holding_quality", "recommended_action", "holding_gate_pass", "holding_gate_reason"}.issubset(review.columns)
+    assert review.iloc[0]["holding_quality"] in {"strong", "watch", "avoid"}
