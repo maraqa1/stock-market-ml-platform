@@ -30,13 +30,13 @@
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Basket State</span>
-        <strong class="kpi-card__value">{{ (positions_api.basket_state or "normal")|replace("_", " ")|title }}</strong>
-        <small class="kpi-card__detail">New entries paused: {{ "yes" if positions_api.new_entries_paused else "no" }}</small>
+        <strong class="kpi-card__value" data-position-summary="basket_state">{{ (positions_api.basket_state or "normal")|replace("_", " ")|title }}</strong>
+        <small class="kpi-card__detail" data-position-summary="new_entries_paused">New entries paused: {{ "yes" if positions_api.new_entries_paused else "no" }}</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Red Positions</span>
-        <strong class="kpi-card__value {{ 'text-down' if (positions_api.red_position_pct or 0) > 0.7 else '' }}">{{ signed_pct(positions_api.red_position_pct or 0) }}</strong>
-        <small class="kpi-card__detail">Basket return {{ signed_pct(positions_api.basket_return or 0) }}</small>
+        <strong class="kpi-card__value {{ 'text-down' if (positions_api.red_position_pct or 0) > 0.7 else '' }}" data-position-summary="red_position_pct">{{ signed_pct(positions_api.red_position_pct or 0) }}</strong>
+        <small class="kpi-card__detail" data-position-summary="basket_return">Basket return {{ signed_pct(positions_api.basket_return or 0) }}</small>
       </article>
     </div>
     <div class="stale-banner" data-position-stale-banner hidden>Position prices may be stale.</div>

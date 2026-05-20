@@ -390,6 +390,10 @@ def create_app(root: Path | None = None) -> Flask:
                 "body_html": render_template("trading/_partials/positions_body.html", positions_api=positions_api),
                 "refreshed_at": positions_api.get("refreshed_at") or "",
                 "summary": positions_api.get("summary") or {},
+                "basket_return": positions_api.get("basket_return") or 0,
+                "red_position_pct": positions_api.get("red_position_pct") or 0,
+                "basket_state": positions_api.get("basket_state") or "normal",
+                "new_entries_paused": bool(positions_api.get("new_entries_paused")),
                 "pending_close_order_count": positions_api.get("pending_close_order_count") or 0,
             }
         )

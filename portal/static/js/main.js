@@ -283,7 +283,8 @@ if (positionsBody) {
     if (number === 0) return pctFormatter.format(0);
     return `${number > 0 ? "+" : "-"}${pctFormatter.format(Math.abs(number))}`;
   };
-  const updatePositionSummary = (summary = {}, refreshedAt = "") => {
+  const titleText = (value) => String(value || "normal").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  const updatePositionSummary = (summary = {}, refreshedAt = "", state = {}) => {
     const count = Number(summary.position_count || 0);
     const marketValue = Number(summary.position_market_value || 0);
     const costBasis = Number(summary.position_cost_basis || 0);
@@ -295,6 +296,10 @@ if (positionsBody) {
     const unrealizedElement = document.querySelector('[data-position-summary="unrealized_pl"]');
     const unrealizedPctElement = document.querySelector('[data-position-summary="unrealized_plpc"]');
     const unrealizedPctDetail = document.querySelector('[data-position-summary="unrealized_plpc_detail"]');
+    const basketStateElement = document.querySelector('[data-position-summary="basket_state"]');
+    const newEntriesElement = document.querySelector('[data-position-summary="new_entries_paused"]');
+    const redPositionElement = document.querySelector('[data-position-summary="red_position_pct"]');
+    const basketReturnElement = document.querySelector('[data-position-summary="basket_return"]');
     const staleness = document.querySelector("[data-position-staleness]");
     if (marketElement) marketElement.textContent = moneyFormatter.format(marketValue);
     if (countElement) countElement.textContent = `${count} open position${count === 1 ? "" : "s"}`;
@@ -302,8 +307,14 @@ if (positionsBody) {
     if (unrealizedElement) unrealizedElement.textContent = signedMoney(unrealized);
     if (unrealizedPctElement) unrealizedPctElement.textContent = signedPct(unrealizedPct);
     if (unrealizedPctDetail) unrealizedPctDetail.textContent = `${signedPct(unrealizedPct)} unrealized`;
+    if (basketStateElement) basketStateElement.textContent = titleText(state.basket_state);
+    if (newEntriesElement) newEntriesElement.textContent = `New entries paused: ${state.new_entries_paused ? "yes" : "no"}`;
+    if (redPositionElement) redPositionElement.textContent = signedPct(Number(state.red_position_pct || 0));
+    if (basketReturnElement) basketReturnElement.textContent = `Basket return ${signedPct(Number(state.basket_return || unrealizedPct))}`;
     updateSignedClass(unrealizedElement, unrealized);
     updateSignedClass(unrealizedPctElement, unrealizedPct);
+    updateSignedClass(basketReturnElement, Number(state.basket_return || unrealizedPct));
+    if (redPositionElement) redPositionElement.classList.toggle("text-down", Number(state.red_position_pct || 0) > 0.7);
     if (staleness) staleness.textContent = `live, refreshed ${refreshedAt || "not available"}`;
   };
   window.setInterval(async () => {
@@ -316,7 +327,7 @@ if (positionsBody) {
       if (contentType.includes("application/json")) {
         const payload = await response.json();
         positionsBody.innerHTML = payload.body_html || "";
-        updatePositionSummary(payload.summary, payload.refreshed_at);
+        updatePositionSummary(payload.summary, payload.refreshed_at, payload);
       } else {
         positionsBody.innerHTML = await response.text();
       }

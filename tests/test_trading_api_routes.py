@@ -272,6 +272,10 @@ def test_positions_state_partial_includes_summary_and_body(api_client):
 
     assert payload["summary"]["position_count"] == 1
     assert payload["summary"]["position_market_value"] == 520
+    assert payload["basket_return"] == payload["summary"]["position_unrealized_plpc"]
+    assert "red_position_pct" in payload
+    assert "basket_state" in payload
+    assert "new_entries_paused" in payload
     assert "data-position-id=\"paper:AAA\"" in payload["body_html"]
     assert payload["pending_close_order_count"] == 1
 
