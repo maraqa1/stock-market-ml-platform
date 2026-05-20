@@ -435,6 +435,7 @@ def positions_context(root: Path) -> dict[str, Any]:
     tracking = safe_read_csv(tracking_file, nrows=1000)
     decisions = safe_read_csv(decisions_file, nrows=1000)
     rows = _records(positions)
+    summary = _position_summary(positions)
     autopilot_state = load_autopilot_state(root)
     decisions = _attach_latest_model_signals(decisions, root)
     rows = enrich_positions(rows, decisions=_records(decisions), autopilot_state=autopilot_state)
@@ -480,10 +481,10 @@ def positions_context(root: Path) -> dict[str, Any]:
     return {
         "source": "csv_artifacts",
         "refreshed_at": _csv_timestamp(positions_file),
-        "summary": _position_summary(positions),
+        "summary": summary,
         "basket_state": basket.basket_state,
         "red_position_pct": basket.red_position_pct,
-        "basket_return": basket.basket_return,
+        "basket_return": summary.get("position_unrealized_plpc", basket.basket_return),
         "new_entries_paused": basket.new_entries_paused,
         "basket_risk_reason": basket.reason,
         "pending_close_order_count": len(pending_close_orders),

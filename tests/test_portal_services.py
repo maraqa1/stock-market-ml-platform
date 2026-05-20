@@ -265,6 +265,21 @@ def test_positions_context_adds_position_management_intelligence(tmp_path):
     assert row["position_intelligence"]["signal_state"] == "unknown"
 
 
+def test_positions_context_basket_return_matches_gross_summary_return(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [
+            {"symbol": "LONG", "qty": 2, "market_value": 110, "cost_basis": 100, "unrealized_pl": 10, "unrealized_plpc": 0.1},
+            {"symbol": "SHORT", "qty": -2, "market_value": -90, "cost_basis": -100, "unrealized_pl": 10, "unrealized_plpc": 0.1},
+        ],
+    )
+
+    ctx = positions_context(tmp_path)
+
+    assert ctx["summary"]["position_unrealized_plpc"] == 0.1
+    assert ctx["basket_return"] == ctx["summary"]["position_unrealized_plpc"]
+
+
 def test_positions_context_uses_latest_model_signal_for_management_health(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
