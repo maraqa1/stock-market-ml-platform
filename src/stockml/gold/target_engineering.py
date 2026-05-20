@@ -34,7 +34,7 @@ def add_ranking_targets(frame: pd.DataFrame) -> pd.DataFrame:
 
     forward_daily = pd.concat(
         [
-            group["adj_close"].shift(-day) / group["adj_close"].shift(-(day - 1)) - 1.0
+            (group["adj_close"].shift(-day) / group["adj_close"].shift(-(day - 1)) - 1.0).astype("float32")
             for day in range(1, 6)
         ],
         axis=1,
@@ -78,6 +78,19 @@ def add_ranking_targets(frame: pd.DataFrame) -> pd.DataFrame:
     )
     out.loc[weak_long_mask, "target_trade_label_tier_5d"] = "Weak Long"
     out.loc[weak_short_mask, "target_trade_label_tier_5d"] = "Weak Short"
+    float_targets = [
+        "target_return_5d",
+        "target_return_10d",
+        "target_sector_relative_return_5d",
+        "target_sector_relative_return_10d",
+        "target_realized_volatility_5d",
+        "target_vol_adjusted_return_5d",
+        "target_decay_weighted_return_5d",
+        "target_rank_pct_by_date_5d",
+        "target_rank_pct_by_date_decay_5d",
+    ]
+    for col in float_targets:
+        out[col] = pd.to_numeric(out[col], errors="coerce", downcast="float")
     return out
 
 

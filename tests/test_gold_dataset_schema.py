@@ -1,6 +1,6 @@
 import pandas as pd
 
-from stockml.gold.build_gold_dataset import GOLD_COLUMNS, build_gold_dataset_from_frames
+from stockml.gold.build_gold_dataset import GOLD_COLUMNS, _read_feature_panel, build_gold_dataset_from_frames
 
 
 def test_gold_dataset_required_columns():
@@ -72,3 +72,22 @@ def test_gold_dataset_deduplicates_sentiment_before_merge():
 
     gold = build_gold_dataset_from_frames(features, sentiment)
     assert len(gold) == len(features)
+
+
+def test_read_feature_panel_uses_only_gold_input_columns(tmp_path):
+    path = tmp_path / "features.csv"
+    pd.DataFrame(
+        [
+            {
+                "date": "2024-01-01",
+                "ticker": "AAA",
+                "adj_close": 10.0,
+                "feature_missing_ratio": 0.0,
+                "unused_debug_column": "drop-me",
+            }
+        ]
+    ).to_csv(path, index=False)
+
+    frame = _read_feature_panel(path)
+    assert "unused_debug_column" not in frame.columns
+    assert {"date", "ticker", "adj_close", "feature_missing_ratio"}.issubset(frame.columns)

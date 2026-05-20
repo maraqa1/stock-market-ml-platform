@@ -28,6 +28,20 @@ GOLD_COLUMNS = [
     "sentiment_score", "technical_setup_score", "selection_score", "candidate_rank_overall", "candidate_rank_by_sector",
 ] + TARGET_COLUMNS
 
+SENTIMENT_INPUT_COLUMNS = {
+    "article_count",
+    "sentiment_score_mean",
+    "sentiment_score_min",
+    "sentiment_score_max",
+    "sentiment_positive_count",
+    "sentiment_negative_count",
+    "sentiment_neutral_count",
+    "sentiment_status",
+    "sentiment_source",
+}
+
+FEATURE_EXTRA_COLUMNS = {"feature_missing_ratio"}
+
 
 def latest_feature_panel_file() -> Path:
     path = latest_file(PROCESSED_DIR, "05_us_feature_panel_*.csv")
@@ -38,6 +52,24 @@ def latest_feature_panel_file() -> Path:
 
 def latest_sentiment_panel_file() -> Optional[Path]:
     return latest_file(PROCESSED_DIR, "05_news_sentiment_panel_*.csv")
+
+
+def _read_feature_panel(path: Path) -> pd.DataFrame:
+    header = pd.read_csv(path, nrows=0)
+    wanted = [col for col in header.columns if col in set(GOLD_COLUMNS) | FEATURE_EXTRA_COLUMNS]
+    return pd.read_csv(path, usecols=wanted, low_memory=False)
+
+
+def _downcast_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy()
+    for col in out.select_dtypes(include=["float64"]).columns:
+        out[col] = pd.to_numeric(out[col], errors="coerce", downcast="float")
+    for col in out.select_dtypes(include=["int64"]).columns:
+        out[col] = pd.to_numeric(out[col], errors="coerce", downcast="integer")
+    for col in ["ticker", "exchange", "sector", "industry", "country", "currency", "sentiment_status", "sentiment_source"]:
+        if col in out.columns:
+            out[col] = out[col].astype("category")
+    return out
 
 
 def _add_sentiment_features(panel: pd.DataFrame) -> pd.DataFrame:
@@ -83,7 +115,7 @@ def _add_selection_scores(gold: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_gold_dataset_from_frames(features: pd.DataFrame, sentiment: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    out = features.copy()
+    out = _downcast_frame(features)
     out["date"] = pd.to_datetime(out["date"], errors="coerce")
     out["ticker"] = out["ticker"].astype(str).str.upper().str.strip()
 
@@ -93,6 +125,7 @@ def build_gold_dataset_from_frames(features: pd.DataFrame, sentiment: Optional[p
         sent["ticker"] = sent["ticker"].astype(str).str.upper().str.strip()
         sent = sent.dropna(subset=["date", "ticker"])
         sent = sent.drop_duplicates(["date", "ticker"], keep="last")
+        sent = _downcast_frame(sent)
         out = out.merge(sent, on=["date", "ticker"], how="left", suffixes=("", "_sentiment"))
 
     sentiment_defaults = {
@@ -115,7 +148,7 @@ def build_gold_dataset_from_frames(features: pd.DataFrame, sentiment: Optional[p
     for col in GOLD_COLUMNS:
         if col not in out.columns:
             out[col] = pd.NA
-    return out[GOLD_COLUMNS].sort_values(["date", "ticker"]).reset_index(drop=True)
+    return _downcast_frame(out[GOLD_COLUMNS]).sort_values(["date", "ticker"]).reset_index(drop=True)
 
 
 def build_portal_outputs(gold: pd.DataFrame, stamp: str) -> Dict[str, Path]:
@@ -166,7 +199,7 @@ def build_gold_dataset(
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
-    features = pd.read_csv(feature_file or latest_feature_panel_file(), low_memory=False)
+    features = _read_feature_panel(feature_file or latest_feature_panel_file())
     features = _filter_features_exchange(features, exchange)
     if limit_tickers:
         tickers = features["ticker"].astype(str).str.upper().drop_duplicates().head(limit_tickers).tolist()
