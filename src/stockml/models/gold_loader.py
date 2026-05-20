@@ -40,7 +40,27 @@ def load_gold_dataset(
     shard_index: int = 0,
 ) -> pd.DataFrame:
     gold_path = path or latest_gold_file()
-    frame = pd.read_csv(gold_path, low_memory=False)
+    header = pd.read_csv(gold_path, nrows=0)
+    missing = REQUIRED_GOLD_COLUMNS - set(header.columns)
+    if missing:
+        raise ValueError(f"Gold dataset missing required columns: {sorted(missing)}")
+    if shard_count > 1:
+        if shard_index < 0 or shard_index >= shard_count:
+            raise ValueError(f"shard_index must be between 0 and {shard_count - 1}")
+        tickers = pd.read_csv(gold_path, usecols=["ticker"], low_memory=False)["ticker"].astype(str).str.upper().str.strip()
+        unique_tickers = tickers.drop_duplicates().tolist()
+        shard_tickers = set(unique_tickers[shard_index::shard_count])
+        if limit_tickers:
+            shard_tickers = set(list(shard_tickers)[:limit_tickers])
+        frames = []
+        for chunk in pd.read_csv(gold_path, chunksize=250_000, low_memory=False):
+            chunk["ticker"] = chunk["ticker"].astype(str).str.upper().str.strip()
+            chunk = chunk[chunk["ticker"].isin(shard_tickers)]
+            if not chunk.empty:
+                frames.append(chunk)
+        frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=header.columns)
+    else:
+        frame = pd.read_csv(gold_path, low_memory=False)
     missing = REQUIRED_GOLD_COLUMNS - set(frame.columns)
     if missing:
         raise ValueError(f"Gold dataset missing required columns: {sorted(missing)}")
@@ -50,12 +70,6 @@ def load_gold_dataset(
     if limit_tickers:
         tickers = frame["ticker"].drop_duplicates().head(limit_tickers).tolist()
         frame = frame[frame["ticker"].isin(tickers)].copy()
-    if shard_count > 1:
-        if shard_index < 0 or shard_index >= shard_count:
-            raise ValueError(f"shard_index must be between 0 and {shard_count - 1}")
-        tickers = frame["ticker"].drop_duplicates().tolist()
-        shard_tickers = set(tickers[shard_index::shard_count])
-        frame = frame[frame["ticker"].isin(shard_tickers)].copy()
     return frame
 
 

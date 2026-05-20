@@ -1,6 +1,6 @@
 import pandas as pd
 
-from stockml.models.gold_loader import build_model_matrix, safe_feature_columns
+from stockml.models.gold_loader import build_model_matrix, load_gold_dataset, safe_feature_columns
 
 
 def test_safe_feature_columns_exclude_targets_and_outputs():
@@ -43,3 +43,20 @@ def test_model_matrix_uses_gold_numeric_features_only():
     assert "target_return_5d" not in cols
     assert len(x) == len(y) == 8
 
+
+def test_load_gold_dataset_filters_shard_from_file(tmp_path):
+    path = tmp_path / "gold.csv"
+    pd.DataFrame(
+        [
+            {
+                "date": "2024-01-01",
+                "ticker": ticker,
+                "target_return_5d": 0.01,
+                "target_trade_label_5d": "Neutral",
+            }
+            for ticker in ["AAA", "BBB", "CCC", "DDD"]
+        ]
+    ).to_csv(path, index=False)
+
+    shard = load_gold_dataset(path, shard_count=2, shard_index=1)
+    assert shard["ticker"].tolist() == ["BBB", "DDD"]
