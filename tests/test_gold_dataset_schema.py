@@ -106,11 +106,13 @@ def test_gold_dataset_fills_categorical_sentiment_defaults():
                 "ticker": "AAA",
                 "article_count": pd.NA,
                 "sentiment_score_mean": pd.NA,
-                "sentiment_status": pd.Categorical([pd.NA], categories=["ok"]),
-                "sentiment_source": pd.Categorical([pd.NA], categories=["eodhd"]),
+                "sentiment_status": pd.NA,
+                "sentiment_source": pd.NA,
             }
         ]
     )
+    sentiment["sentiment_status"] = pd.Categorical(sentiment["sentiment_status"], categories=["ok"])
+    sentiment["sentiment_source"] = pd.Categorical(sentiment["sentiment_source"], categories=["eodhd"])
 
     gold = build_gold_dataset_from_frames(features, sentiment)
 
