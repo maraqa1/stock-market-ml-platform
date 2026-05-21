@@ -74,6 +74,50 @@ def test_gold_dataset_deduplicates_sentiment_before_merge():
     assert len(gold) == len(features)
 
 
+def test_gold_dataset_fills_categorical_sentiment_defaults():
+    dates = pd.date_range("2024-01-01", periods=8, freq="B")
+    features = pd.DataFrame(
+        [
+            {
+                "date": date,
+                "ticker": "AAA",
+                "company": "AAA",
+                "exchange": "NASDAQ",
+                "sector": "Tech",
+                "industry": "Software",
+                "open": 10 + i,
+                "high": 11 + i,
+                "low": 9 + i,
+                "close": 10 + i,
+                "adj_close": 10 + i,
+                "volume": 1000,
+                "feature_missing_ratio": 0,
+                "liquidity_score": 0.8,
+                "sector_relative_momentum_score": 0.7,
+                "volume_confirmation_score": 0.6,
+            }
+            for i, date in enumerate(dates)
+        ]
+    )
+    sentiment = pd.DataFrame(
+        [
+            {
+                "date": dates[0],
+                "ticker": "AAA",
+                "article_count": pd.NA,
+                "sentiment_score_mean": pd.NA,
+                "sentiment_status": pd.Categorical([pd.NA], categories=["ok"]),
+                "sentiment_source": pd.Categorical([pd.NA], categories=["eodhd"]),
+            }
+        ]
+    )
+
+    gold = build_gold_dataset_from_frames(features, sentiment)
+
+    assert "unavailable" in set(gold["sentiment_status"].astype(str))
+    assert "none" in set(gold["sentiment_source"].astype(str))
+
+
 def test_read_feature_panel_uses_only_gold_input_columns(tmp_path):
     path = tmp_path / "features.csv"
     pd.DataFrame(

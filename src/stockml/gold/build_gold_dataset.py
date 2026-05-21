@@ -124,6 +124,13 @@ def _downcast_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _fill_missing_default(series: pd.Series, default: object) -> pd.Series:
+    if isinstance(series.dtype, pd.CategoricalDtype):
+        if default not in series.cat.categories:
+            series = series.cat.add_categories([default])
+    return series.fillna(default)
+
+
 def _add_sentiment_features(panel: pd.DataFrame) -> pd.DataFrame:
     out = panel.sort_values(["ticker", "date"]).copy()
     for col in ["article_count", "sentiment_score_mean"]:
@@ -192,7 +199,7 @@ def build_gold_dataset_from_frames(features: pd.DataFrame, sentiment: Optional[p
         if col not in out.columns:
             out[col] = default
         else:
-            out[col] = out[col].fillna(default)
+            out[col] = _fill_missing_default(out[col], default)
 
     out = _add_sentiment_features(out)
     out = _add_selection_scores(out)
