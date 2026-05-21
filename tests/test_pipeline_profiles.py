@@ -22,6 +22,10 @@ def test_load_pipeline_profiles():
     assert profiles["us_full"]["exchanges"] == ["NYSE", "NASDAQ"]
     assert profiles["us_full"]["provider"] == "eodhd"
     assert profiles["us_full"]["model_shards"] == 20
+    assert profiles["us_full"]["gold_shard_rows"] == 750000
+    assert profiles["us_full"]["skip_gold_sentiment"] is True
+    assert profiles["us_full"]["live_signal_mode"] is True
+    assert profiles["us_full"]["baseline_only"] is True
 
 
 def test_unknown_profile_has_clear_error():
@@ -75,4 +79,9 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     assert calls["features"]["metadata_file"] == metadata
     assert calls["gold"]["feature_file"] == features
     assert calls["gold"]["sentiment_file"] == sentiment
+    assert calls["gold"]["shard_rows"] == 750000
+    assert calls["gold"]["skip_sentiment"] is True
     assert calls["model"]["gold_file"] == gold
+    assert calls["model"]["model_shards"] == 20
+    assert calls["model"]["live_signal_mode"] is True
+    assert calls["model"]["baseline_only"] is True

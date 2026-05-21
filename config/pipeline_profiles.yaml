@@ -73,6 +73,10 @@ profiles:
     metadata_fallback_provider: yahoo_legacy
     sentiment_provider: eodhd
     model_shards: 20
+    gold_shard_rows: 750000
+    skip_gold_sentiment: true
+    live_signal_mode: true
+    baseline_only: true
     start_date: "2018-01-01"
     batch_size: 75
     sleep_seconds: 1.0

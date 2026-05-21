@@ -13,6 +13,7 @@ GOLD_DIR = DATA_DIR / "gold"
 MODEL_OUTPUTS_DIR = DATA_DIR / "model_outputs"
 PORTAL_OUTPUTS_DIR = DATA_DIR / "portal_outputs"
 TRADING_DIR = DATA_DIR / "trading"
+PIPELINE_RUNS_DIR = DATA_DIR / "pipeline_runs"
 PAPER_ORDERS_DIR = TRADING_DIR / "paper_orders"
 PAPER_FILLS_DIR = TRADING_DIR / "paper_fills"
 PAPER_POSITIONS_DIR = TRADING_DIR / "paper_positions"
@@ -37,6 +38,7 @@ def ensure_data_dirs() -> None:
         GOLD_DIR,
         MODEL_OUTPUTS_DIR,
         PORTAL_OUTPUTS_DIR,
+        PIPELINE_RUNS_DIR,
         PAPER_ORDERS_DIR,
         PAPER_FILLS_DIR,
         PAPER_POSITIONS_DIR,

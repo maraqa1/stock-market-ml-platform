@@ -130,6 +130,7 @@ def test_paper_trader_records_submitted_and_guardrail_events(monkeypatch):
     monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
     monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (False, ""))
     monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "FLEX"}]))
+    monkeypatch.setattr(paper_trader, "latest_model_freshness", lambda signal_file=None: (True, "model_signal_table_fresh", "signals.csv"))
     monkeypatch.setattr(paper_trader, "build_candidate_pool", lambda signals, cfg: pd.DataFrame([{"symbol": "FLEX"}]))
     monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: plan)
     monkeypatch.setattr(paper_trader, "AlpacaPaperClient", lambda cfg: FakeClient())
@@ -155,6 +156,7 @@ def test_paper_trader_blocks_basket_submission_when_paper_autopilot_running(monk
     monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
     monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (True, "paper_autopilot_running_blocks_basket_submission"))
     monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "FLEX"}]))
+    monkeypatch.setattr(paper_trader, "latest_model_freshness", lambda signal_file=None: (True, "model_signal_table_fresh", "signals.csv"))
     monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: pd.DataFrame())
     monkeypatch.setattr(paper_trader, "AlpacaPaperClient", lambda cfg: TrackingClient())
 
@@ -166,6 +168,21 @@ def test_paper_trader_blocks_basket_submission_when_paper_autopilot_running(monk
         raise AssertionError("expected basket submission to be blocked")
 
     assert client_calls == []
+
+
+def test_paper_trader_blocks_submission_when_model_is_stale(monkeypatch):
+    TEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(paper_trader, "PORTAL_OUTPUTS_DIR", TEST_OUTPUT_DIR)
+    monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
+    monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (False, ""))
+    monkeypatch.setattr(paper_trader, "latest_model_freshness", lambda signal_file=None: (False, "model_signal_table_stale:2026-05-20", "signals.csv"))
+
+    try:
+        paper_trader.run_paper_trading()
+    except RuntimeError as exc:
+        assert str(exc) == "model_signal_table_stale:2026-05-20"
+    else:
+        raise AssertionError("expected stale model trading block")
 
 
 def test_paper_trader_plan_only_writes_artifacts_without_submitting(monkeypatch):
@@ -200,6 +217,7 @@ def test_paper_trader_plan_only_writes_artifacts_without_submitting(monkeypatch)
     monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
     monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (True, "paper_autopilot_running_blocks_basket_submission"))
     monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "FLEX"}]))
+    monkeypatch.setattr(paper_trader, "latest_model_freshness", lambda signal_file=None: (True, "model_signal_table_fresh", "signals.csv"))
     monkeypatch.setattr(paper_trader, "build_candidate_pool", lambda signals, cfg: pd.DataFrame([{"symbol": "FLEX"}]))
     monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: plan)
     monkeypatch.setattr(paper_trader, "AlpacaPaperClient", lambda cfg: TrackingClient())
