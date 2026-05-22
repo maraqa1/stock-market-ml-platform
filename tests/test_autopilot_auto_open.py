@@ -95,6 +95,10 @@ def _candidate(symbol: str = "CSTL", score: float = 0.72, bias: str = "long") ->
         "nightly_bias": bias,
         "current_price": 10,
         "is_held": False,
+        "meta_label_decision": "Take Trade",
+        "directional_action": "Long" if bias == "long" else "Short",
+        "directional_strength": 0.99,
+        "trade_quality_status": "approved",
         "details": {"is_first_15_min": False, "is_last_30_min": False},
     }
 
@@ -258,6 +262,62 @@ def test_auto_open_submits_paper_order_and_logs_opened():
     assert row["symbol"] == "CSTL"
     assert row["verdict"] == "opened"
     assert row["order_id"] == "order-CSTL"
+
+
+def test_auto_open_blocks_promoted_candidate_without_model_evidence():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("CSTL", 0.71)
+    for key in ("meta_label_decision", "directional_action", "directional_strength", "trade_quality_status"):
+        candidate.pop(key)
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "model_evidence_missing" in result["autopilot_open_notes"]
+    assert client.orders == []
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["symbol"] == "CSTL"
+    assert row["verdict"] == "blocked"
+    assert row["block_reason"] == "model_evidence_missing"
+    assert row["details"]["model_evidence_status"] == "blocked"
+
+
+def test_auto_open_blocks_promoted_candidate_rejected_by_meta_label():
+    engine = _engine()
+    client = FakeClient()
+    candidate = _candidate("CSTL", 0.71)
+    candidate["meta_label_decision"] = "Skip Trade"
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5),
+        alpaca_cfg=_trade_config(),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "model_meta_label_rejected" in result["autopilot_open_notes"]
+    assert client.orders == []
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["block_reason"] == "model_meta_label_rejected"
 
 
 def test_flat_account_fallback_candidates_select_best_confirmed_watch():

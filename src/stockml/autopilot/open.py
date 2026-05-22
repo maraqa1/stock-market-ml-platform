@@ -145,6 +145,40 @@ def per_symbol_forecast_quality_block_reason(details: dict[str, Any], cfg: AutoO
     return ""
 
 
+def model_evidence_block_reason(candidate: dict[str, Any], details: dict[str, Any]) -> str:
+    evidence = {**candidate, **details}
+    meta_decision = str(evidence.get("meta_label_decision") or "").strip().lower()
+    if meta_decision and "skip" in meta_decision:
+        return "model_meta_label_rejected"
+
+    trade_quality = str(evidence.get("trade_quality_status") or "").strip().lower()
+    if trade_quality == "rejected":
+        return "model_trade_quality_rejected"
+
+    candidate_status = str(evidence.get("candidate_status") or "").strip().lower()
+    if candidate_status == "rejected":
+        return "model_candidate_rejected"
+
+    order_eligible = _bool_flag(evidence.get("order_eligible"))
+    if order_eligible is False:
+        return "model_order_ineligible"
+    if order_eligible is True:
+        return ""
+
+    if meta_decision in {"take trade", "take_trade", "trade", "approved"}:
+        return ""
+
+    directional_action = str(evidence.get("directional_action") or evidence.get("trade_action") or "").strip().lower()
+    directional_strength = _optional_float(evidence.get("directional_strength"))
+    if directional_action in {"long", "short"} and directional_strength is not None and directional_strength >= 0.97:
+        return ""
+
+    if trade_quality in {"approved", "reduced"} and directional_action in {"long", "short"}:
+        return ""
+
+    return "model_evidence_missing"
+
+
 def _holding_review_dir(root: Path | str | None = None) -> Path:
     if root is None:
         return HOLDING_PERIOD_DIR
@@ -958,6 +992,13 @@ def apply_auto_open(
             details["side"] = candidate.get("side")
         if candidate.get("nightly_bias") and not details.get("nightly_bias"):
             details["nightly_bias"] = candidate.get("nightly_bias")
+        model_block_reason = model_evidence_block_reason(candidate, details)
+        if model_block_reason:
+            blocked += 1
+            evidence_details = {**details, "model_evidence_status": "blocked", "model_evidence_reason": model_block_reason}
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=0.0, verdict="blocked", block_reason=model_block_reason, details=evidence_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:{model_block_reason}")
+            continue
         alignment = evaluate_entry_signal_alignment(candidate, details)
         if not alignment.allowed:
             blocked += 1
