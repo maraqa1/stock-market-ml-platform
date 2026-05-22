@@ -75,3 +75,40 @@ def test_symbol_coverage_audit_traces_provider_scoped_drop_stage(tmp_path: Path,
     assert kr["has_model_prediction"]
     assert kr["drop_stage"] == "order_plan"
     assert arm["drop_stage"] == "universe"
+
+
+def test_symbol_coverage_audit_does_not_stop_at_metadata_when_gold_exists(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("stockml.reports.symbol_coverage_audit.ensure_data_dirs", lambda: None)
+
+    interim = tmp_path / "data" / "interim"
+    raw = tmp_path / "data" / "raw"
+    gold = tmp_path / "data" / "gold"
+    model = tmp_path / "data" / "model_outputs"
+    portal = tmp_path / "data" / "portal_outputs"
+    for path in [interim, raw, gold, model, portal]:
+        path.mkdir(parents=True)
+
+    pd.DataFrame([{"symbol": "BB", "listing_exchange": "NYSE", "company": "BlackBerry"}]).to_csv(
+        interim / "02_us_tradable_universe_20260522_000000.csv", index=False
+    )
+    pd.DataFrame([{"ticker": "BB", "date": "2026-05-21", "source": "eodhd"}]).to_csv(
+        raw / "03_us_price_history_store.csv", index=False
+    )
+    pd.DataFrame([{"yahoo_ticker": "BB"}]).to_csv(
+        interim / "03_us_price_validated_universe_20260522_000000.csv", index=False
+    )
+    pd.DataFrame([{"ticker": "OTHER", "metadata_status": "ok"}]).to_csv(
+        interim / "04_us_metadata_enriched_20260522_000000.csv", index=False
+    )
+    pd.DataFrame([{"ticker": "BB", "date": "2026-05-21"}]).to_csv(
+        gold / "06_us_gold_ml_dataset_20260522_000000.csv", index=False
+    )
+
+    result = build_symbol_coverage_audit(tmp_path, symbols=["BB"], provider_name="eodhd", stamp="20260522_000000")
+    report = pd.read_csv(result["path"])
+    row = report.set_index("symbol").loc["BB"]
+
+    assert not row["has_metadata"]
+    assert row["has_gold_rows"]
+    assert row["drop_stage"] == "model"
+    assert row["drop_reason"] == "missing_model_prediction"

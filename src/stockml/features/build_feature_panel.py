@@ -16,7 +16,8 @@ from stockml.features.technical_features import add_technical_features
 from stockml.features.volatility_features import add_volatility_features
 
 FEATURE_PANEL_COLUMNS = [
-    "date", "ticker", "company", "exchange", "sector", "industry", "open", "high", "low", "close", "adj_close",
+    "date", "ticker", "company", "exchange", "sector", "industry", "market_cap", "beta", "country", "currency",
+    "open", "high", "low", "close", "adj_close",
     "volume", "dollar_volume", "avg_dollar_volume_20d", "return_1d", "return_5d", "return_10d", "return_20d",
     "return_60d", "volatility_20d", "volatility_60d", "volume_ratio_20d", "high_20d", "low_20d",
     "distance_from_20d_high", "distance_from_20d_low", "sma_20", "sma_50", "sma_200", "sma_gap_20_50",
@@ -56,6 +57,25 @@ def build_feature_panel_from_frames(prices: pd.DataFrame, universe: pd.DataFrame
         if meta_col in out.columns:
             out[col] = out[col].fillna(out[meta_col])
             out = out.drop(columns=[meta_col])
+    for col, default in {
+        "company": "",
+        "exchange": "",
+        "sector": "Unknown",
+        "industry": "Unknown",
+        "country": "US",
+        "currency": "USD",
+    }.items():
+        if col not in out.columns:
+            out[col] = default
+        else:
+            out[col] = out[col].fillna(default)
+            if out[col].dtype == object:
+                out[col] = out[col].replace("", default)
+    for col in ["market_cap", "beta"]:
+        if col not in out.columns:
+            out[col] = pd.NA
+        else:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
 
     out = add_liquidity_features(out)
     out = add_technical_features(out)
