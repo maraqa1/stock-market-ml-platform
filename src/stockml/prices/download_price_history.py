@@ -124,10 +124,18 @@ def download_group(tickers: List[str], start: str, batch_size: int, sleep_second
         log(f"Downloading batch {batch_no}/{len(batches)} provider={provider.provider_name} start={start} tickers={len(batch)}")
 
         normalized, failed = provider.fetch_daily_prices(batch, start=start, download_timestamp=stamp)
+        requested = {str(t).upper().strip() for t in batch if str(t).strip()}
+        returned = set()
+        failed_tickers = set()
+
         if not normalized.empty:
+            returned = set(normalized["ticker"].dropna().astype(str).str.upper().str.strip())
             all_rows.append(normalized)
         if not failed.empty:
+            failed_tickers = set(failed["ticker"].dropna().astype(str).str.upper().str.strip())
             failures.extend(failed.to_dict("records"))
+        for missing in sorted(requested - returned - failed_tickers):
+            failures.append({"ticker": missing, "start": start, "reason": "provider_returned_no_rows_or_failure"})
 
         if sleep_seconds > 0:
             time.sleep(sleep_seconds)
@@ -145,12 +153,17 @@ def download_price_history(
     force_full: bool = False,
     exchange: object = None,
     provider_name: str | None = None,
+    symbols: Iterable[str] | None = None,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
 
-    universe = read_tradable_universe(limit=limit, exchange=exchange)
-    tickers = universe["yahoo_ticker"].dropna().astype(str).str.upper().unique().tolist()
+    if symbols:
+        tickers = sorted({str(symbol).upper().strip() for symbol in symbols if str(symbol).strip()})
+        log(f"Loaded explicit symbol repair list: {len(tickers):,} tickers")
+    else:
+        universe = read_tradable_universe(limit=limit, exchange=exchange)
+        tickers = universe["yahoo_ticker"].dropna().astype(str).str.upper().unique().tolist()
 
     store = load_price_store()
     provider = provider_from_name(provider_name)
@@ -222,6 +235,7 @@ def main() -> int:
     p.add_argument("--exchange", default=None, help="Optional listing exchange filter, e.g. NASDAQ")
     p.add_argument("--force-full", action="store_true")
     p.add_argument("--provider", default=None, help="Market data provider: yahoo_legacy or eodhd. Defaults to config/env.")
+    p.add_argument("--symbols", nargs="*", default=None, help="Optional explicit ticker list for targeted price repair/backfill.")
     args = p.parse_args()
 
     paths = download_price_history(
@@ -232,6 +246,7 @@ def main() -> int:
         force_full=args.force_full,
         exchange=args.exchange,
         provider_name=args.provider,
+        symbols=args.symbols,
     )
 
     for name, path in paths.items():
