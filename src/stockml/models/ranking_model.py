@@ -83,7 +83,7 @@ def config_from_env() -> RankingConfig:
         long_top_n=int(os.environ.get("STOCKML_RANKER_LONG_TOP_N", "10")),
         short_bottom_n=int(os.environ.get("STOCKML_RANKER_SHORT_BOTTOM_N", "10")),
         enable_classifier=_bool_env("STOCKML_RANKER_ENABLE_CLASSIFIER", True),
-        allow_short_selling=_bool_env("STOCKML_ALLOW_SHORT_SELLING", False),
+        allow_short_selling=_bool_env("STOCKML_ALLOW_SHORT_SELLING", True),
         decision_objective=os.environ.get("STOCKML_RANKER_DECISION_OBJECTIVE", "top_k_portfolio").strip().lower(),
         min_positive_spread_folds=int(os.environ.get("STOCKML_RANKER_MIN_POSITIVE_SPREAD_FOLDS", "3")),
         min_long_short_spread_ir=float(os.environ.get("STOCKML_RANKER_MIN_LONG_SHORT_SPREAD_IR", "0")),

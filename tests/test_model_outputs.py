@@ -2,7 +2,7 @@ import pandas as pd
 
 from stockml.models.build_model_outputs import _combine_shard_artifacts
 from stockml.models.gold_loader import load_gold_dataset
-from stockml.models.ranking_model import ModelArtifacts, train_predict_from_gold
+from stockml.models.ranking_model import ModelArtifacts, config_from_env, train_predict_from_gold
 
 
 def synthetic_gold():
@@ -80,6 +80,17 @@ def test_train_predict_from_gold_live_signal_mode_skips_walk_forward():
     assert artifacts.model_status.iloc[0]["decision_grade"] == "decision_grade"
     assert artifacts.model_status.iloc[0]["reason"] == "live_signal_mode_validation_skipped"
     assert artifacts.model_status.iloc[0]["selected_model"] == "equal_weight_momentum_composite"
+
+
+def test_live_signal_model_emits_short_side_by_default(monkeypatch):
+    monkeypatch.delenv("STOCKML_ALLOW_SHORT_SELLING", raising=False)
+
+    artifacts = train_predict_from_gold(synthetic_gold(), top_n=5, live_signal_mode=True, baseline_only=True)
+
+    assert config_from_env().allow_short_selling is True
+    assert "Short" in set(artifacts.signal_table["trade_action"])
+    assert "Short" in set(artifacts.signal_table["directional_action"])
+    assert not artifacts.top_short.empty
 
 
 def test_shard_combine_does_not_require_walk_forward_history():
