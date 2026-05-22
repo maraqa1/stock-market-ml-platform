@@ -170,3 +170,7 @@ grep STOCKML_DB_PASSWORD .env
 sudo grep STOCKML_DB_PASSWORD /etc/stockml/stockml.env
 ```
 
+## Fresh VM Transfer
+
+Use [docs/26_fresh_vm_transfer_runbook.md](docs/26_fresh_vm_transfer_runbook.md) to move the platform to a new VM. The runbook covers freezing old timers, copying secrets and data artifacts, installing systemd services, verifying portal/pipeline/paper-trading in safe mode, and enabling order submission only after checks pass.
+
