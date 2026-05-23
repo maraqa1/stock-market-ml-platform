@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 import pandas as pd
 
@@ -68,9 +69,9 @@ def test_candidate_funnel_artifacts_flag_stale_downstream_files(tmp_path: Path, 
         path.touch()
         if path.name.startswith("06_us_gold"):
             # Simulate stale Gold after a repaired validated universe.
-            path.touch(times=(1, 1))
+            os.utime(path, (1, 1))
         else:
-            path.touch(times=(index + 10, index + 10))
+            os.utime(path, (index + 10, index + 10))
 
     result = build_candidate_funnel_report(tmp_path, provider_name="eodhd", stamp="20260522_000000")
     artifacts = pd.read_csv(result["artifact_path"])
