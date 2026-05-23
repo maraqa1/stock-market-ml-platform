@@ -75,6 +75,7 @@ def test_pipeline_quality_report_passes_for_coherent_artifacts(tmp_path: Path, m
 def test_pipeline_quality_report_fails_stale_gold_and_missing_market_caps(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("stockml.reports.pipeline_quality_checks.ensure_data_dirs", lambda: None)
     _healthy_artifacts(tmp_path)
+    (tmp_path / "data" / "gold" / "06_us_gold_ml_dataset_20260523_000000.csv").unlink()
     _write(
         tmp_path / "data" / "gold" / "06_us_gold_ml_dataset_20260523_010000.csv",
         [
@@ -110,4 +111,3 @@ def test_pipeline_quality_report_fails_when_validated_universe_collapses(tmp_pat
     assert result["status"] == "failed"
     assert "validated_row_count" in failures
     assert "validated_universe_coverage" in failures
-
