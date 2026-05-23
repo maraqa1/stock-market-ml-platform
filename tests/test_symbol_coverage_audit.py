@@ -77,7 +77,7 @@ def test_symbol_coverage_audit_traces_provider_scoped_drop_stage(tmp_path: Path,
     assert arm["drop_stage"] == "universe"
 
 
-def test_symbol_coverage_audit_does_not_stop_at_metadata_when_gold_exists(tmp_path: Path, monkeypatch):
+def test_symbol_coverage_audit_does_not_treat_missing_metadata_as_blocking_stage(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("stockml.reports.symbol_coverage_audit.ensure_data_dirs", lambda: None)
 
     interim = tmp_path / "data" / "interim"
@@ -112,3 +112,37 @@ def test_symbol_coverage_audit_does_not_stop_at_metadata_when_gold_exists(tmp_pa
     assert row["has_gold_rows"]
     assert row["drop_stage"] == "model"
     assert row["drop_reason"] == "missing_model_prediction"
+
+
+def test_symbol_coverage_audit_reports_gold_missing_after_validated_without_metadata(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("stockml.reports.symbol_coverage_audit.ensure_data_dirs", lambda: None)
+
+    interim = tmp_path / "data" / "interim"
+    raw = tmp_path / "data" / "raw"
+    gold = tmp_path / "data" / "gold"
+    model = tmp_path / "data" / "model_outputs"
+    portal = tmp_path / "data" / "portal_outputs"
+    for path in [interim, raw, gold, model, portal]:
+        path.mkdir(parents=True)
+
+    pd.DataFrame([{"symbol": "HPQ", "listing_exchange": "NYSE", "company": "HP"}]).to_csv(
+        interim / "02_us_tradable_universe_20260522_000000.csv", index=False
+    )
+    pd.DataFrame([{"ticker": "HPQ", "date": "2026-05-22", "source": "eodhd"}]).to_csv(
+        raw / "03_us_price_history_store.csv", index=False
+    )
+    pd.DataFrame([{"yahoo_ticker": "HPQ"}]).to_csv(
+        interim / "03_us_price_validated_universe_20260522_000000.csv", index=False
+    )
+    pd.DataFrame([{"ticker": "OTHER", "metadata_status": "ok"}]).to_csv(
+        interim / "04_us_metadata_enriched_20260522_000000.csv", index=False
+    )
+
+    result = build_symbol_coverage_audit(tmp_path, symbols=["HPQ"], provider_name="eodhd", stamp="20260522_000000")
+    report = pd.read_csv(result["path"])
+    row = report.set_index("symbol").loc["HPQ"]
+
+    assert not row["has_metadata"]
+    assert not row["has_gold_rows"]
+    assert row["drop_stage"] == "gold"
+    assert row["drop_reason"] == "missing_gold_rows"

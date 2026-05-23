@@ -180,3 +180,7 @@ sudo grep STOCKML_DB_PASSWORD /etc/stockml/stockml.env
 
 Use [docs/26_fresh_vm_transfer_runbook.md](docs/26_fresh_vm_transfer_runbook.md) to move the platform to a new VM. The runbook covers freezing old timers, copying secrets and data artifacts, installing systemd services, verifying portal/pipeline/paper-trading in safe mode, and enabling order submission only after checks pass.
 
+## Candidate Funnel Review
+
+Use [docs/27_candidate_funnel_review.md](docs/27_candidate_funnel_review.md) and `scripts/run_candidate_funnel_report.py` to diagnose why a symbol did or did not reach the candidate pool or order plan.
+

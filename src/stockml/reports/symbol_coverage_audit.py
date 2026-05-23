@@ -96,7 +96,6 @@ def _drop_stage(row: pd.Series) -> tuple[str, str]:
         ("universe", "missing_from_universe", not row["in_universe"]),
         ("price", "missing_provider_price_history", not row["has_price"]),
         ("price_validation", "failed_or_missing_price_quality", not row["in_validated_universe"]),
-        ("metadata", "missing_metadata", not row["has_metadata"] and not row["has_gold_rows"]),
         ("gold", "missing_gold_rows", not row["has_gold_rows"]),
         ("model", "missing_model_prediction", not row["has_model_prediction"]),
         ("candidate_pool", "not_selected_for_candidate_pool", not row["has_candidate_pool"]),
