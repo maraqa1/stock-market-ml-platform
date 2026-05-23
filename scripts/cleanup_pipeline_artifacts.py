@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -78,15 +79,36 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Prune old generated StockML CSV/JSON artifacts. Dry-run by default.")
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--execute", action="store_true", help="Actually delete stale files. Omit for dry-run.")
-    parser.add_argument("--keep-interim", type=int, default=5)
-    parser.add_argument("--keep-model", type=int, default=5)
-    parser.add_argument("--keep-portal", type=int, default=5)
-    parser.add_argument("--keep-trading", type=int, default=10)
+    parser.add_argument("--keep-raw-delta", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_RAW_DELTA", "3")))
+    parser.add_argument("--keep-interim", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_INTERIM", "5")))
+    parser.add_argument("--keep-processed", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_PROCESSED", "3")))
+    parser.add_argument("--keep-gold", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_GOLD", "2")))
+    parser.add_argument("--keep-model", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_MODEL", "5")))
+    parser.add_argument("--keep-portal", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_PORTAL", "5")))
+    parser.add_argument("--keep-trading", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_TRADING", "10")))
     args = parser.parse_args()
 
     patterns = [
         RetentionPattern(p.directory, p.pattern, args.keep_interim if p.directory == "data/interim" else p.keep, p.recursive)
         for p in DEFAULT_PATTERNS
+    ]
+    patterns = [
+        RetentionPattern(p.directory, p.pattern, args.keep_raw_delta, p.recursive)
+        if p.directory == "data/raw" and p.pattern == "03_us_price_history_delta_*.csv"
+        else p
+        for p in patterns
+    ]
+    patterns = [
+        RetentionPattern(p.directory, p.pattern, args.keep_processed, p.recursive)
+        if p.directory == "data/processed"
+        else p
+        for p in patterns
+    ]
+    patterns = [
+        RetentionPattern(p.directory, p.pattern, args.keep_gold, p.recursive)
+        if p.directory == "data/gold"
+        else p
+        for p in patterns
     ]
     patterns = [
         RetentionPattern(p.directory, p.pattern, args.keep_model, p.recursive)

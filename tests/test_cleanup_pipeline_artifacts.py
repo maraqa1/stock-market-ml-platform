@@ -28,3 +28,13 @@ def test_cleanup_never_selects_protected_canonical_files(tmp_path):
     selected = stale_files([RetentionPattern("data/model_outputs", "*.csv", keep=1)], root=tmp_path)
 
     assert [path.name for path in selected] == ["advanced_model_latest_predictions_20260501_000000.csv"]
+
+
+def test_cleanup_preserves_configured_number_of_gold_files(tmp_path):
+    for idx in range(4):
+        _write(tmp_path / "data" / "gold" / f"06_us_gold_ml_dataset_2026052{idx}_000000.csv", str(idx))
+
+    selected = stale_files([RetentionPattern("data/gold", "06_us_gold_ml_dataset_*.csv", keep=1)], root=tmp_path)
+
+    assert len(selected) == 3
+    assert "20260523" not in {path.name for path in selected}

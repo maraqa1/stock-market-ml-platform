@@ -70,6 +70,9 @@ rm -f "$tmp_env"
 
 sudo cp "$REPO_DIR/deployment/systemd/stockml-full-nightly.service" "$SYSTEMD_DIR/"
 sudo cp "$REPO_DIR/deployment/systemd/stockml-full-nightly.timer" "$SYSTEMD_DIR/"
+sudo cp "$REPO_DIR/deployment/systemd/stockml-artifact-cleanup.service" "$SYSTEMD_DIR/"
+sudo cp "$REPO_DIR/deployment/systemd/stockml-artifact-cleanup.timer" "$SYSTEMD_DIR/"
 sudo systemctl daemon-reload
 sudo systemctl enable --now stockml-full-nightly.timer
+sudo systemctl enable --now stockml-artifact-cleanup.timer
 sudo systemctl list-timers 'stockml-*'

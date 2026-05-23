@@ -104,6 +104,12 @@ cd /home/massa/stock-market-ml-platform
 STOCKML_PROFILE=nasdaq_500 bash deployment/vm/install_full_scheduler.sh
 ```
 
+The full scheduler also installs a daily artifact cleanup timer. It prunes old timestamped CSV/JSON outputs while preserving the canonical price store and latest model pointer files. Review the cleanup dry-run any time with:
+
+```bash
+PYTHONPATH=src /opt/jupyter-env/bin/python3 scripts/cleanup_pipeline_artifacts.py
+```
+
 To grow later, change only the profile:
 
 ```bash
