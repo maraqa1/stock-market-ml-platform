@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -41,6 +42,14 @@ PROTECTED_NAMES = {
     "paper_autopilot_state.json",
 }
 
+STAMP_PATTERN = re.compile(r"(20\d{6}_\d{6})")
+
+
+def _artifact_sort_key(path: Path) -> tuple[str, float, str]:
+    match = STAMP_PATTERN.search(path.name)
+    stamp = match.group(1) if match else ""
+    return stamp, path.stat().st_mtime, path.name
+
 
 def _files_for(pattern: RetentionPattern, root: Path) -> list[Path]:
     directory = root / pattern.directory
@@ -54,7 +63,7 @@ def _files_for(pattern: RetentionPattern, root: Path) -> list[Path]:
         and path.name not in PROTECTED_NAMES
         and not path.name.endswith("_latest.csv")
     ]
-    return sorted(files, key=lambda path: path.stat().st_mtime, reverse=True)
+    return sorted(files, key=_artifact_sort_key, reverse=True)
 
 
 def stale_files(patterns: Iterable[RetentionPattern], root: Path = ROOT) -> list[Path]:
