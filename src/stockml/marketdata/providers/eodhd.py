@@ -200,4 +200,4 @@ class EodhdProvider(MarketDataProvider):
             )
             return row
         except Exception as exc:
-            return empty_fundamentals_row(clean_ticker, "metadata_error", str(exc), company=company, exchange=exchange)
+            return empty_fundamentals_row(clean_ticker, "metadata_error", scrub_eodhd_secret(exc), company=company, exchange=exchange)

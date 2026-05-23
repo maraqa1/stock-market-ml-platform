@@ -121,6 +121,22 @@ def test_eodhd_error_text_redacts_api_token():
     assert "api_token=<redacted>" in text
 
 
+def test_eodhd_fundamentals_errors_redact_api_token():
+    class Response:
+        def raise_for_status(self):
+            raise RuntimeError("403 for https://eodhd.com/api/fundamentals/AAA.US?api_token=secret-key&fmt=json")
+
+    class Session:
+        def get(self, url, params, timeout):
+            return Response()
+
+    row = EodhdProvider(api_key="key", session=Session()).fetch_fundamentals("aaa")
+
+    assert row["metadata_status"] == "metadata_error"
+    assert "secret-key" not in row["metadata_error"]
+    assert "api_token=<redacted>" in row["metadata_error"]
+
+
 def test_legacy_metadata_wrapper_preserves_schema():
     row = empty_metadata_row("aapl", "metadata_error", "rate limited")
     provider_row = empty_fundamentals_row("aapl", "metadata_error", "rate limited")
