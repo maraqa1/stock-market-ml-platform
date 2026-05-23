@@ -10,6 +10,7 @@ from stockml.reports.symbol_coverage_audit import AUDIT_COLUMNS, build_symbol_co
 
 
 SUMMARY_COLUMNS = ["stage", "reason", "symbols"]
+ARTIFACT_ORDER = ["universe", "price", "validated", "metadata", "features", "gold", "model", "candidate_pool", "order_plan"]
 
 
 def _read_audit(path: Path) -> pd.DataFrame:
@@ -35,17 +36,25 @@ def _stage_summary(audit: pd.DataFrame) -> pd.DataFrame:
 
 def _artifact_rows(artifacts: dict[str, str]) -> pd.DataFrame:
     rows = []
-    for name, value in artifacts.items():
+    previous_mtime: float | None = None
+    for name in ARTIFACT_ORDER:
+        value = artifacts.get(name, "")
         path = Path(value) if value else None
+        exists = bool(path and path.exists())
+        modified = path.stat().st_mtime if exists else None
+        stale_vs_upstream = bool(modified is not None and previous_mtime is not None and modified < previous_mtime)
         rows.append(
             {
                 "artifact": name,
                 "path": str(path or ""),
-                "exists": bool(path and path.exists()),
-                "size_bytes": int(path.stat().st_size) if path and path.exists() else 0,
-                "modified_utc": pd.to_datetime(path.stat().st_mtime, unit="s", utc=True).isoformat() if path and path.exists() else "",
+                "exists": exists,
+                "size_bytes": int(path.stat().st_size) if exists else 0,
+                "modified_utc": pd.to_datetime(modified, unit="s", utc=True).isoformat() if modified is not None else "",
+                "stale_vs_upstream": stale_vs_upstream,
             }
         )
+        if modified is not None:
+            previous_mtime = max(previous_mtime or modified, modified)
     return pd.DataFrame(rows)
 
 

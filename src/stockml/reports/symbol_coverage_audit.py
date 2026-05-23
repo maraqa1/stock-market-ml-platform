@@ -118,6 +118,7 @@ def build_symbol_coverage_audit(
     data = base / "data"
     interim = data / "interim"
     raw = data / "raw"
+    processed = data / "processed"
     gold_dir = data / "gold"
     model_dir = data / "model_outputs"
     portal_dir = data / "portal_outputs"
@@ -126,6 +127,7 @@ def build_symbol_coverage_audit(
     universe_path = _latest(interim, "02_us_tradable_universe_*.csv")
     validated_path = _latest(interim, "03_us_price_validated_universe_*.csv")
     metadata_path = _latest(interim, "04_us_metadata_enriched_*.csv")
+    feature_path = _latest(processed, "05_us_feature_panel_*.csv")
     gold_path = _latest(gold_dir, "06_us_gold_ml_dataset_*.csv")
     model_path = model_dir / "model_predictions_latest.csv"
     if not model_path.exists():
@@ -255,6 +257,7 @@ def build_symbol_coverage_audit(
             "price": str(price_path if price_path.exists() else ""),
             "validated": str(validated_path or ""),
             "metadata": str(metadata_path or ""),
+            "features": str(feature_path or ""),
             "gold": str(gold_path or ""),
             "model": str(model_path or ""),
             "candidate_pool": str(pool_path or ""),
