@@ -1527,7 +1527,7 @@ def test_paper_autopilot_tick_builds_monitor_and_closes_max_holding_days(monkeyp
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
     portal = tmp_path / "data" / "portal_outputs"
-    portal.mkdir(parents=True)
+    portal.mkdir(parents=True, exist_ok=True)
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([]).to_csv(tracking, index=False)
