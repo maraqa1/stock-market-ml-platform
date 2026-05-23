@@ -185,3 +185,68 @@ def test_sharded_gold_build_writes_complete_dataset(tmp_path, monkeypatch):
     gold = pd.read_csv(paths["gold_dataset"])
     assert len(gold) == 42
     assert set(GOLD_COLUMNS).issubset(gold.columns)
+
+
+def test_sharded_gold_build_merges_sentiment_by_date_window(tmp_path, monkeypatch):
+    for attr, name in [
+        ("GOLD_DIR", "gold"),
+        ("INTERIM_DIR", "interim"),
+        ("PORTAL_OUTPUTS_DIR", "portal_outputs"),
+    ]:
+        path = tmp_path / name
+        path.mkdir()
+        monkeypatch.setattr(f"stockml.gold.build_gold_dataset.{attr}", path)
+
+    feature_path = tmp_path / "features.csv"
+    sentiment_path = tmp_path / "sentiment.csv"
+    dates = pd.date_range("2024-01-01", periods=14, freq="B")
+    pd.DataFrame(
+        [
+            {
+                "date": date,
+                "ticker": ticker,
+                "company": ticker,
+                "exchange": "NASDAQ",
+                "sector": "Tech",
+                "industry": "Software",
+                "open": 10 + i,
+                "high": 11 + i,
+                "low": 9 + i,
+                "close": 10 + i,
+                "adj_close": 10 + i,
+                "volume": 1000,
+                "feature_missing_ratio": 0,
+                "liquidity_score": 0.8,
+                "sector_relative_momentum_score": 0.7,
+                "volume_confirmation_score": 0.6,
+            }
+            for ticker in ["AAA", "BBB"]
+            for i, date in enumerate(dates)
+        ]
+    ).to_csv(feature_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                "date": dates[2],
+                "ticker": "AAA",
+                "article_count": 7,
+                "sentiment_score_mean": 0.5,
+                "sentiment_status": "ok",
+                "sentiment_source": "yahoo",
+            }
+        ]
+    ).to_csv(sentiment_path, index=False)
+
+    paths = build_gold_dataset(
+        exchange="NASDAQ",
+        feature_file=feature_path,
+        sentiment_file=sentiment_path,
+        skip_sentiment=False,
+        shard_rows=10,
+    )
+    gold = pd.read_csv(paths["gold_dataset"])
+    gold["date"] = pd.to_datetime(gold["date"], errors="coerce")
+    row = gold[(gold["ticker"].eq("AAA")) & (gold["date"].eq(dates[2]))]
+
+    assert int(row.iloc[0]["article_count"]) == 7
+    assert row.iloc[0]["sentiment_status"] == "ok"

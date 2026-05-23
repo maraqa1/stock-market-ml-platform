@@ -74,7 +74,7 @@ profiles:
     sentiment_provider: eodhd
     model_shards: 20
     gold_shard_rows: 750000
-    skip_gold_sentiment: true
+    skip_gold_sentiment: false
     live_signal_mode: true
     baseline_only: true
     start_date: "2018-01-01"

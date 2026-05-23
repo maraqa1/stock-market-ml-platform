@@ -112,6 +112,23 @@ def _read_feature_window(path: Path, dates: Iterable[pd.Timestamp], exchange: ob
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=wanted)
 
 
+def _read_sentiment_window(path: Optional[Path], dates: Iterable[pd.Timestamp], chunksize: int = 250_000) -> Optional[pd.DataFrame]:
+    if path is None or not path.exists():
+        return None
+    header = pd.read_csv(path, nrows=0)
+    wanted = [col for col in header.columns if col in {"date", "ticker"} | SENTIMENT_INPUT_COLUMNS]
+    if not {"date", "ticker"}.issubset(wanted):
+        return None
+    target_dates = _date_values(dates)
+    frames: list[pd.DataFrame] = []
+    for chunk in pd.read_csv(path, usecols=wanted, chunksize=chunksize, low_memory=False):
+        chunk["date"] = pd.to_datetime(chunk["date"], errors="coerce")
+        chunk = chunk[chunk["date"].isin(target_dates)]
+        if not chunk.empty:
+            frames.append(chunk)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=wanted)
+
+
 def _downcast_frame(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     for col in out.select_dtypes(include=["float64"]).columns:
@@ -318,6 +335,7 @@ def _write_gold_dataset_sharded(
     stamp: str,
     exchange: object = None,
     shard_rows: int,
+    sentiment_path: Optional[Path] = None,
 ) -> tuple[Path, int]:
     gold_path = GOLD_DIR / f"06_us_gold_ml_dataset_{stamp}.csv"
     if gold_path.exists():
@@ -328,12 +346,14 @@ def _write_gold_dataset_sharded(
     for index, (core_dates, extended_dates) in enumerate(windows, start=1):
         log(f"Building Gold shard {index}/{len(windows)} dates={len(core_dates)} rows~{int(counts.loc[core_dates].sum())}")
         features = _read_feature_window(feature_path, extended_dates, exchange=exchange)
-        gold = build_gold_dataset_from_frames(features, sentiment=None)
+        sentiment = _read_sentiment_window(sentiment_path, extended_dates)
+        gold = build_gold_dataset_from_frames(features, sentiment=sentiment)
         core_set = _date_values(core_dates)
         gold = gold[pd.to_datetime(gold["date"], errors="coerce").isin(core_set)].copy()
         gold.to_csv(gold_path, index=False, mode="a", header=not gold_path.exists())
         total_rows += len(gold)
         del features
+        del sentiment
         del gold
     return gold_path, total_rows
 
@@ -353,12 +373,14 @@ def build_gold_dataset(
     ensure_data_dirs()
     stamp = timestamp()
     feature_path = feature_file or latest_feature_panel_file()
-    if shard_rows and not limit_tickers and skip_sentiment:
+    if shard_rows and not limit_tickers:
+        sentiment_path = None if skip_sentiment else sentiment_file or latest_sentiment_panel_file()
         gold_path, row_count = _write_gold_dataset_sharded(
             feature_path,
             stamp=stamp,
             exchange=exchange,
             shard_rows=shard_rows,
+            sentiment_path=sentiment_path,
         )
         log(f"Wrote Gold ML dataset: {gold_path} ({row_count:,} rows)")
 
