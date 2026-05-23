@@ -1522,6 +1522,73 @@ def test_paper_autopilot_tick_invokes_auto_open_when_idle(monkeypatch, tmp_path)
     assert state["autopilot_open_submitted"] == 1
 
 
+def test_paper_autopilot_tick_builds_monitor_and_closes_max_holding_days(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    portal = tmp_path / "data" / "portal_outputs"
+    portal.mkdir(parents=True)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([]).to_csv(tracking, index=False)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "HOLD",
+                "qty": 1,
+                "current_price": 10,
+                "avg_entry_price": 10,
+                "side": "long",
+                "submitted_at": "2026-05-01T14:30:00Z",
+                "unrealized_plpc": 0.0,
+            }
+        ]
+    ).to_csv(positions, index=False)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "HOLD",
+                "trade_action": "Long",
+                "signal_generated_at": "2026-05-23T15:55:00Z",
+                "max_holding_days": 1,
+            }
+        ]
+    ).to_csv(portal / "08_alpaca_paper_order_plan_20260523_155500.csv", index=False)
+    pd.DataFrame([{"symbol": "HOLD", "status": "filled"}]).to_csv(
+        portal / "08_alpaca_paper_order_results_20260523_155500.csv",
+        index=False,
+    )
+    closes = []
+    monkeypatch.setattr(
+        paper_autopilot,
+        "apply_manual_position_action",
+        lambda symbol, action: closes.append((symbol, action)) or {"status": "submitted", "message": "closed"},
+    )
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        eod_runner=lambda frame, current_state, open_orders: {
+            "eod_state": "inactive",
+            "eod_actions": 0,
+            "eod_flatten_submitted": 0,
+            "eod_remaining": len(frame),
+            "eod_banner": "",
+            "eod_action_notes": "",
+        },
+        strong_candidate_loader=lambda: [],
+    )
+
+    assert closes == [("HOLD", "close")]
+    assert state["autopilot_close_submitted"] == 1
+    assert state["autopilot_action_notes"].startswith("HOLD:monitor_close:submitted")
+    decision_path = sorted((tmp_path / "data" / "trading" / "agent_decisions").glob("position_decisions_*.csv"))[-1]
+    decisions = pd.read_csv(decision_path)
+    assert decisions.iloc[0]["decision"] == "close"
+    assert "max_holding_days_exceeded" in decisions.iloc[0]["decision_reason"]
+
+
 def test_paper_autopilot_tick_uses_flat_fallback_when_account_is_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
     paper_autopilot.start(tmp_path)

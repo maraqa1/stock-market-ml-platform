@@ -8,6 +8,7 @@ from typing import Any, Callable
 import pandas as pd
 from sqlalchemy import desc, select
 
+from stockml.agents.position_decision_engine import build_position_decisions
 from stockml.autopilot.basket_risk import evaluate_basket_risk, load_basket_risk_config
 from stockml.autopilot.eod import run_eod_tick
 from stockml.autopilot.open import (
@@ -21,7 +22,7 @@ from stockml.autopilot.open import (
 )
 from stockml.autopilot.rotate import apply_auto_rotations
 from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
-from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs
+from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
 from stockml.trading.alpaca_client import AlpacaPaperClient
@@ -422,6 +423,12 @@ def _agent_decisions_dir(root: Path | None = None) -> Path:
     return Path(root) / "data" / "trading" / "agent_decisions"
 
 
+def _portal_outputs_dir(root: Path | None = None) -> Path:
+    if root is None:
+        return PORTAL_OUTPUTS_DIR
+    return Path(root) / "data" / "portal_outputs"
+
+
 def _latest_csv(directory: Path, pattern: str) -> Path | None:
     if not directory.exists():
         return None
@@ -448,6 +455,43 @@ def load_monitor_decision_summary(root: Path | None = None) -> dict[str, Any]:
 def load_monitor_decisions(root: Path | None = None) -> pd.DataFrame:
     path = _latest_csv(_agent_decisions_dir(root), "position_decisions_*.csv")
     return _read_csv(path)
+
+
+def build_fresh_monitor_decisions(
+    root: Path | None,
+    positions: pd.DataFrame,
+    *,
+    now: datetime | None = None,
+) -> tuple[pd.DataFrame, Path | None]:
+    if positions.empty:
+        return pd.DataFrame(), None
+
+    portal_dir = _portal_outputs_dir(root)
+    plan_path = _latest_csv(portal_dir, "08_alpaca_paper_order_plan_*.csv")
+    result_path = _latest_csv(portal_dir, "08_alpaca_paper_order_results_*.csv")
+    candidate_pool_path = _latest_csv(portal_dir, "08_alpaca_paper_candidate_pool_*.csv")
+    plan = _read_csv(plan_path)
+    results = _read_csv(result_path)
+    candidate_pool = _read_csv(candidate_pool_path)
+    fallback_signal_time = (
+        datetime.fromtimestamp(plan_path.stat().st_mtime, tz=timezone.utc)
+        if plan_path and plan_path.exists()
+        else None
+    )
+    decisions = build_position_decisions(
+        positions,
+        plan,
+        results,
+        candidate_pool,
+        now=now or datetime.now(timezone.utc),
+        signal_ttl_minutes=10,
+        fallback_signal_time=fallback_signal_time,
+    )
+    directory = _agent_decisions_dir(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"position_decisions_{timestamp()}.csv"
+    decisions.to_csv(path, index=False)
+    return decisions, path
 
 
 def _position_plpc_by_symbol(positions: pd.DataFrame) -> dict[str, float]:
@@ -694,10 +738,12 @@ def tick(
         tracked_open_orders = _count_open_orders(tracking)
         broker_open_orders = (broker_open_orders_func or _count_broker_open_orders)(cfg)
         intraday_summary = intraday_decision_loader()
-        monitor_summary = monitor_decision_loader(root)
         open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
         update_position_peaks(state, positions)
+        if open_positions > 0:
+            build_fresh_monitor_decisions(root, positions, now=datetime.now(timezone.utc))
+        monitor_summary = monitor_decision_loader(root)
         eod_result = {
             "eod_state": "inactive",
             "eod_actions": 0,
