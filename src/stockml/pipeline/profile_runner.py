@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import Any, Dict
+
+import pandas as pd
 
 from stockml.common.logging_utils import log
 from stockml.common.profiles import load_profile
@@ -16,6 +19,58 @@ from stockml.prices.download_price_history import download_price_history
 from stockml.prices.validate_price_history import build_price_quality_report
 from stockml.sentiment.build_sentiment_panel import build_sentiment_panel
 from stockml.universe.build_tradable_universe import build_us_equity_universe
+
+
+def _symbol_set(path: Path | None, columns: list[str]) -> set[str]:
+    if path is None or not path.exists():
+        return set()
+    try:
+        header = pd.read_csv(path, nrows=0)
+    except Exception:
+        return set()
+    column = next((name for name in columns if name in header.columns), None)
+    if column is None:
+        return set()
+    symbols: set[str] = set()
+    for chunk in pd.read_csv(path, usecols=[column], chunksize=200_000, dtype=str, low_memory=False):
+        symbols.update(chunk[column].dropna().astype(str).str.upper().str.strip())
+    symbols.discard("")
+    return symbols
+
+
+def _metadata_quality_gate(
+    metadata_path: Path | None,
+    validated_path: Path | None,
+    *,
+    min_validated_coverage: float = 0.75,
+    min_market_cap_coverage: float = 0.70,
+) -> None:
+    if metadata_path is None or not metadata_path.exists():
+        raise RuntimeError("metadata_quality_gate_failed: metadata artifact missing")
+    if validated_path is None or not validated_path.exists():
+        raise RuntimeError("metadata_quality_gate_failed: validated universe artifact missing")
+
+    validated_symbols = _symbol_set(validated_path, ["yahoo_ticker", "ticker", "symbol"])
+    metadata_symbols = _symbol_set(metadata_path, ["ticker", "symbol", "yahoo_ticker"])
+    if not validated_symbols:
+        raise RuntimeError("metadata_quality_gate_failed: validated universe has no symbols")
+
+    total_rows = 0
+    market_cap_rows = 0
+    for chunk in pd.read_csv(metadata_path, usecols=lambda col: col in {"ticker", "market_cap"}, chunksize=200_000, low_memory=False):
+        total_rows += len(chunk)
+        if "market_cap" in chunk.columns:
+            market_cap_rows += int(pd.to_numeric(chunk["market_cap"], errors="coerce").notna().sum())
+
+    validated_coverage = len(metadata_symbols & validated_symbols) / max(len(validated_symbols), 1)
+    market_cap_coverage = market_cap_rows / max(total_rows, 1)
+    failures = []
+    if validated_coverage < min_validated_coverage:
+        failures.append(f"validated_coverage={validated_coverage:.4f}<required_{min_validated_coverage:.4f}")
+    if market_cap_coverage < min_market_cap_coverage:
+        failures.append(f"market_cap_coverage={market_cap_coverage:.4f}<required_{min_market_cap_coverage:.4f}")
+    if failures:
+        raise RuntimeError("metadata_quality_gate_failed: " + "; ".join(failures))
 
 
 def _limit(profile: Dict[str, Any], override_limit: int | None) -> int | None:
@@ -68,6 +123,12 @@ def run_profile(
                 provider_name=effective_provider,
                 fallback_provider_name=profile.get("metadata_fallback_provider"),
                 exchange=exchange,
+            )
+            _metadata_quality_gate(
+                metadata_paths.get("metadata_enriched"),
+                price_paths.get("validated_universe"),
+                min_validated_coverage=float(profile.get("min_metadata_validated_coverage", 0.75)),
+                min_market_cap_coverage=float(profile.get("min_metadata_market_cap_coverage", 0.70)),
             )
             manifest.stage_ok("metadata", metadata_paths)
         else:

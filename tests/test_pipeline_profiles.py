@@ -1,9 +1,10 @@
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from stockml.common.profiles import load_profile, load_profiles
-from stockml.pipeline.profile_runner import run_profile
+from stockml.pipeline.profile_runner import _metadata_quality_gate, run_profile
 
 
 def test_load_pipeline_profiles():
@@ -51,6 +52,7 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
         "stockml.pipeline.profile_runner.build_metadata_enriched",
         lambda **kwargs: {"metadata_enriched": metadata},
     )
+    monkeypatch.setattr("stockml.pipeline.profile_runner._metadata_quality_gate", lambda *args, **kwargs: None)
 
     def fake_features(**kwargs):
         calls["features"] = kwargs
@@ -85,3 +87,27 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     assert calls["model"]["model_shards"] == 20
     assert calls["model"]["live_signal_mode"] is True
     assert calls["model"]["baseline_only"] is True
+
+
+def test_metadata_quality_gate_rejects_missing_market_caps(tmp_path: Path):
+    validated = tmp_path / "validated.csv"
+    metadata = tmp_path / "metadata.csv"
+    pd.DataFrame([{"yahoo_ticker": "AAA"}, {"yahoo_ticker": "BBB"}]).to_csv(validated, index=False)
+    pd.DataFrame([{"ticker": "AAA", "market_cap": pd.NA}, {"ticker": "BBB", "market_cap": pd.NA}]).to_csv(metadata, index=False)
+
+    with pytest.raises(RuntimeError, match="metadata_quality_gate_failed"):
+        _metadata_quality_gate(metadata, validated, min_validated_coverage=0.75, min_market_cap_coverage=0.70)
+
+
+def test_metadata_quality_gate_accepts_fallback_market_caps(tmp_path: Path):
+    validated = tmp_path / "validated.csv"
+    metadata = tmp_path / "metadata.csv"
+    pd.DataFrame([{"yahoo_ticker": "AAA"}, {"yahoo_ticker": "BBB"}]).to_csv(validated, index=False)
+    pd.DataFrame(
+        [
+            {"ticker": "AAA", "market_cap": 1_000_000_000},
+            {"ticker": "BBB", "market_cap": 2_000_000_000},
+        ]
+    ).to_csv(metadata, index=False)
+
+    _metadata_quality_gate(metadata, validated, min_validated_coverage=0.75, min_market_cap_coverage=0.70)
