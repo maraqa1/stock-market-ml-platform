@@ -96,6 +96,10 @@ def api_client():
         [{"symbol": "AAA", "qty": 2, "market_value": 520, "cost_basis": 500, "unrealized_pl": 20}],
     )
     _write_csv(
+        root / "data" / "trading" / "holding_period" / "holding_review_1.csv",
+        [{"symbol": "AAA", "recommended_holding_days": 10, "review_after_days": 2, "max_holding_days": 5, "holding_quality": "watch", "holding_gate_reason": "positive_holding_edge_watch"}],
+    )
+    _write_csv(
         root / "data" / "trading" / "operator_actions" / "operator_position_actions_1.csv",
         [
             {
@@ -262,6 +266,8 @@ def test_positions_body_partial_contract(api_client):
     response = api_client.get("/trading/_partials/positions-body")
     assert response.status_code == 200
     assert b"data-position-id=\"paper:AAA\"" in response.data
+    assert b"target 10d" in response.data
+    assert b"positive holding edge watch" in response.data
     assert b"Close order accepted" in response.data
     assert b"Waiting for broker fill." in response.data
     assert b"close-aaa" in response.data

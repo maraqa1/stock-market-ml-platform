@@ -304,6 +304,36 @@ def test_positions_context_uses_latest_model_signal_for_management_health(tmp_pa
     assert row["position_health_reason"] == "green_position_no_risk_issue"
 
 
+def test_positions_context_adds_holding_review_fields(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "BNY", "qty": 1, "market_value": 150.35, "cost_basis": 150, "unrealized_pl": 0.35, "unrealized_plpc": 0.00231}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "holding_period" / "holding_review_1.csv",
+        [
+            {
+                "symbol": "BNY",
+                "recommended_holding_days": 10,
+                "review_after_days": 2,
+                "max_holding_days": 5,
+                "holding_quality": "watch",
+                "holding_gate_pass": True,
+                "holding_gate_reason": "positive_holding_edge_watch",
+            }
+        ],
+    )
+
+    ctx = positions_context(tmp_path)
+    row = ctx["positions"][0]
+
+    assert row["holding_review_status"] == "available"
+    assert row["recommended_holding_days"] == 10
+    assert row["review_after_days"] == 2
+    assert row["max_holding_days"] == 5
+    assert row["holding_quality"] == "watch"
+
+
 def test_action_queue_uses_latest_model_signal_for_held_positions(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",

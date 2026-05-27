@@ -2,7 +2,7 @@
 {% from "_macros/format.html" import money, qty, side, signed_money, signed_pct %}
 {% if not positions_api["positions"] %}
   <tr>
-    <td colspan="12" class="empty small">No open paper positions returned.</td>
+    <td colspan="15" class="empty small">No open paper positions returned.</td>
   </tr>
 {% else %}
   {% for row in positions_api["positions"] %}
@@ -16,6 +16,29 @@
       <td data-sort-value="{{ row.unrealized_pl or 0 }}">{{ signed_money(row.unrealized_pl or 0) }}</td>
       <td data-sort-value="{{ row.unrealized_plpc or 0 }}">{{ signed_pct(row.unrealized_plpc or 0) }}</td>
       <td class="num" data-sort-value="0">Open</td>
+      <td class="num" data-sort-value="{{ row.review_after_days or 999 }}">
+        {% if row.review_after_days %}
+          {{ row.review_after_days }}d
+        {% else %}
+          -
+        {% endif %}
+      </td>
+      <td class="num" data-sort-value="{{ row.max_holding_days or 999 }}">
+        {% if row.max_holding_days %}
+          {{ row.max_holding_days }}d
+        {% else %}
+          -
+        {% endif %}
+      </td>
+      <td data-sort-value="{{ row.holding_quality or '' }}">
+        {{ pill(row.holding_quality or row.holding_review_status or "missing") }}
+        {% if row.recommended_holding_days %}
+          <div class="order-state text-secondary">target {{ row.recommended_holding_days }}d</div>
+        {% endif %}
+        {% if row.holding_gate_reason %}
+          <div class="order-state text-secondary">{{ row.holding_gate_reason|replace("_", " ") }}</div>
+        {% endif %}
+      </td>
       <td data-sort-value="{{ intel.management_state or '' }}">
         {{ pill(row.position_health_status or intel.management_state or "hold") }}
         {% if intel.signal_state %}

@@ -95,6 +95,54 @@ def _latest_model_signal_file(root: Path) -> Path | None:
     return latest_file(root, "model_outputs", "advanced_model_signal_table_*.csv")
 
 
+def _latest_holding_review_by_symbol(root: Path) -> dict[str, dict[str, Any]]:
+    review_file = latest_file(root, "holding_period", "holding_review_*.csv")
+    review = safe_read_csv(review_file, nrows=5000)
+    if review.empty or "symbol" not in review.columns:
+        return {}
+    wanted = [
+        "recommended_holding_days",
+        "review_after_days",
+        "max_holding_days",
+        "holding_quality",
+        "holding_gate_pass",
+        "holding_gate_reason",
+        "recommended_action",
+        "median_directional_return_bps",
+        "hit_rate",
+        "sample_count",
+    ]
+    out: dict[str, dict[str, Any]] = {}
+    for row in _records(review):
+        symbol = str(row.get("symbol") or "").upper().strip()
+        if not symbol:
+            continue
+        out[symbol] = {key: row.get(key, "") for key in wanted}
+    return out
+
+
+def _attach_holding_review_to_records(rows: list[dict[str, Any]], root: Path) -> list[dict[str, Any]]:
+    reviews = _latest_holding_review_by_symbol(root)
+    for row in rows:
+        symbol = str(row.get("symbol") or "").upper().strip()
+        review = reviews.get(symbol, {})
+        row["holding_review_status"] = "available" if review else "missing"
+        for key in (
+            "recommended_holding_days",
+            "review_after_days",
+            "max_holding_days",
+            "holding_quality",
+            "holding_gate_pass",
+            "holding_gate_reason",
+            "recommended_action",
+            "median_directional_return_bps",
+            "hit_rate",
+            "sample_count",
+        ):
+            row[key] = review.get(key, "")
+    return rows
+
+
 def _signal_symbol(row: dict[str, Any]) -> str:
     return str(row.get("symbol") or row.get("ticker") or "").strip().upper()
 
@@ -440,6 +488,7 @@ def positions_context(root: Path) -> dict[str, Any]:
     decisions = _attach_latest_model_signals(decisions, root)
     rows = enrich_positions(rows, decisions=_records(decisions), autopilot_state=autopilot_state)
     rows = _attach_latest_model_signals_to_records(rows, root)
+    rows = _attach_holding_review_to_records(rows, root)
     auto_open_config = load_auto_open_config(root=root)
     health_rules = PositionHealthRules(
         max_position_loss_pct=float(auto_open_config.max_position_loss_pct),
