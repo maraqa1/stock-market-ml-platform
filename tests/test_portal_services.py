@@ -591,3 +591,34 @@ def test_action_queue_filters_rotation_rows_when_order_in_flight(monkeypatch, tm
     ctx = action_queue_context(tmp_path)
 
     assert ctx["items"] == []
+
+
+def test_action_queue_marks_rotation_as_automatic_when_operator_confirm_disabled(monkeypatch, tmp_path):
+    write_csv(tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv", [{"symbol": "CSTL", "qty": 10}])
+
+    monkeypatch.setattr(
+        "portal.services.trading_api_service._rows_from_db",
+        lambda *args, **kwargs: [
+            {
+                "id": 7,
+                "replace_symbol": "CSTL",
+                "with_symbol": "ATEC",
+                "score_delta": 0.15,
+                "reason": "HIGHER_PROMOTION_SCORE",
+                "verdict": "proposed",
+                "replace_position_id": "paper:CSTL",
+                "logged_at": "2026-05-12T15:29:40+00:00",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "portal.services.trading_api_service.load_rotation_config",
+        lambda: type("RotationCfg", (), {"enabled": True, "require_operator_confirm": False})(),
+    )
+
+    ctx = action_queue_context(tmp_path)
+    row = ctx["items"][0]
+
+    assert row["operator_call_label"] == "Auto rotation"
+    assert row["operator_apply_enabled"] is False
+    assert "automatically" in row["operator_call_reason"]

@@ -17,6 +17,7 @@ from stockml.autopilot.action_queue_policy import classify_action_queue_item
 from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
 from stockml.services.events import position_id_for_symbol
 from stockml.autopilot.open import load_auto_open_config
+from stockml.autopilot.rotate import load_rotation_config
 from stockml.marketdata.providers.factory import configured_provider_name
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 from stockml.trading.position_intelligence import enrich_positions
@@ -850,6 +851,8 @@ def _open_order_symbols_from_tracking(root: Path) -> set[str]:
 
 
 def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None, open_order_symbols: set[str] | None = None) -> list[dict[str, Any]]:
+    rotation_config = load_rotation_config()
+    automatic_rotation = bool(rotation_config.enabled and not rotation_config.require_operator_confirm)
     rows = _rows_from_db(
         rotation_recommendation_log.select()
         .where(rotation_recommendation_log.c.verdict == "proposed")
@@ -866,6 +869,15 @@ def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None, 
             continue
         if open_order_symbols and ({replace_symbol, with_symbol} & open_order_symbols):
             continue
+        operator_label = "Apply rotation"
+        operator_reason = f"Paper Assist proposes {replace_symbol} -> {with_symbol}. Operator confirmation required."
+        operator_call = "warning"
+        operator_apply_enabled = True
+        if automatic_rotation:
+            operator_label = "Auto rotation"
+            operator_reason = f"Paper Autopilot will rotate {replace_symbol} -> {with_symbol} automatically when no broker orders are pending."
+            operator_call = "info"
+            operator_apply_enabled = False
         items.append(
             {
                 **row,
@@ -880,10 +892,10 @@ def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None, 
                 "decision_reason": row.get("reason") or "HIGHER_PROMOTION_SCORE",
                 "replacement_symbol": with_symbol,
                 "position_id": row.get("replace_position_id") or position_id_for_symbol(replace_symbol),
-                "operator_call": "warning",
-                "operator_call_label": "Apply rotation",
-                "operator_call_reason": f"Paper Assist proposes {replace_symbol} -> {with_symbol}. Operator confirmation required.",
-                "operator_apply_enabled": True,
+                "operator_call": operator_call,
+                "operator_call_label": operator_label,
+                "operator_call_reason": operator_reason,
+                "operator_apply_enabled": operator_apply_enabled,
                 "generated_at": row.get("logged_at"),
             }
         )
