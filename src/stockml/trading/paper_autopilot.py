@@ -881,7 +881,17 @@ def tick(
                     open_orders = post_open_orders
                     open_positions = post_open_positions
                     update_position_peaks(state, positions)
-        if open_orders > 0:
+        in_flight_actions = max(
+            open_orders,
+            int(autopilot_result.get("autopilot_close_submitted") or 0),
+            int(autopilot_result.get("autopilot_replace_close_submitted") or 0),
+            int(eod_result.get("eod_flatten_submitted") or 0),
+            int(auto_rotation_result.get("auto_rotations_confirmed") or 0),
+            int(auto_open_result.get("autopilot_open_submitted") or 0),
+        )
+        open_orders = max(open_orders, in_flight_actions)
+        broker_open_orders = max(broker_open_orders, in_flight_actions)
+        if in_flight_actions > 0:
             phase = "waiting_for_fills"
             status = "running"
             termination_reason = ""
