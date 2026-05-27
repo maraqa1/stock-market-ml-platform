@@ -49,6 +49,7 @@ profiles:
     exchange: NYSE
     limit_tickers:
     provider: eodhd
+    metadata_provider: yahoo_legacy
     metadata_fallback_provider: yahoo_legacy
     sentiment_provider: eodhd
     model_shards: 4
@@ -70,6 +71,7 @@ profiles:
     - NASDAQ
     limit_tickers:
     provider: eodhd
+    metadata_provider: yahoo_legacy
     metadata_fallback_provider: yahoo_legacy
     sentiment_provider: eodhd
     model_shards: 20

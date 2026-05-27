@@ -118,11 +118,14 @@ def run_profile(
 
         if profile.get("run_metadata", True):
             current_stage = "metadata"
+            metadata_provider = profile.get("metadata_provider", effective_provider)
             metadata_paths = build_metadata_enriched(
                 limit=limit,
-                provider_name=effective_provider,
+                provider_name=metadata_provider,
                 fallback_provider_name=profile.get("metadata_fallback_provider"),
                 exchange=exchange,
+                min_validated_coverage=float(profile.get("min_metadata_validated_coverage", 0.75)),
+                min_market_cap_coverage=float(profile.get("min_metadata_market_cap_coverage", 0.70)),
             )
             _metadata_quality_gate(
                 metadata_paths.get("metadata_enriched"),

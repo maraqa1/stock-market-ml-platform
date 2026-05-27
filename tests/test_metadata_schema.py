@@ -1,5 +1,6 @@
 import pandas as pd
 
+from stockml.metadata import build_metadata_enriched
 from stockml.metadata import yahoo_metadata
 from stockml.metadata.yahoo_metadata import METADATA_COLUMNS, build_metadata_quality, empty_metadata_row, fetch_metadata_for_universe
 
@@ -47,3 +48,69 @@ def test_metadata_fetch_uses_fallback_when_primary_market_cap_missing(monkeypatc
     assert out.loc[0, "ticker"] == "BFLY"
     assert out.loc[0, "market_cap"] == 1_000_000_000
     assert out.loc[0, "sector"] == "Fallback Sector"
+
+
+def test_metadata_build_reuses_last_healthy_snapshot_when_fresh_caps_are_bad(tmp_path, monkeypatch):
+    interim = tmp_path / "data" / "interim"
+    interim.mkdir(parents=True)
+    universe = interim / "03_us_price_validated_universe_20260527_000000.csv"
+    pd.DataFrame(
+        [
+            {"yahoo_ticker": "AAA", "company": "A", "listing_exchange": "NYSE"},
+            {"yahoo_ticker": "BBB", "company": "B", "listing_exchange": "NYSE"},
+        ]
+    ).to_csv(universe, index=False)
+
+    healthy = pd.DataFrame(
+        [
+            {**empty_metadata_row("AAA", "ok", company="A", exchange="NYSE"), "market_cap": 1_000_000_000},
+            {**empty_metadata_row("BBB", "ok", company="B", exchange="NYSE"), "market_cap": 2_000_000_000},
+        ],
+        columns=METADATA_COLUMNS,
+    )
+    healthy.to_csv(interim / "04_us_metadata_enriched_20260526_000000.csv", index=False)
+
+    bad = pd.DataFrame(
+        [
+            empty_metadata_row("AAA", "metadata_error", "fundamentals not subscribed"),
+            empty_metadata_row("BBB", "metadata_error", "fundamentals not subscribed"),
+        ],
+        columns=METADATA_COLUMNS,
+    )
+
+    monkeypatch.setattr(build_metadata_enriched, "INTERIM_DIR", interim)
+    monkeypatch.setattr(build_metadata_enriched, "ensure_data_dirs", lambda: None)
+    monkeypatch.setattr(build_metadata_enriched, "timestamp", lambda: "20260527_010000")
+    monkeypatch.setattr(build_metadata_enriched, "fetch_metadata_for_universe", lambda *args, **kwargs: bad)
+
+    paths = build_metadata_enriched.build_metadata_enriched(sleep_seconds=0)
+    out = pd.read_csv(paths["metadata_enriched"], low_memory=False)
+    quality = pd.read_csv(paths["metadata_quality"], low_memory=False)
+
+    assert paths["metadata_enriched"].name == "04_us_metadata_enriched_20260527_010000.csv"
+    assert pd.to_numeric(out["market_cap"], errors="coerce").notna().mean() == 1.0
+    assert set(out["ticker"]) == {"AAA", "BBB"}
+    assert set(quality["metadata_build_source"]) == {"reused_last_good"}
+
+
+def test_metadata_build_fails_closed_when_no_healthy_snapshot_exists(tmp_path, monkeypatch):
+    interim = tmp_path / "data" / "interim"
+    interim.mkdir(parents=True)
+    pd.DataFrame([{"yahoo_ticker": "AAA"}]).to_csv(
+        interim / "03_us_price_validated_universe_20260527_000000.csv",
+        index=False,
+    )
+    bad = pd.DataFrame([empty_metadata_row("AAA", "metadata_error", "fundamentals not subscribed")], columns=METADATA_COLUMNS)
+
+    monkeypatch.setattr(build_metadata_enriched, "INTERIM_DIR", interim)
+    monkeypatch.setattr(build_metadata_enriched, "ensure_data_dirs", lambda: None)
+    monkeypatch.setattr(build_metadata_enriched, "timestamp", lambda: "20260527_010000")
+    monkeypatch.setattr(build_metadata_enriched, "fetch_metadata_for_universe", lambda *args, **kwargs: bad)
+
+    try:
+        build_metadata_enriched.build_metadata_enriched(sleep_seconds=0)
+    except RuntimeError as exc:
+        assert "no previous healthy metadata snapshot found" in str(exc)
+    else:
+        raise AssertionError("metadata build should fail closed without a healthy fallback")
+    assert not list(interim.glob("04_us_metadata_enriched_20260527_010000.csv"))

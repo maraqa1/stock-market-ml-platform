@@ -16,12 +16,14 @@ def test_load_pipeline_profiles():
     assert profiles["nyse_full"]["exchange"] == "NYSE"
     assert profiles["nyse_full"]["limit_tickers"] is None
     assert profiles["nyse_full"]["provider"] == "eodhd"
+    assert profiles["nyse_full"]["metadata_provider"] == "yahoo_legacy"
     assert profiles["nyse_full"]["metadata_fallback_provider"] == "yahoo_legacy"
     assert profiles["nyse_full"]["sentiment_provider"] == "eodhd"
     assert profiles["nyse_full"]["model_shards"] == 4
     assert "us_full" in profiles
     assert profiles["us_full"]["exchanges"] == ["NYSE", "NASDAQ"]
     assert profiles["us_full"]["provider"] == "eodhd"
+    assert profiles["us_full"]["metadata_provider"] == "yahoo_legacy"
     assert profiles["us_full"]["model_shards"] == 20
     assert profiles["us_full"]["gold_shard_rows"] == 750000
     assert profiles["us_full"]["skip_gold_sentiment"] is False
@@ -48,10 +50,11 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
         "stockml.pipeline.profile_runner.build_price_quality_report",
         lambda **kwargs: {"validated_universe": validated},
     )
-    monkeypatch.setattr(
-        "stockml.pipeline.profile_runner.build_metadata_enriched",
-        lambda **kwargs: {"metadata_enriched": metadata},
-    )
+    def fake_metadata(**kwargs):
+        calls["metadata"] = kwargs
+        return {"metadata_enriched": metadata}
+
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_metadata_enriched", fake_metadata)
     monkeypatch.setattr("stockml.pipeline.profile_runner._metadata_quality_gate", lambda *args, **kwargs: None)
 
     def fake_features(**kwargs):
@@ -77,6 +80,8 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
 
     run_profile("us_full")
 
+    assert calls["metadata"]["provider_name"] == "yahoo_legacy"
+    assert calls["metadata"]["fallback_provider_name"] == "yahoo_legacy"
     assert calls["features"]["universe_file"] == validated
     assert calls["features"]["metadata_file"] == metadata
     assert calls["gold"]["feature_file"] == features
