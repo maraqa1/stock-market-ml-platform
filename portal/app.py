@@ -25,6 +25,7 @@ from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.symbol_detail import get as symbol_detail_get
 from portal.services.stock_detail_service import stock_detail_context
 from portal.services.action_queue_service import action_queue_context
+from portal.services.admin_service import admin_context, run_admin_action
 from portal.services.trading_api_service import (
     basket_integrity_context,
     basket_today_context,
@@ -204,6 +205,17 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/data-quality")
     def data_quality():
         return render_template("data_quality.html", title="Data Quality", **data_quality_context(root_path()))
+
+    @app.route("/admin")
+    def admin():
+        return render_template("admin.html", title="Admin", **admin_context(root_path()))
+
+    @app.route("/admin/actions/<action>", methods=["POST"])
+    def admin_action(action: str):
+        result = run_admin_action(root_path(), action)
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(result)
+        return redirect(url_for("admin"))
 
     @app.route("/data")
     @app.route("/gold")

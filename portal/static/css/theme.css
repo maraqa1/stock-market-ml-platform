@@ -559,6 +559,54 @@ th.numeric {
   border-bottom: 0;
 }
 
+.admin-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.admin-action {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: var(--bg-surface);
+}
+
+.admin-action strong,
+.admin-action small {
+  display: block;
+}
+
+.admin-action strong {
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+}
+
+.admin-action small {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+}
+
+.admin-log {
+  min-height: 220px;
+  max-height: 520px;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  color: var(--text-secondary);
+  background: #080B10;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  white-space: pre-wrap;
+}
+
 .zone__header-link {
   margin-left: var(--space-2);
   color: var(--status-info);

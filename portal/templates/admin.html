@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="trading-console">
+  <section class="zone" data-zone="admin-header">
+    <div class="zone__header">
+      <span>Pipeline Admin</span>
+      <span class="zone__header-meta">{{ latest_quality_path or "no quality report" }}</span>
+    </div>
+    <div class="zone__body">
+      <div class="kpi-row">
+        <article class="kpi-card{% if quality_status == 'failed' %} kpi-card--alert{% endif %}">
+          <span class="kpi-card__label">Quality</span>
+          <strong class="kpi-card__value">{{ quality_status }}</strong>
+          <small class="kpi-card__detail">{{ quality_failures|length }} failed checks</small>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-card__label">Latest Job</span>
+          <strong class="kpi-card__value">{{ latest_job.status or "none" }}</strong>
+          <small class="kpi-card__detail">{{ latest_job.label or "no job submitted" }}</small>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-card__label">PID</span>
+          <strong class="kpi-card__value">{{ latest_job.pid or "-" }}</strong>
+          <small class="kpi-card__detail">{{ latest_job.started_at or "" }}</small>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="admin-actions">
+    <div class="zone__header">
+      <span>Repair Actions</span>
+      <span class="zone__header-meta">jobs run in background</span>
+    </div>
+    <div class="zone__body admin-action-grid">
+      {% for action in actions %}
+        <form class="admin-action" method="post" action="{{ url_for('admin_action', action=action.key) }}">
+          <div>
+            <strong>{{ action.label }}</strong>
+            <small>{{ action.description }}</small>
+          </div>
+          <button class="btn {% if action.key == 'stop-intraday' %}btn-danger{% elif action.key == 'readiness' %}btn-primary{% else %}btn-ghost{% endif %}" type="submit">
+            Run
+          </button>
+        </form>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="zone" data-zone="quality-failures">
+    <div class="zone__header">
+      <span>Quality Failures</span>
+      <span class="zone__header-meta">{{ quality_failures|length }} rows</span>
+    </div>
+    <div class="zone__body table-wrap">
+      <table class="data dense">
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Status</th>
+            <th>Observed</th>
+            <th>Threshold</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in quality_failures %}
+            <tr>
+              <td>{{ row.check }}</td>
+              <td><span class="pill pill-danger">{{ row.status }}</span></td>
+              <td>{{ row.observed }}</td>
+              <td>{{ row.threshold }}</td>
+              <td>{{ row.message }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">No quality failures in the latest report.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="admin-jobs">
+    <div class="zone__header">
+      <span>Recent Jobs</span>
+      <span class="zone__header-meta">{{ jobs|length }} shown</span>
+    </div>
+    <div class="zone__body table-wrap">
+      <table class="data dense">
+        <thead>
+          <tr>
+            <th>Started</th>
+            <th>Action</th>
+            <th>Status</th>
+            <th>PID</th>
+            <th>Log</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for job in jobs %}
+            <tr>
+              <td>{{ job.started_at }}</td>
+              <td>{{ job.label }}</td>
+              <td>{{ job.status }}</td>
+              <td>{{ job.pid }}</td>
+              <td>{{ job.log_path }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">No admin jobs yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="zone" data-zone="admin-log">
+    <div class="zone__header">
+      <span>Latest Log</span>
+      <span class="zone__header-meta">{{ latest_job.log_path or "" }}</span>
+    </div>
+    <div class="zone__body">
+      <pre class="admin-log">{{ latest_log_tail or "No log output yet." }}</pre>
+    </div>
+  </section>
+</section>
+{% endblock %}

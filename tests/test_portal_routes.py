@@ -46,9 +46,32 @@ def symbol_client():
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/intraday", "/validation", "/model-validation", "/reports", "/no-decision", "/dev/styleguide"]:
+    for route in ["/", "/universe", "/data-quality", "/admin", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/intraday", "/validation", "/model-validation", "/reports", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
+
+
+def test_admin_page_exposes_repair_actions(client):
+    response = client.get("/admin")
+    assert response.status_code == 200
+    assert b"Pipeline Admin" in response.data
+    assert b"Full Readiness Repair" in response.data
+    assert b"Stop Intraday Clock" in response.data
+
+
+def test_admin_action_starts_background_job(client, monkeypatch):
+    calls = {}
+
+    def fake_run(root, action):
+        calls["root"] = root
+        calls["action"] = action
+        return {"status": "running", "action": action, "pid": 123}
+
+    monkeypatch.setattr("portal.app.run_admin_action", fake_run)
+    response = client.post("/admin/actions/quality", headers={"Accept": "application/json"})
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "running"
+    assert calls["action"] == "quality"
 
 
 def test_lifecycle_routes_redirect_to_journal(client):
