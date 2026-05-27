@@ -7,6 +7,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from stockml.common.logging_utils import log
+from stockml.common.paths import PROJECT_ROOT
 from stockml.common.profiles import load_profile
 from stockml.common.exchange_scope import exchange_scope_label
 from stockml.db.loaders import load_latest_outputs
@@ -17,7 +18,10 @@ from stockml.models.build_model_outputs import build_model_outputs
 from stockml.pipeline.manifest import PipelineManifest
 from stockml.prices.download_price_history import download_price_history
 from stockml.prices.validate_price_history import build_price_quality_report
+from stockml.reports.pipeline_quality_checks import build_pipeline_quality_report
 from stockml.sentiment.build_sentiment_panel import build_sentiment_panel
+from stockml.trading.holding_period import generate_holding_period_report
+from stockml.trading.paper_trader import run_paper_trading
 from stockml.universe.build_tradable_universe import build_us_equity_universe
 
 
@@ -75,6 +79,37 @@ def _metadata_quality_gate(
 
 def _limit(profile: Dict[str, Any], override_limit: int | None) -> int | None:
     return override_limit if override_limit is not None else profile.get("limit_tickers")
+
+
+def run_trading_day_readiness_gate() -> dict[str, Any]:
+    quality = build_pipeline_quality_report(PROJECT_ROOT)
+    if quality.get("status") != "ok":
+        raise RuntimeError(f"trading_day_readiness_failed: quality_gate_failed path={quality.get('path')}")
+
+    plan = run_paper_trading(plan_only=True)
+    if int(plan.get("candidate_pool_rows") or 0) <= 0 or int(plan.get("orders_planned") or 0) <= 0:
+        raise RuntimeError(
+            "trading_day_readiness_failed: empty_plan "
+            f"candidate_pool_rows={plan.get('candidate_pool_rows')} orders_planned={plan.get('orders_planned')}"
+        )
+
+    holding = generate_holding_period_report(PROJECT_ROOT, plan_file=Path(plan["plan_path"]))
+    if int(holding.get("review_rows") or 0) <= 0:
+        raise RuntimeError(f"trading_day_readiness_failed: empty_holding_review plan_path={plan.get('plan_path')}")
+
+    return {
+        "pipeline_quality_path": str(quality.get("path") or ""),
+        "candidate_pool_rows": int(plan.get("candidate_pool_rows") or 0),
+        "orders_planned": int(plan.get("orders_planned") or 0),
+        "orders_approved": int(plan.get("orders_approved") or 0),
+        "orders_rejected": int(plan.get("orders_rejected") or 0),
+        "plan_path": str(plan.get("plan_path") or ""),
+        "result_path": str(plan.get("result_path") or ""),
+        "holding_review_rows": int(holding.get("review_rows") or 0),
+        "holding_review_passed": int(holding.get("review_passed") or 0),
+        "holding_review_blocked": int(holding.get("review_blocked") or 0),
+        "holding_review_path": str(holding.get("review_path") or ""),
+    }
 
 
 def run_profile(
@@ -191,6 +226,12 @@ def run_profile(
             counts = load_latest_outputs()
             manifest.stage_ok("database", counts)
             log(f"Database load complete: {counts}")
+
+        if profile.get("run_trading_day_readiness", False):
+            current_stage = "trading_day_readiness"
+            readiness = run_trading_day_readiness_gate()
+            manifest.stage_ok("trading_day_readiness", readiness)
+            log(f"Trading day readiness complete: {readiness}")
 
         manifest.complete()
         log(f"Profile pipeline complete: {profile_name}")

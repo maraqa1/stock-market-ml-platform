@@ -29,6 +29,7 @@ def test_load_pipeline_profiles():
     assert profiles["us_full"]["skip_gold_sentiment"] is False
     assert profiles["us_full"]["live_signal_mode"] is True
     assert profiles["us_full"]["baseline_only"] is True
+    assert profiles["us_full"]["run_trading_day_readiness"] is True
 
 
 def test_unknown_profile_has_clear_error():
@@ -77,6 +78,10 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     monkeypatch.setattr("stockml.pipeline.profile_runner.build_sentiment_panel", fake_sentiment)
     monkeypatch.setattr("stockml.pipeline.profile_runner.build_gold_dataset", fake_gold)
     monkeypatch.setattr("stockml.pipeline.profile_runner.build_model_outputs", fake_model)
+    monkeypatch.setattr(
+        "stockml.pipeline.profile_runner.run_trading_day_readiness_gate",
+        lambda: calls.setdefault("readiness", {"orders_planned": 10}),
+    )
 
     run_profile("us_full")
 
@@ -92,6 +97,7 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     assert calls["model"]["model_shards"] == 20
     assert calls["model"]["live_signal_mode"] is True
     assert calls["model"]["baseline_only"] is True
+    assert calls["readiness"]["orders_planned"] == 10
 
 
 def test_metadata_quality_gate_rejects_missing_market_caps(tmp_path: Path):

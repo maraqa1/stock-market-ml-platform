@@ -89,3 +89,4 @@ profiles:
     run_sentiment: true
     run_gold: true
     run_model: true
+    run_trading_day_readiness: true
