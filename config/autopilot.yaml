@@ -1,9 +1,9 @@
 version: 1
 autopilot:
-  open_enabled: false
+  open_enabled: true
   rotate_enabled: true
-  max_auto_opens_per_day: 3
-  max_positions: 5
+  max_auto_opens_per_day: 20
+  max_positions: 10
   min_account_equity_usd: 250
   min_position_value_usd: 50
   max_single_position_pct_of_equity: 0.20
@@ -40,6 +40,9 @@ autopilot:
   per_symbol_forecast_fallback_max_profitability_score: 300
   per_symbol_forecast_fallback_allowed_confirmations:
   - confirmed
+  plan_fallback_enabled: true
+  plan_fallback_size_multiplier: 1.0
+  plan_fallback_max_file_age_minutes: 720
   holding_review_gate_enabled: true
   holding_review_allow_watch: true
   max_position_loss_pct: 2.0

@@ -70,6 +70,9 @@ class AutoOpenConfig:
     per_symbol_forecast_fallback_min_profitability_score: float = 0.0
     per_symbol_forecast_fallback_max_profitability_score: float = 300.0
     per_symbol_forecast_fallback_allowed_confirmations: tuple[str, ...] = ("confirmed",)
+    plan_fallback_enabled: bool = True
+    plan_fallback_size_multiplier: float = 1.0
+    plan_fallback_max_file_age_minutes: int = 720
     holding_review_gate_enabled: bool = True
     holding_review_allow_watch: bool = True
     max_position_loss_pct: float = 2.0
@@ -272,6 +275,9 @@ def _default_payload() -> dict[str, Any]:
             "per_symbol_forecast_fallback_min_profitability_score": 0,
             "per_symbol_forecast_fallback_max_profitability_score": 300,
             "per_symbol_forecast_fallback_allowed_confirmations": ["confirmed"],
+            "plan_fallback_enabled": True,
+            "plan_fallback_size_multiplier": 1.0,
+            "plan_fallback_max_file_age_minutes": 720,
             "holding_review_gate_enabled": True,
             "holding_review_allow_watch": True,
             "max_position_loss_pct": 2.0,
@@ -362,6 +368,9 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         per_symbol_forecast_fallback_min_profitability_score=float(section.get("per_symbol_forecast_fallback_min_profitability_score", 0)),
         per_symbol_forecast_fallback_max_profitability_score=float(section.get("per_symbol_forecast_fallback_max_profitability_score", 300)),
         per_symbol_forecast_fallback_allowed_confirmations=allowed_confirmation_values,
+        plan_fallback_enabled=bool(section.get("plan_fallback_enabled", True)),
+        plan_fallback_size_multiplier=float(section.get("plan_fallback_size_multiplier", 1.0)),
+        plan_fallback_max_file_age_minutes=int(section.get("plan_fallback_max_file_age_minutes", 720)),
         holding_review_gate_enabled=bool(section.get("holding_review_gate_enabled", True)),
         holding_review_allow_watch=bool(section.get("holding_review_allow_watch", True)),
         max_position_loss_pct=float(section.get("max_position_loss_pct", 2.0)),
@@ -504,7 +513,7 @@ def latest_strong_candidates(*, engine: Engine | None = None, limit: int = 20) -
 
 
 def latest_flat_account_fallback_candidates(*, engine: Engine | None = None, config: AutoOpenConfig | None = None, limit: int = 5) -> list[dict[str, Any]]:
-    cfg = config or load_auto_open_config()
+    cfg = config or load_auto_open_config(root=root)
     if not cfg.flat_account_fallback_enabled:
         return []
     db = engine or get_engine(required=True)
@@ -588,11 +597,25 @@ def _per_symbol_forecast_dir(root: Path | str | None = None) -> Path:
     return Path(root) / "data" / "trading" / "per_symbol_forecast"
 
 
+def _portal_outputs_dir(root: Path | str | None = None) -> Path:
+    if root is None:
+        return PROJECT_ROOT / "data" / "portal_outputs"
+    return Path(root) / "data" / "portal_outputs"
+
+
 def _latest_per_symbol_forecast_file(root: Path | str | None = None) -> Path | None:
     directory = _per_symbol_forecast_dir(root)
     if not directory.exists():
         return None
     matches = sorted(directory.glob("per_symbol_forecast_*.csv"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return matches[0] if matches else None
+
+
+def _latest_order_plan_file(root: Path | str | None = None) -> Path | None:
+    directory = _portal_outputs_dir(root)
+    if not directory.exists():
+        return None
+    matches = sorted(directory.glob("08_alpaca_paper_order_plan_*.csv"), key=lambda path: path.stat().st_mtime, reverse=True)
     return matches[0] if matches else None
 
 
@@ -672,6 +695,86 @@ def latest_near_miss_fallback_candidates(
                 "promotion_score": _float(row.get("risk_adjusted_score") or row.get("actual_value")),
                 "nightly_bias": bias,
                 "is_held": False,
+                "details": details,
+            }
+        )
+    return candidates
+
+
+def latest_plan_fallback_candidates(
+    *,
+    root: Path | str | None = None,
+    config: AutoOpenConfig | None = None,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    cfg = config or load_auto_open_config(root=root)
+    if not cfg.plan_fallback_enabled:
+        return []
+    path = _latest_order_plan_file(root)
+    if path is None:
+        return []
+    stamp = _aware(now)
+    try:
+        file_stamp = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        return []
+    max_age_seconds = max(0, cfg.plan_fallback_max_file_age_minutes) * 60
+    if max_age_seconds and (stamp - file_stamp).total_seconds() > max_age_seconds:
+        return []
+    try:
+        frame = pd.read_csv(path, low_memory=False)
+    except Exception:
+        return []
+    if frame.empty or "symbol" not in frame.columns:
+        return []
+    out = frame.copy()
+    out["__symbol"] = out["symbol"].fillna("").astype(str).str.upper().str.strip()
+    out["__status"] = out.get("trade_quality_status", pd.Series("", index=out.index)).fillna("").astype(str).str.lower()
+    out["__qty"] = pd.to_numeric(out.get("suggested_quantity", pd.Series(index=out.index)), errors="coerce").fillna(0)
+    out["__notional"] = pd.to_numeric(
+        out.get("approved_notional", out.get("notional", pd.Series(index=out.index))),
+        errors="coerce",
+    ).fillna(0)
+    if "notional" in out.columns:
+        out["__notional"] = out["__notional"].where(out["__notional"].gt(0), pd.to_numeric(out["notional"], errors="coerce").fillna(0))
+    out["__score"] = pd.to_numeric(out.get("risk_adjusted_score", pd.Series(index=out.index)), errors="coerce").fillna(float("-inf"))
+    eligible = (
+        out["__symbol"].ne("")
+        & out["__status"].isin(["approved", "reduced"])
+        & out["__qty"].gt(0)
+        & out["__notional"].gt(0)
+    )
+    selected = out[eligible].sort_values(["__status", "__score", "__symbol"], ascending=[True, False, True]).drop_duplicates("__symbol").head(limit)
+    candidates: list[dict[str, Any]] = []
+    for row in selected.fillna("").to_dict("records"):
+        action = str(row.get("trade_action") or row.get("side") or "").strip().lower()
+        side = str(row.get("side") or "").strip().lower()
+        bias = "short" if action in {"short", "sell"} or side in {"short", "sell"} else "long"
+        trade_action = "Short" if bias == "short" else "Long"
+        details = {
+            "plan_fallback": True,
+            "fallback_reason": "latest_approved_order_plan",
+            "current_trade_action": trade_action,
+            "side": "sell" if bias == "short" else "buy",
+            "nightly_bias": bias,
+            "trade_quality_status": row.get("trade_quality_status"),
+            "trade_quality_reason": row.get("trade_quality_reason"),
+            "current_price": _float(row.get("current_price")),
+            "approved_notional": _float(row.get("approved_notional") or row.get("notional")),
+            "suggested_quantity": _float(row.get("suggested_quantity")),
+            "is_first_15_min": False,
+            "is_last_30_min": False,
+        }
+        candidates.append(
+            {
+                "symbol": row.get("__symbol"),
+                "promotion_score": _float(row.get("risk_adjusted_score")),
+                "nightly_bias": bias,
+                "is_held": False,
+                "trade_action": trade_action,
+                "trade_quality_status": row.get("trade_quality_status"),
+                "current_price": row.get("current_price"),
                 "details": details,
             }
         )
@@ -1009,10 +1112,13 @@ def apply_auto_open(
         is_fallback = bool(details.get("flat_account_fallback"))
         is_near_miss = bool(details.get("near_miss_fallback"))
         is_per_symbol_forecast = bool(details.get("per_symbol_forecast_fallback"))
+        is_plan_fallback = bool(details.get("plan_fallback"))
         if is_per_symbol_forecast:
             order_size = round(size * cfg.per_symbol_forecast_fallback_size_multiplier, 2)
         elif is_near_miss:
             order_size = round(size * cfg.near_miss_fallback_size_multiplier, 2)
+        elif is_plan_fallback:
+            order_size = round(size * cfg.plan_fallback_size_multiplier, 2)
         elif is_fallback:
             order_size = round(size * cfg.flat_account_fallback_size_multiplier, 2)
         else:
@@ -1075,7 +1181,7 @@ def apply_auto_open(
             continue
         if order_size < cfg.min_position_value_usd:
             blocked += 1
-            size_reason = "per_symbol_forecast_size_below_min" if is_per_symbol_forecast else ("near_miss_size_below_min" if is_near_miss else ("fallback_size_below_min" if is_fallback else "position_size_below_min"))
+            size_reason = "per_symbol_forecast_size_below_min" if is_per_symbol_forecast else ("near_miss_size_below_min" if is_near_miss else ("plan_fallback_size_below_min" if is_plan_fallback else ("fallback_size_below_min" if is_fallback else "position_size_below_min")))
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=size_reason, details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:position_size_below_min")
             continue
@@ -1167,7 +1273,7 @@ def apply_auto_open(
             opened += 1
             held.add(symbol)
             slots -= 1
-            prefix = "per_symbol_forecast_opened" if is_per_symbol_forecast else ("near_miss_opened" if is_near_miss else ("fallback_opened" if is_fallback else "opened"))
+            prefix = "per_symbol_forecast_opened" if is_per_symbol_forecast else ("near_miss_opened" if is_near_miss else ("plan_opened" if is_plan_fallback else ("fallback_opened" if is_fallback else "opened")))
             notes.append(f"{symbol}:{prefix}:{order_id or 'submitted'}")
         except AlpacaAPIError as exc:
             blocked += 1

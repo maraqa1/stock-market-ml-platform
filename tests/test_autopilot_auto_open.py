@@ -12,6 +12,7 @@ from stockml.autopilot.open import (
     apply_auto_open,
     latest_flat_account_fallback_candidates,
     latest_near_miss_fallback_candidates,
+    latest_plan_fallback_candidates,
     latest_per_symbol_forecast_fallback_candidates,
     load_auto_open_config,
     position_size_usd,
@@ -1693,6 +1694,85 @@ def test_paper_autopilot_tick_prefers_per_symbol_forecast_before_near_miss(monke
     assert [candidate["symbol"] for candidate in calls[0][0]] == ["HIGHP", "GLIBK"]
     assert calls[0][0][0]["details"]["candidate_source"] == "per_symbol_forecast"
     assert calls[0][0][1]["details"]["candidate_source"] == "near_miss"
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_open_submitted"] == 1
+
+
+def test_latest_plan_fallback_candidates_loads_approved_order_plan(tmp_path):
+    portal = tmp_path / "data" / "portal_outputs"
+    portal.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "SKIP",
+                "trade_action": "Long",
+                "side": "buy",
+                "trade_quality_status": "rejected",
+                "notional": 250,
+                "suggested_quantity": 1,
+                "current_price": 20,
+                "risk_adjusted_score": 99,
+            },
+            {
+                "symbol": "PLAN",
+                "trade_action": "Long",
+                "side": "buy",
+                "trade_quality_status": "approved",
+                "notional": 250,
+                "suggested_quantity": 2,
+                "current_price": 20,
+                "risk_adjusted_score": 10,
+            },
+        ]
+    ).to_csv(portal / "08_alpaca_paper_order_plan_20260527_120000.csv", index=False)
+
+    candidates = latest_plan_fallback_candidates(
+        root=tmp_path,
+        config=AutoOpenConfig(plan_fallback_max_file_age_minutes=0),
+    )
+
+    assert [candidate["symbol"] for candidate in candidates] == ["PLAN"]
+    assert candidates[0]["details"]["plan_fallback"] is True
+    assert candidates[0]["details"]["current_price"] == 20
+
+
+def test_paper_autopilot_tick_uses_order_plan_when_intraday_sources_are_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "HELD", "qty": 1, "unrealized_plpc": 0.0}]).to_csv(positions, index=False)
+    calls = []
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        eod_runner=lambda frame, current_state, open_orders: {
+            "eod_state": "inactive",
+            "eod_actions": 0,
+            "eod_flatten_submitted": 0,
+            "eod_remaining": len(frame),
+            "eod_banner": "",
+            "eod_action_notes": "",
+        },
+        strong_candidate_loader=lambda: [],
+        per_symbol_forecast_candidate_loader=lambda: [],
+        near_miss_candidate_loader=lambda: [],
+        plan_candidate_loader=lambda: [_candidate("PLAN")],
+        auto_open_applier=lambda candidates, open_positions, mode: calls.append((candidates, open_positions, mode))
+        or {
+            "autopilot_open_attempted": 1,
+            "autopilot_open_submitted": 1,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "PLAN:plan_opened:order-PLAN",
+        },
+    )
+
+    assert calls and calls[0][0][0]["symbol"] == "PLAN"
+    assert calls[0][1][0]["symbol"] == "HELD"
     assert state["phase"] == "waiting_for_fills"
     assert state["autopilot_open_submitted"] == 1
 

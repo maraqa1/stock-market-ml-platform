@@ -15,6 +15,7 @@ from stockml.autopilot.open import (
     apply_auto_open,
     latest_flat_account_fallback_candidates,
     latest_near_miss_fallback_candidates,
+    latest_plan_fallback_candidates,
     latest_per_symbol_forecast_fallback_candidates,
     latest_strong_candidates,
     load_auto_open_config,
@@ -709,6 +710,7 @@ def tick(
     fallback_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_flat_account_fallback_candidates,
     near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
     per_symbol_forecast_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
+    plan_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
     auto_rotation_applier: Callable[[list[dict[str, Any]]], dict[str, Any]] | None = None,
     allow_auto_open: bool = True,
 ) -> dict[str, Any]:
@@ -848,6 +850,11 @@ def tick(
                 else:
                     near_miss_candidates = latest_near_miss_fallback_candidates(root=root)
                 candidates = ranked_fallback_candidates(per_symbol_candidates, near_miss_candidates)
+            if not candidates:
+                if plan_candidate_loader is not None:
+                    candidates = plan_candidate_loader()
+                else:
+                    candidates = latest_plan_fallback_candidates(root=root)
             if not candidates and open_positions == 0:
                 candidates = fallback_candidate_loader()
             if auto_open_applier is not None:
