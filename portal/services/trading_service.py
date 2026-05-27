@@ -14,6 +14,10 @@ from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
 from stockml.trading.trade_journal import build_trade_journal, write_trade_journal
 
 
+CANDIDATE_POOL_READ_LIMIT = 1000
+CANDIDATE_POOL_DISPLAY_LIMIT = 500
+
+
 def _records(frame, limit: int = 50) -> list[dict]:
     if frame.empty:
         return []
@@ -343,7 +347,7 @@ def trading_context(root: Path) -> dict:
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     actions_file = latest_file(root, "operator_actions", "operator_position_actions_*.csv")
     plan = safe_read_csv(plan_file, nrows=500)
-    candidate_pool = safe_read_csv(candidate_pool_file, nrows=500)
+    candidate_pool = safe_read_csv(candidate_pool_file, nrows=CANDIDATE_POOL_READ_LIMIT)
     results = safe_read_csv(result_file, nrows=500)
     tracking = safe_read_csv(tracking_file, nrows=500)
     positions = safe_read_csv(positions_file, nrows=500)
@@ -398,7 +402,9 @@ def trading_context(root: Path) -> dict:
         "tracking_rows": _records(tracking),
         "position_rows": _records(positions),
         "operator_action_rows": _records(actions, limit=10),
-        "candidate_pool_rows": _records_by_rank(candidate_pool, limit=100),
+        "candidate_pool_display_limit": CANDIDATE_POOL_DISPLAY_LIMIT,
+        "candidate_pool_display_count": min(len(candidate_pool), CANDIDATE_POOL_DISPLAY_LIMIT),
+        "candidate_pool_rows": _records_by_rank(candidate_pool, limit=CANDIDATE_POOL_DISPLAY_LIMIT),
         "basket_rows": basket_rows,
         "rejected_trimmed_rows": rejected_trimmed_rows,
         "rejected_trimmed_count": len(rejected_trimmed_rows),

@@ -121,6 +121,30 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Fill ratio"] == "Not available"
 
 
+def test_trading_context_exposes_expanded_candidate_shortlist(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_1.csv",
+        [
+            {
+                "candidate_rank": rank,
+                "symbol": f"T{rank:03d}",
+                "trade_action": "Long" if rank % 2 else "Short",
+                "trade_quality_status": "approved",
+                "risk_adjusted_score": 200 - rank,
+            }
+            for rank in range(1, 151)
+        ],
+    )
+
+    ctx = trading_context(tmp_path)
+
+    assert ctx["candidate_pool_count"] == 150
+    assert ctx["candidate_pool_display_count"] == 150
+    assert len(ctx["candidate_pool_rows"]) == 150
+    assert ctx["candidate_pool_rows"][0]["symbol"] == "T001"
+    assert ctx["candidate_pool_rows"][-1]["symbol"] == "T150"
+
+
 def test_trading_context_rejected_trimmed_sources(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
