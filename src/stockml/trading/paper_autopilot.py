@@ -743,7 +743,7 @@ def tick(
         open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
         update_position_peaks(state, positions)
-        if open_positions > 0:
+        if open_positions > 0 and load_monitor_decisions(root).empty:
             build_fresh_monitor_decisions(root, positions, now=datetime.now(timezone.utc))
         monitor_summary = monitor_decision_loader(root)
         eod_result = {
@@ -772,7 +772,6 @@ def tick(
             autopilot_result = autopilot_decision_applier(root, positions, state)
             if int(autopilot_result.get("autopilot_close_submitted") or 0) > 0:
                 open_orders = max(open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))
-                broker_open_orders = max(broker_open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))
         if state.get("mode") == "paper_autopilot" and open_positions > 0:
             if eod_runner is not None:
                 eod_result = eod_runner(positions, state, open_orders)
@@ -786,7 +785,6 @@ def tick(
                 )
             if int(eod_result.get("eod_flatten_submitted") or 0) > 0:
                 open_orders = max(open_orders, int(eod_result.get("eod_flatten_submitted") or 0))
-                broker_open_orders = max(broker_open_orders, int(eod_result.get("eod_flatten_submitted") or 0))
         auto_open_result = {
             "autopilot_open_attempted": 0,
             "autopilot_open_submitted": 0,
@@ -832,7 +830,6 @@ def tick(
                 auto_rotation_result = apply_auto_rotations(positions_records)
             if int(auto_rotation_result.get("auto_rotations_confirmed") or 0) > 0:
                 open_orders = max(open_orders, int(auto_rotation_result.get("auto_rotations_confirmed") or 0))
-                broker_open_orders = max(broker_open_orders, int(auto_rotation_result.get("auto_rotations_confirmed") or 0))
         if not allow_auto_open:
             auto_open_result["autopilot_open_notes"] = "auto_open_skipped_market_closed"
         elif basket.new_entries_paused:
@@ -881,16 +878,14 @@ def tick(
                     open_orders = post_open_orders
                     open_positions = post_open_positions
                     update_position_peaks(state, positions)
-        in_flight_actions = max(
-            open_orders,
+        submitted_close_actions = max(
             int(autopilot_result.get("autopilot_close_submitted") or 0),
             int(autopilot_result.get("autopilot_replace_close_submitted") or 0),
             int(eod_result.get("eod_flatten_submitted") or 0),
             int(auto_rotation_result.get("auto_rotations_confirmed") or 0),
-            int(auto_open_result.get("autopilot_open_submitted") or 0),
         )
-        open_orders = max(open_orders, in_flight_actions)
-        broker_open_orders = max(broker_open_orders, in_flight_actions)
+        in_flight_actions = max(open_orders, submitted_close_actions)
+        open_orders = max(open_orders, submitted_close_actions)
         if in_flight_actions > 0:
             phase = "waiting_for_fills"
             status = "running"
