@@ -103,6 +103,7 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     assert calls["model"]["publish_latest"] is True
     assert calls["readiness"]["orders_planned"] == 10
     assert calls["readiness"]["args"]
+    assert calls["readiness"]["kwargs"]["manifest_data"]["stages"]["model"]["status"] == "ok"
 
 
 def test_limited_profile_does_not_publish_latest_trading_artifacts(monkeypatch):

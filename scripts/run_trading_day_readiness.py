@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from stockml.pipeline.profile_runner import run_profile
+from stockml.pipeline.doctor import audit_latest_pipeline
 from stockml.reports.pipeline_quality_checks import build_pipeline_quality_report
 from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.paper_trader import run_paper_trading
@@ -49,6 +50,14 @@ def main(argv: list[str] | None = None) -> int:
             reuse_existing_artifacts=args.reuse_existing_artifacts,
             skip_price_download=args.skip_price_download,
         )
+
+    doctor = audit_latest_pipeline(ROOT, profile_name="us_full")
+    print("pipeline_doctor_status:", doctor.get("status"))
+    print("pipeline_doctor_reason:", doctor.get("reason", ""))
+    print("pipeline_doctor_manifest:", doctor.get("manifest_path"))
+    if doctor.get("status") != "ok":
+        print("trading_day_readiness_status: failed_pipeline_doctor")
+        return 1
 
     quality = build_pipeline_quality_report(ROOT)
     print("pipeline_quality_status:", quality.get("status"))

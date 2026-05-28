@@ -185,8 +185,12 @@ def _record_output_artifact(
     )
 
 
-def run_trading_day_readiness_gate(run_id: str | None = None, recorder_enabled: bool = False) -> dict[str, Any]:
-    quality = build_pipeline_quality_report(PROJECT_ROOT, profile_name="us_full")
+def run_trading_day_readiness_gate(
+    run_id: str | None = None,
+    recorder_enabled: bool = False,
+    manifest_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    quality = build_pipeline_quality_report(PROJECT_ROOT, profile_name="us_full", manifest=manifest_data)
     if quality.get("status") != "ok":
         raise RuntimeError(f"trading_day_readiness_failed: quality_gate_failed path={quality.get('path')}")
 
@@ -425,7 +429,7 @@ def run_profile(
 
         if profile.get("run_trading_day_readiness", False):
             current_stage = "trading_day_readiness"
-            readiness = run_trading_day_readiness_gate(manifest.run_id, recorder_enabled=recorder_enabled)
+            readiness = run_trading_day_readiness_gate(manifest.run_id, recorder_enabled=recorder_enabled, manifest_data=manifest.data)
             manifest.stage_ok("trading_day_readiness", readiness)
             log(f"Trading day readiness complete: {readiness}")
 

@@ -89,6 +89,17 @@ def _manifest_artifacts(root: Path, profile_name: str) -> dict[str, Path | None]
     return None
 
 
+def _artifacts_from_manifest(root: Path, manifest: dict[str, object]) -> dict[str, Path | None]:
+    return {
+        "universe": _manifest_path(root, manifest, "universe", "tradable_universe"),
+        "validated": _manifest_path(root, manifest, "price", "validated_universe"),
+        "metadata": _manifest_path(root, manifest, "metadata", "metadata_enriched"),
+        "features": _manifest_path(root, manifest, "features", "feature_panel"),
+        "gold": _manifest_path(root, manifest, "gold", "gold_dataset"),
+        "model": _manifest_path(root, manifest, "model", "predictions", "signal_table", "model_predictions_latest"),
+    }
+
+
 def _latest_artifacts(root: Path, profile_name: str | None = "us_full") -> dict[str, Path | None]:
     if profile_name:
         artifacts = _manifest_artifacts(root, profile_name)
@@ -219,11 +230,12 @@ def build_pipeline_quality_report(
     thresholds: PipelineQualityThresholds | None = None,
     stamp: str | None = None,
     profile_name: str | None = "us_full",
+    manifest: dict[str, object] | None = None,
 ) -> dict[str, object]:
     base = Path(root).resolve() if root else PROJECT_ROOT
     ensure_data_dirs()
     cfg = thresholds or PipelineQualityThresholds()
-    artifacts = _latest_artifacts(base, profile_name=profile_name)
+    artifacts = _artifacts_from_manifest(base, manifest) if manifest is not None else _latest_artifacts(base, profile_name=profile_name)
 
     universe_symbols = _read_symbols(artifacts["universe"], ["symbol", "ticker", "yahoo_ticker"])
     validated_symbols = _read_symbols(artifacts["validated"], ["yahoo_ticker", "ticker", "symbol"])

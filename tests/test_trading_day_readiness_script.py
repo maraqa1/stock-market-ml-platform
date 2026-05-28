@@ -6,6 +6,7 @@ import scripts.run_trading_day_readiness as readiness
 def test_trading_day_readiness_stops_before_plan_when_quality_fails(monkeypatch):
     calls = {"plan": 0}
     monkeypatch.setattr(readiness, "run_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr(readiness, "audit_latest_pipeline", lambda *args, **kwargs: {"status": "ok", "manifest_path": "manifest.json"})
     monkeypatch.setattr(
         readiness,
         "build_pipeline_quality_report",
@@ -26,6 +27,7 @@ def test_trading_day_readiness_creates_plan_and_holding_review_after_quality_pas
     plan_path = tmp_path / "plan.csv"
     plan_path.write_text("symbol\nAAA\n", encoding="utf-8")
     monkeypatch.setattr(readiness, "run_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr(readiness, "audit_latest_pipeline", lambda *args, **kwargs: {"status": "ok", "manifest_path": "manifest.json"})
     monkeypatch.setattr(
         readiness,
         "build_pipeline_quality_report",
@@ -56,3 +58,21 @@ def test_trading_day_readiness_creates_plan_and_holding_review_after_quality_pas
     )
 
     assert readiness.main([]) == 0
+
+
+def test_trading_day_readiness_stops_when_pipeline_doctor_fails(monkeypatch):
+    calls = {"quality": 0}
+    monkeypatch.setattr(readiness, "run_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        readiness,
+        "audit_latest_pipeline",
+        lambda *args, **kwargs: {"status": "failed", "reason": "pipeline_stale_running", "manifest_path": "manifest.json"},
+    )
+    monkeypatch.setattr(
+        readiness,
+        "build_pipeline_quality_report",
+        lambda root: calls.__setitem__("quality", calls["quality"] + 1),
+    )
+
+    assert readiness.main([]) == 1
+    assert calls["quality"] == 0
