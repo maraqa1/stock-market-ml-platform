@@ -366,9 +366,18 @@ def _latest_pipeline_run() -> dict[str, Any]:
     )
 
 
+def _manifest_exists_for_run(root: Path, run: dict[str, Any]) -> bool:
+    run_id = str(run.get("run_id") or "").strip()
+    if not run_id:
+        return False
+    return (root / "data" / "pipeline_runs" / run_id / "manifest.json").exists()
+
+
 def pipeline_current_context(root: Path) -> dict[str, Any]:
     run = _latest_pipeline_run()
     if not run:
+        return _artifact_pipeline_context(root)
+    if not _manifest_exists_for_run(root, run):
         return _artifact_pipeline_context(root)
     artifact_fallback = _artifact_pipeline_context(root)
     artifact_by_name = {stage["stage_name"]: stage for stage in artifact_fallback["stages"]}

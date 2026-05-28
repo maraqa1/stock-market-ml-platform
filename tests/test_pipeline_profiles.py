@@ -9,6 +9,7 @@ from stockml.pipeline.profile_runner import _metadata_quality_gate, run_profile
 
 def _isolate_pipeline_manifests(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("stockml.pipeline.manifest.PIPELINE_RUNS_DIR", tmp_path / "pipeline_runs")
+    monkeypatch.setattr("stockml.pipeline.profile_runner._record_start", lambda *args, **kwargs: False)
 
 
 def test_load_pipeline_profiles():
