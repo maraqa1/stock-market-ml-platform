@@ -147,6 +147,29 @@ def build_snapshot(
     returns = [(curr - prev) / prev for prev, curr in zip(closes, closes[1:]) if prev]
     realized_vol = pstdev(returns) * 10_000 if len(returns) > 1 else None
     median_5d = _safe_float(scope_row.get("realized_vol_60m_bps_median_5d"))
+    scope_details = {}
+    for key in (
+        "source",
+        "strategy_stream",
+        "trading_stream",
+        "same_day_momentum",
+        "same_day_trade_action",
+        "same_day_confidence",
+        "same_day_reason",
+        "max_hold_days",
+        "must_flatten_eod",
+        "manual_move_pct",
+        "manual_last_price",
+        "manual_dollar_traded",
+    ):
+        value = scope_row.get(key)
+        if value is None or value == "":
+            continue
+        scope_details[key] = value
+    if scope_details.get("same_day_momentum"):
+        scope_details.setdefault("current_trade_action", scope_details.get("same_day_trade_action"))
+        scope_details.setdefault("side", "sell" if str(scope_details.get("same_day_trade_action")).lower() == "short" else "buy")
+        scope_details.setdefault("nightly_bias", str(scope_row.get("bias") or scope_row.get("nightly_bias") or "long").lower())
 
     return CandidateSnapshot(
         snapshot_at=stamp,
@@ -172,7 +195,7 @@ def build_snapshot(
         sector_etf_trend_5m_pct=_safe_float(market_context.get("sector_etf_trend_5m_pct") or market_context.get("sector_etf_trend_5m")),
         market_aligned=market_context.get("market_aligned"),
         status=status,
-        details=details or {},
+        details={**scope_details, **(details or {})},
     )
 
 

@@ -73,6 +73,12 @@ class AutoOpenConfig:
     plan_fallback_enabled: bool = True
     plan_fallback_size_multiplier: float = 1.0
     plan_fallback_max_file_age_minutes: int = 720
+    same_day_momentum_enabled: bool = True
+    same_day_momentum_max_per_day: int = 8
+    same_day_momentum_size_multiplier: float = 0.50
+    same_day_momentum_min_score: float = 0.55
+    same_day_momentum_max_spread_bps: float = 35.0
+    same_day_momentum_min_dollar_volume: float = 500_000.0
     holding_review_gate_enabled: bool = True
     holding_review_allow_watch: bool = True
     max_position_loss_pct: float = 2.0
@@ -150,6 +156,8 @@ def per_symbol_forecast_quality_block_reason(details: dict[str, Any], cfg: AutoO
 
 def model_evidence_block_reason(candidate: dict[str, Any], details: dict[str, Any]) -> str:
     evidence = {**candidate, **details}
+    if _is_same_day_momentum_candidate(evidence):
+        return ""
     meta_decision = str(evidence.get("meta_label_decision") or "").strip().lower()
     if meta_decision and "skip" in meta_decision:
         return "model_meta_label_rejected"
@@ -180,6 +188,33 @@ def model_evidence_block_reason(candidate: dict[str, Any], details: dict[str, An
         return ""
 
     return "model_evidence_missing"
+
+
+def _is_same_day_momentum_candidate(details: dict[str, Any]) -> bool:
+    stream = str(details.get("strategy_stream") or details.get("trading_stream") or "").strip().lower()
+    return bool(details.get("same_day_momentum")) or stream == "same_day_momentum"
+
+
+def same_day_momentum_block_reason(candidate: dict[str, Any], details: dict[str, Any], cfg: AutoOpenConfig) -> str:
+    if not cfg.same_day_momentum_enabled:
+        return "same_day_momentum_disabled"
+    evidence = {**candidate, **details}
+    score = _optional_float(evidence.get("promotion_score") or evidence.get("same_day_confidence"))
+    if score is None:
+        return "same_day_score_missing"
+    if score < cfg.same_day_momentum_min_score:
+        return "same_day_score_below_minimum"
+    spread = _optional_float(evidence.get("spread_bps"))
+    if spread is not None and spread > cfg.same_day_momentum_max_spread_bps:
+        return "same_day_spread_too_wide"
+    dollar_volume = _optional_float(evidence.get("dollar_volume_today") or evidence.get("manual_dollar_traded"))
+    if dollar_volume is not None and dollar_volume < cfg.same_day_momentum_min_dollar_volume:
+        return "same_day_liquidity_below_minimum"
+    action = str(evidence.get("same_day_trade_action") or evidence.get("current_trade_action") or evidence.get("trade_action") or "").strip().lower()
+    bias = str(evidence.get("nightly_bias") or "").strip().lower()
+    if action not in {"long", "short"} and bias not in {"long", "short"}:
+        return "same_day_direction_missing"
+    return ""
 
 
 def _holding_review_dir(root: Path | str | None = None) -> Path:
@@ -278,6 +313,12 @@ def _default_payload() -> dict[str, Any]:
             "plan_fallback_enabled": True,
             "plan_fallback_size_multiplier": 1.0,
             "plan_fallback_max_file_age_minutes": 720,
+            "same_day_momentum_enabled": True,
+            "same_day_momentum_max_per_day": 8,
+            "same_day_momentum_size_multiplier": 0.50,
+            "same_day_momentum_min_score": 0.55,
+            "same_day_momentum_max_spread_bps": 35,
+            "same_day_momentum_min_dollar_volume": 500000,
             "holding_review_gate_enabled": True,
             "holding_review_allow_watch": True,
             "max_position_loss_pct": 2.0,
@@ -371,6 +412,12 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         plan_fallback_enabled=bool(section.get("plan_fallback_enabled", True)),
         plan_fallback_size_multiplier=float(section.get("plan_fallback_size_multiplier", 1.0)),
         plan_fallback_max_file_age_minutes=int(section.get("plan_fallback_max_file_age_minutes", 720)),
+        same_day_momentum_enabled=bool(section.get("same_day_momentum_enabled", True)),
+        same_day_momentum_max_per_day=int(section.get("same_day_momentum_max_per_day", 8)),
+        same_day_momentum_size_multiplier=float(section.get("same_day_momentum_size_multiplier", 0.50)),
+        same_day_momentum_min_score=float(section.get("same_day_momentum_min_score", 0.55)),
+        same_day_momentum_max_spread_bps=float(section.get("same_day_momentum_max_spread_bps", 35)),
+        same_day_momentum_min_dollar_volume=float(section.get("same_day_momentum_min_dollar_volume", 500_000)),
         holding_review_gate_enabled=bool(section.get("holding_review_gate_enabled", True)),
         holding_review_allow_watch=bool(section.get("holding_review_allow_watch", True)),
         max_position_loss_pct=float(section.get("max_position_loss_pct", 2.0)),
@@ -957,6 +1004,10 @@ def _todays_per_symbol_forecast_open_count(engine: Engine, now: datetime) -> int
     return _todays_detail_open_count(engine, now, "per_symbol_forecast_fallback")
 
 
+def _todays_same_day_momentum_open_count(engine: Engine, now: datetime) -> int:
+    return _todays_detail_open_count(engine, now, "same_day_momentum")
+
+
 def _record_open(
     *,
     symbol: str,
@@ -1100,6 +1151,14 @@ def apply_auto_open(
             details["side"] = candidate.get("side")
         if candidate.get("nightly_bias") and not details.get("nightly_bias"):
             details["nightly_bias"] = candidate.get("nightly_bias")
+        if _is_same_day_momentum_candidate(details):
+            details.setdefault("strategy_stream", "same_day_momentum")
+            details.setdefault("trading_stream", "same_day_momentum")
+            details.setdefault("same_day_momentum", True)
+            details.setdefault("max_hold_days", 1)
+            details.setdefault("must_flatten_eod", True)
+            details.setdefault("current_trade_action", details.get("same_day_trade_action") or candidate.get("trade_action") or ("Short" if str(candidate.get("nightly_bias") or "").lower() == "short" else "Long"))
+            details.setdefault("side", "sell" if str(details.get("current_trade_action")).lower() == "short" else "buy")
         model_block_reason = model_evidence_block_reason(candidate, details)
         if model_block_reason:
             blocked += 1
@@ -1118,8 +1177,11 @@ def apply_auto_open(
         is_near_miss = bool(details.get("near_miss_fallback"))
         is_per_symbol_forecast = bool(details.get("per_symbol_forecast_fallback"))
         is_plan_fallback = bool(details.get("plan_fallback"))
+        is_same_day_momentum = _is_same_day_momentum_candidate(details)
         if is_per_symbol_forecast:
             order_size = round(size * cfg.per_symbol_forecast_fallback_size_multiplier, 2)
+        elif is_same_day_momentum:
+            order_size = round(size * cfg.same_day_momentum_size_multiplier, 2)
         elif is_near_miss:
             order_size = round(size * cfg.near_miss_fallback_size_multiplier, 2)
         elif is_plan_fallback:
@@ -1135,6 +1197,14 @@ def apply_auto_open(
                 quality_details = {**details, "quality_gate_status": "blocked", "quality_block_reason": quality_block_reason}
                 _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=quality_block_reason, details=quality_details, engine=db, now=stamp)
                 notes.append(f"{symbol}:blocked:{quality_block_reason}")
+                continue
+        if is_same_day_momentum:
+            momentum_block_reason = same_day_momentum_block_reason(candidate, details, cfg)
+            if momentum_block_reason:
+                blocked += 1
+                momentum_details = {**details, "same_day_gate_status": "blocked", "same_day_block_reason": momentum_block_reason}
+                _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=momentum_block_reason, details=momentum_details, engine=db, now=stamp)
+                notes.append(f"{symbol}:blocked:{momentum_block_reason}")
                 continue
         if (is_per_symbol_forecast or is_near_miss or is_fallback) and holding_reviews:
             review = holding_reviews.get(symbol)
@@ -1184,6 +1254,11 @@ def apply_auto_open(
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="per_symbol_forecast_daily_cap_reached", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:per_symbol_forecast_daily_cap_reached")
+            continue
+        if is_same_day_momentum and _todays_same_day_momentum_open_count(db, stamp) >= cfg.same_day_momentum_max_per_day:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="same_day_momentum_daily_cap_reached", details=details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:same_day_momentum_daily_cap_reached")
             continue
         if order_size < cfg.min_position_value_usd:
             blocked += 1
@@ -1279,7 +1354,7 @@ def apply_auto_open(
             opened += 1
             held.add(symbol)
             slots -= 1
-            prefix = "per_symbol_forecast_opened" if is_per_symbol_forecast else ("near_miss_opened" if is_near_miss else ("plan_opened" if is_plan_fallback else ("fallback_opened" if is_fallback else "opened")))
+            prefix = "same_day_momentum_opened" if is_same_day_momentum else ("per_symbol_forecast_opened" if is_per_symbol_forecast else ("near_miss_opened" if is_near_miss else ("plan_opened" if is_plan_fallback else ("fallback_opened" if is_fallback else "opened"))))
             notes.append(f"{symbol}:{prefix}:{order_id or 'submitted'}")
         except AlpacaAPIError as exc:
             blocked += 1

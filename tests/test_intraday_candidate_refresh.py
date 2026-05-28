@@ -128,7 +128,38 @@ def test_scope_rows_add_manual_intraday_movers(tmp_path: Path):
     assert by_symbol["SNOW"]["bias"] == "long"
     assert by_symbol["SNOW"]["source"] == "manual_intraday_movers"
     assert by_symbol["SNOW"]["score"] >= 0.9
+    assert by_symbol["SNOW"]["strategy_stream"] == "same_day_momentum"
+    assert by_symbol["SNOW"]["same_day_momentum"] is True
+    assert by_symbol["SNOW"]["same_day_trade_action"] == "Long"
+    assert by_symbol["SNOW"]["max_hold_days"] == 1
+    assert by_symbol["SNOW"]["must_flatten_eod"] is True
     assert by_symbol["KSS"]["is_held"] is False
+
+
+def test_build_snapshot_preserves_same_day_stream_details():
+    provider = FakeProvider()
+    row = {
+        "symbol": "SNOW",
+        "bias": "long",
+        "score": 0.95,
+        "is_held": False,
+        "strategy_stream": "same_day_momentum",
+        "same_day_momentum": True,
+        "same_day_trade_action": "Long",
+        "same_day_confidence": 0.95,
+        "max_hold_days": 1,
+        "must_flatten_eod": True,
+        "manual_move_pct": 39.13,
+        "manual_dollar_traded": 7_400_000_000,
+    }
+
+    snapshot = build_snapshot(row, provider.fetch_quote("SNOW"), provider.fetch_bars("SNOW"), {"market_aligned": True}, now=NOW)
+
+    assert snapshot.details["strategy_stream"] == "same_day_momentum"
+    assert snapshot.details["same_day_momentum"] is True
+    assert snapshot.details["current_trade_action"] == "Long"
+    assert snapshot.details["side"] == "buy"
+    assert snapshot.details["must_flatten_eod"] is True
 
 
 def test_build_snapshot_computes_intraday_fields_from_quote_and_bars():

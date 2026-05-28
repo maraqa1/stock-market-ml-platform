@@ -16,6 +16,7 @@ from stockml.db.schema import pipeline_runs, shortlist_snapshots
 PositionLoader = Callable[[], list[dict[str, Any]]]
 MIN_SCOPE_SHORTLIST_ROWS = 25
 MANUAL_MOVERS_PATTERN = "intraday_movers_*.csv"
+SAME_DAY_STREAM = "same_day_momentum"
 
 
 def _symbol(value: Any) -> str:
@@ -108,6 +109,14 @@ def _latest_manual_mover_rows_from_artifacts(root: Path) -> list[dict[str, Any]]
                 "rank": idx + 1,
                 "sector": row.get("sector") if "sector" in frame.columns else None,
                 "source": "manual_intraday_movers",
+                "strategy_stream": SAME_DAY_STREAM,
+                "trading_stream": SAME_DAY_STREAM,
+                "same_day_momentum": True,
+                "same_day_trade_action": "Short" if bias == "short" else "Long",
+                "same_day_confidence": _manual_mover_score(row),
+                "same_day_reason": "manual_intraday_mover",
+                "max_hold_days": 1,
+                "must_flatten_eod": True,
                 "manual_move_pct": move_pct,
                 "manual_last_price": row.get("last", row.get("current_price", "")),
                 "manual_dollar_traded": row.get("dollar_traded", row.get("$ traded", "")),

@@ -43,6 +43,12 @@ autopilot:
   plan_fallback_enabled: true
   plan_fallback_size_multiplier: 1.0
   plan_fallback_max_file_age_minutes: 720
+  same_day_momentum_enabled: true
+  same_day_momentum_max_per_day: 8
+  same_day_momentum_size_multiplier: 0.50
+  same_day_momentum_min_score: 0.55
+  same_day_momentum_max_spread_bps: 35
+  same_day_momentum_min_dollar_volume: 500000
   holding_review_gate_enabled: true
   holding_review_allow_watch: true
   max_position_loss_pct: 2.0

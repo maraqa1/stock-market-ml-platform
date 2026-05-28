@@ -295,6 +295,82 @@ def test_auto_open_blocks_promoted_candidate_without_model_evidence():
     assert row["details"]["model_evidence_status"] == "blocked"
 
 
+def test_auto_open_allows_same_day_momentum_without_daily_model_evidence():
+    engine = _engine()
+    client = FakeClient()
+    candidate = {
+        "symbol": "SNOW",
+        "promotion_score": 0.82,
+        "nightly_bias": "long",
+        "current_price": 243.84,
+        "is_held": False,
+        "details": {
+            "strategy_stream": "same_day_momentum",
+            "same_day_momentum": True,
+            "same_day_trade_action": "Long",
+            "same_day_confidence": 0.82,
+            "manual_dollar_traded": 7_400_000_000,
+            "manual_move_pct": 39.13,
+            "is_first_15_min": False,
+            "is_last_30_min": False,
+        },
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, same_day_momentum_size_multiplier=0.50),
+        alpaca_cfg=_trade_config(max_notional_per_order=1000),
+        client=client,
+        now=datetime(2026, 5, 28, 15, 30, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert "SNOW:same_day_momentum_opened:order-SNOW" in result["autopilot_open_notes"]
+    assert client.orders[0]["side"] == "buy"
+    assert client.orders[0]["time_in_force"] == "day"
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["verdict"] == "opened"
+    assert row["details"]["strategy_stream"] == "same_day_momentum"
+    assert row["details"]["must_flatten_eod"] is True
+
+
+def test_auto_open_blocks_same_day_momentum_below_score_gate():
+    engine = _engine()
+    candidate = {
+        "symbol": "WEAK",
+        "promotion_score": 0.30,
+        "nightly_bias": "long",
+        "current_price": 10,
+        "is_held": False,
+        "details": {
+            "strategy_stream": "same_day_momentum",
+            "same_day_momentum": True,
+            "same_day_trade_action": "Long",
+            "manual_dollar_traded": 5_000_000,
+            "is_first_15_min": False,
+            "is_last_30_min": False,
+        },
+    }
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, same_day_momentum_min_score=0.55),
+        alpaca_cfg=_trade_config(),
+        client=FakeClient(),
+        now=datetime(2026, 5, 28, 15, 30, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert "WEAK:blocked:same_day_score_below_minimum" in result["autopilot_open_notes"]
+
+
 def test_auto_open_blocks_promoted_candidate_rejected_by_meta_label():
     engine = _engine()
     client = FakeClient()
