@@ -7,6 +7,10 @@ from stockml.common.profiles import load_profile, load_profiles
 from stockml.pipeline.profile_runner import _metadata_quality_gate, run_profile
 
 
+def _isolate_pipeline_manifests(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("stockml.pipeline.manifest.PIPELINE_RUNS_DIR", tmp_path / "pipeline_runs")
+
+
 def test_load_pipeline_profiles():
     profiles = load_profiles()
     assert "nasdaq_500" in profiles
@@ -40,7 +44,8 @@ def test_unknown_profile_has_clear_error():
         load_profile("does_not_exist")
 
 
-def test_profile_runner_passes_same_run_artifacts(monkeypatch):
+def test_profile_runner_passes_same_run_artifacts(monkeypatch, tmp_path: Path):
+    _isolate_pipeline_manifests(monkeypatch, tmp_path)
     calls = {}
     validated = Path("validated.csv")
     metadata = Path("metadata.csv")
@@ -106,7 +111,8 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     assert calls["readiness"]["kwargs"]["manifest_data"]["stages"]["model"]["status"] == "ok"
 
 
-def test_limited_profile_does_not_publish_latest_trading_artifacts(monkeypatch):
+def test_limited_profile_does_not_publish_latest_trading_artifacts(monkeypatch, tmp_path: Path):
+    _isolate_pipeline_manifests(monkeypatch, tmp_path)
     calls = {}
     validated = Path("validated.csv")
     metadata = Path("metadata.csv")
@@ -129,7 +135,8 @@ def test_limited_profile_does_not_publish_latest_trading_artifacts(monkeypatch):
     assert calls["model"]["publish_latest"] is False
 
 
-def test_profile_runner_can_reuse_existing_artifacts_without_downloads(monkeypatch):
+def test_profile_runner_can_reuse_existing_artifacts_without_downloads(monkeypatch, tmp_path: Path):
+    _isolate_pipeline_manifests(monkeypatch, tmp_path)
     calls = {}
     universe = Path("universe.csv")
     validated = Path("validated.csv")
@@ -184,7 +191,8 @@ def test_profile_runner_can_reuse_existing_artifacts_without_downloads(monkeypat
     assert calls["model"]["gold_file"] == gold
 
 
-def test_profile_runner_can_skip_price_download_but_rebuild_validation(monkeypatch):
+def test_profile_runner_can_skip_price_download_but_rebuild_validation(monkeypatch, tmp_path: Path):
+    _isolate_pipeline_manifests(monkeypatch, tmp_path)
     calls = {}
     validated = Path("validated.csv")
     metadata = Path("metadata.csv")
