@@ -141,8 +141,18 @@ def tag_dispositions(
             disposition, reason = "weak", "dropped_from_shortlist"
         elif plpc >= (cfg.winner_hold_pct / 100.0) and decision in {"", "safe", "keep", "hold", "watch"}:
             disposition, reason = "winner_hold", "profitable_winner"
-        rows.append({"symbol": symbol, "disposition": disposition, "reason": reason, "plpc": plpc, "age": age})
+        rows.append({"symbol": symbol, "disposition": disposition, "reason": reason, "plpc": plpc, "age": age, "trading_stream": trading_stream})
     return rows
+
+
+def _should_flatten_position(row: dict[str, Any], config: EODConfig) -> bool:
+    disposition = str(row.get("disposition") or "")
+    trading_stream = str(row.get("trading_stream") or "").strip().lower()
+    if trading_stream == "multi_day" and disposition in {"none", "winner_hold"}:
+        return False
+    if config.holdover_allowed and disposition == "winner_hold":
+        return False
+    return True
 
 
 def banner_for_state(state: str, *, trim_count: int = 0, flatten_count: int = 0, remaining_count: int = 0, flattened_count: int = 0) -> str:
@@ -188,17 +198,9 @@ def run_eod_tick(
     if stage == "trim" and cfg.trim_weak_at_t_minus_15:
         symbols_to_close = [row["symbol"] for row in dispositions if row["disposition"] in {"weak", "stale"}]
     elif stage in {"flatten", "verify"} and cfg.flatten_all_at_t_minus_5:
-        symbols_to_close = [
-            row["symbol"]
-            for row in dispositions
-            if not (cfg.holdover_allowed and row["disposition"] == "winner_hold")
-        ]
+        symbols_to_close = [row["symbol"] for row in dispositions if _should_flatten_position(row, cfg)]
     elif stage == "postclose" and cfg.flatten_all_at_t_minus_5 and cfg.submit_postclose_rescue_orders:
-        symbols_to_close = [
-            row["symbol"]
-            for row in dispositions
-            if not (cfg.holdover_allowed and row["disposition"] == "winner_hold")
-        ]
+        symbols_to_close = [row["symbol"] for row in dispositions if _should_flatten_position(row, cfg)]
 
     submitted = 0
     notes: list[str] = []

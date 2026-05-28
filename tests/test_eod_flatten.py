@@ -86,6 +86,40 @@ def test_same_day_stream_is_trimmed_before_close_even_when_profitable():
     assert result["eod_dispositions"][0]["reason"] == "same_day_stream_eod"
 
 
+def test_multi_day_stream_is_not_flattened_at_end_of_day_by_default():
+    positions = pd.DataFrame([{"symbol": "SWING", "unrealized_plpc": 0.0, "age_days": 0, "trading_stream": "multi_day"}])
+    calls = []
+
+    result = run_eod_tick(
+        positions,
+        now=datetime(2026, 5, 12, 15, 56, tzinfo=ET),
+        state={},
+        config=EODConfig(holdover_allowed=False),
+        close_func=lambda symbol, action: calls.append((symbol, action)) or {"status": "submitted", "message": "ok"},
+    )
+
+    assert result["eod_state"] == "flatten"
+    assert result["eod_flatten_submitted"] == 0
+    assert calls == []
+
+
+def test_multi_day_stream_still_closes_when_weak_or_stale_at_eod():
+    positions = pd.DataFrame([{"symbol": "RISK", "unrealized_plpc": -0.02, "age_days": 2, "trading_stream": "multi_day"}])
+    calls = []
+
+    result = run_eod_tick(
+        positions,
+        now=datetime(2026, 5, 12, 15, 47, tzinfo=ET),
+        state={},
+        config=EODConfig(holdover_allowed=False),
+        close_func=lambda symbol, action: calls.append((symbol, action)) or {"status": "submitted", "message": "ok"},
+    )
+
+    assert result["eod_state"] == "trim"
+    assert result["eod_flatten_submitted"] == 1
+    assert calls == [("RISK", "close")]
+
+
 def test_t_minus_5_flatten_closes_winners_by_default_and_honors_holdover_toggle():
     positions = pd.DataFrame([{"symbol": "WIN", "unrealized_plpc": 0.03, "age_days": 1}])
     calls = []
