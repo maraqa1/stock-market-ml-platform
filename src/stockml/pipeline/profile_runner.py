@@ -16,6 +16,7 @@ from stockml.gold.build_gold_dataset import build_gold_dataset
 from stockml.metadata.build_metadata_enriched import build_metadata_enriched
 from stockml.models.build_model_outputs import build_model_outputs
 from stockml.pipeline.manifest import PipelineManifest
+from stockml.pipeline import recorder as pipeline_recorder
 from stockml.prices.download_price_history import download_price_history
 from stockml.prices.validate_price_history import build_price_quality_report
 from stockml.reports.pipeline_quality_checks import build_pipeline_quality_report
@@ -94,12 +95,127 @@ def _required_latest(directory: Path, pattern: str, label: str) -> Path:
     return path
 
 
-def run_trading_day_readiness_gate() -> dict[str, Any]:
+def _count_rows(path: Path | str | None) -> int:
+    if path is None:
+        return 0
+    candidate = Path(path)
+    if not candidate.exists():
+        return 0
+    try:
+        with candidate.open("r", encoding="utf-8", errors="ignore") as handle:
+            return max(0, sum(1 for _ in handle) - 1)
+    except Exception:
+        return 0
+
+
+def _path_metadata(path: Path | str | None, detail: str) -> dict[str, Any]:
+    if path is None:
+        return {"detail": detail}
+    candidate = Path(path)
+    return {"artifact": candidate.name, "path": str(candidate), "detail": detail}
+
+
+def _record_start(run_id: str, triggered_by: str) -> bool:
+    try:
+        pipeline_recorder.start_run(run_id, triggered_by=triggered_by)
+        return True
+    except Exception as exc:
+        log(f"Pipeline recorder unavailable; continuing without DB run rows: {exc}")
+        return False
+
+
+def _record_stage_start(enabled: bool, run_id: str, stage_name: str) -> None:
+    if not enabled:
+        return
+    try:
+        pipeline_recorder.start_stage(run_id, stage_name)
+    except Exception as exc:
+        log(f"Pipeline recorder stage start failed stage={stage_name}: {exc}")
+
+
+def _record_stage_complete(
+    enabled: bool,
+    run_id: str,
+    stage_name: str,
+    *,
+    output_count: int = 0,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    if not enabled:
+        return
+    try:
+        pipeline_recorder.complete_stage(run_id, stage_name, output_count=output_count, metadata=metadata or {})
+    except Exception as exc:
+        log(f"Pipeline recorder stage complete failed stage={stage_name}: {exc}")
+
+
+def _record_stage_failed(enabled: bool, run_id: str, stage_name: str | None, error: BaseException) -> None:
+    if not enabled or not stage_name:
+        return
+    try:
+        pipeline_recorder.fail_stage(run_id, stage_name, str(error))
+    except Exception as exc:
+        log(f"Pipeline recorder stage failure write failed stage={stage_name}: {exc}")
+
+
+def _record_run_complete(enabled: bool, run_id: str, status: str, error: str | None = None) -> None:
+    if not enabled:
+        return
+    try:
+        pipeline_recorder.complete_run(run_id, status=status, error=error)
+    except Exception as exc:
+        log(f"Pipeline recorder run complete failed: {exc}")
+
+
+def _record_output_artifact(
+    enabled: bool,
+    run_id: str,
+    stage_name: str,
+    path: Path | str | None,
+    detail: str,
+    output_count: int | None = None,
+) -> None:
+    _record_stage_start(enabled, run_id, stage_name)
+    _record_stage_complete(
+        enabled,
+        run_id,
+        stage_name,
+        output_count=_count_rows(path) if output_count is None else int(output_count or 0),
+        metadata=_path_metadata(path, detail),
+    )
+
+
+def run_trading_day_readiness_gate(run_id: str | None = None, recorder_enabled: bool = False) -> dict[str, Any]:
     quality = build_pipeline_quality_report(PROJECT_ROOT, profile_name="us_full")
     if quality.get("status") != "ok":
         raise RuntimeError(f"trading_day_readiness_failed: quality_gate_failed path={quality.get('path')}")
 
     plan = run_paper_trading(plan_only=True)
+    if run_id:
+        _record_output_artifact(
+            recorder_enabled,
+            run_id,
+            "candidates",
+            plan.get("candidate_pool_path"),
+            "candidate pool",
+            output_count=int(plan.get("candidate_pool_rows") or 0),
+        )
+        _record_output_artifact(
+            recorder_enabled,
+            run_id,
+            "selection",
+            plan.get("plan_path"),
+            "order plan",
+            output_count=int(plan.get("orders_planned") or 0),
+        )
+        _record_output_artifact(
+            recorder_enabled,
+            run_id,
+            "submitted",
+            plan.get("result_path"),
+            "order results",
+            output_count=int(plan.get("orders_submitted") or plan.get("orders_planned") or 0),
+        )
     if int(plan.get("candidate_pool_rows") or 0) <= 0 or int(plan.get("orders_planned") or 0) <= 0:
         raise RuntimeError(
             "trading_day_readiness_failed: empty_plan "
@@ -149,8 +265,10 @@ def run_profile(
         log("Price download: skipped (price validation will reuse the existing price store)")
     manifest = PipelineManifest(profile_name)
     log(f"Pipeline manifest: {manifest.path}")
+    recorder_enabled = _record_start(manifest.run_id, triggered_by=f"profile:{profile_name}")
 
     current_stage = "start"
+    recorder_stage: str | None = None
     try:
         if reuse_existing_artifacts:
             current_stage = "universe"
@@ -165,8 +283,11 @@ def run_profile(
             current_stage = "price"
             price_paths = {"validated_universe": _required_latest(INTERIM_DIR, "03_us_price_validated_universe_*.csv", "validated universe")}
             manifest.stage_ok("price", price_paths)
+            _record_output_artifact(recorder_enabled, manifest.run_id, "yahoo", price_paths.get("validated_universe"), "validated universe reused")
         elif profile.get("run_price", True):
             current_stage = "price"
+            recorder_stage = "yahoo"
+            _record_stage_start(recorder_enabled, manifest.run_id, recorder_stage)
             if not skip_price_download:
                 download_price_history(
                     start_date=str(profile.get("start_date", "2018-01-01")),
@@ -178,6 +299,14 @@ def run_profile(
                 )
             price_paths = build_price_quality_report(provider_name=effective_provider)
             manifest.stage_ok("price", price_paths)
+            _record_stage_complete(
+                recorder_enabled,
+                manifest.run_id,
+                "yahoo",
+                output_count=_count_rows(price_paths.get("validated_universe")),
+                metadata=_path_metadata(price_paths.get("validated_universe"), "validated universe"),
+            )
+            recorder_stage = None
         else:
             price_paths = {}
 
@@ -243,6 +372,8 @@ def run_profile(
 
         if profile.get("run_gold", True):
             current_stage = "gold"
+            recorder_stage = "gold"
+            _record_stage_start(recorder_enabled, manifest.run_id, recorder_stage)
             gold_paths = build_gold_dataset(
                 limit_tickers=limit,
                 exchange=exchange,
@@ -252,11 +383,21 @@ def run_profile(
                 shard_rows=profile.get("gold_shard_rows"),
             )
             manifest.stage_ok("gold", gold_paths)
+            _record_stage_complete(
+                recorder_enabled,
+                manifest.run_id,
+                "gold",
+                output_count=_count_rows(gold_paths.get("gold_dataset")),
+                metadata=_path_metadata(gold_paths.get("gold_dataset"), "gold dataset"),
+            )
+            recorder_stage = None
         else:
             gold_paths = {}
 
         if profile.get("run_model", True):
             current_stage = "model"
+            recorder_stage = "model"
+            _record_stage_start(recorder_enabled, manifest.run_id, recorder_stage)
             model_paths = build_model_outputs(
                 gold_file=gold_paths.get("gold_dataset"),
                 limit_tickers=profile.get("model_limit_tickers", limit),
@@ -266,6 +407,15 @@ def run_profile(
                 publish_latest=publish_trading_artifacts,
             )
             manifest.stage_ok("model", model_paths)
+            model_artifact = model_paths.get("signal_table") or model_paths.get("predictions") or model_paths.get("model_predictions_latest")
+            _record_stage_complete(
+                recorder_enabled,
+                manifest.run_id,
+                "model",
+                output_count=_count_rows(model_artifact),
+                metadata=_path_metadata(model_artifact, "model signal table"),
+            )
+            recorder_stage = None
 
         if write_database:
             current_stage = "database"
@@ -275,13 +425,16 @@ def run_profile(
 
         if profile.get("run_trading_day_readiness", False):
             current_stage = "trading_day_readiness"
-            readiness = run_trading_day_readiness_gate()
+            readiness = run_trading_day_readiness_gate(manifest.run_id, recorder_enabled=recorder_enabled)
             manifest.stage_ok("trading_day_readiness", readiness)
             log(f"Trading day readiness complete: {readiness}")
 
         manifest.complete()
+        _record_run_complete(recorder_enabled, manifest.run_id, "success")
         log(f"Profile pipeline complete: {profile_name}")
     except Exception as exc:
+        _record_stage_failed(recorder_enabled, manifest.run_id, recorder_stage, exc)
+        _record_run_complete(recorder_enabled, manifest.run_id, "failed", error=str(exc))
         manifest.stage_failed(current_stage, exc)
         log(f"Profile pipeline failed: {profile_name} manifest={manifest.path} error={exc}")
         raise

@@ -83,7 +83,7 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     monkeypatch.setattr("stockml.pipeline.profile_runner.build_model_outputs", fake_model)
     monkeypatch.setattr(
         "stockml.pipeline.profile_runner.run_trading_day_readiness_gate",
-        lambda: calls.setdefault("readiness", {"orders_planned": 10}),
+        lambda *args, **kwargs: calls.setdefault("readiness", {"orders_planned": 10, "args": args, "kwargs": kwargs}),
     )
 
     run_profile("us_full")
@@ -102,6 +102,7 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     assert calls["model"]["baseline_only"] is True
     assert calls["model"]["publish_latest"] is True
     assert calls["readiness"]["orders_planned"] == 10
+    assert calls["readiness"]["args"]
 
 
 def test_limited_profile_does_not_publish_latest_trading_artifacts(monkeypatch):
@@ -168,7 +169,7 @@ def test_profile_runner_can_reuse_existing_artifacts_without_downloads(monkeypat
     monkeypatch.setattr("stockml.pipeline.profile_runner.build_model_outputs", lambda **kwargs: calls.setdefault("model", kwargs))
     monkeypatch.setattr(
         "stockml.pipeline.profile_runner.run_trading_day_readiness_gate",
-        lambda: calls.setdefault("readiness", {"orders_planned": 10}),
+        lambda *args, **kwargs: calls.setdefault("readiness", {"orders_planned": 10}),
     )
 
     run_profile("us_full", reuse_existing_artifacts=True)
@@ -202,7 +203,7 @@ def test_profile_runner_can_skip_price_download_but_rebuild_validation(monkeypat
     monkeypatch.setattr("stockml.pipeline.profile_runner.build_sentiment_panel", lambda **kwargs: {})
     monkeypatch.setattr("stockml.pipeline.profile_runner.build_gold_dataset", lambda **kwargs: {"gold_dataset": gold})
     monkeypatch.setattr("stockml.pipeline.profile_runner.build_model_outputs", lambda **kwargs: calls.setdefault("model", kwargs))
-    monkeypatch.setattr("stockml.pipeline.profile_runner.run_trading_day_readiness_gate", lambda: {"orders_planned": 10})
+    monkeypatch.setattr("stockml.pipeline.profile_runner.run_trading_day_readiness_gate", lambda *args, **kwargs: {"orders_planned": 10})
 
     run_profile("us_full", skip_price_download=True)
 
