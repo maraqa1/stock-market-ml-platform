@@ -39,10 +39,12 @@ def main() -> int:
     plan_path = _latest_portal("08_alpaca_paper_order_plan_*.csv")
     candidate_pool_path = _latest_portal("08_alpaca_paper_candidate_pool_*.csv")
     result_path = _latest_portal("08_alpaca_paper_order_results_*.csv")
+    holding_review_path = latest_file(ROOT / "data" / "trading" / "holding_period", "holding_review_*.csv")
     positions_path = Path(refreshed["positions_path"])
     plan = _read_csv(plan_path)
     candidate_pool = _read_csv(candidate_pool_path)
     results = _read_csv(result_path)
+    holding_review = _read_csv(holding_review_path)
     positions = _read_csv(positions_path)
     fallback_signal_time = (
         datetime.fromtimestamp(plan_path.stat().st_mtime, tz=timezone.utc)
@@ -57,6 +59,7 @@ def main() -> int:
         plan,
         results,
         candidate_pool,
+        holding_review,
         now=datetime.now(timezone.utc),
         signal_ttl_minutes=10,
         fallback_signal_time=fallback_signal_time,

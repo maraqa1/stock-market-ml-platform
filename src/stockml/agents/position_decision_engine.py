@@ -27,6 +27,7 @@ DECISION_COLUMNS = [
     "unrealized_pl",
     "unrealized_plpc",
     "latest_signal",
+    "trading_stream",
     "signal_age_minutes",
     "stop_loss_price",
     "take_profit_price",
@@ -97,6 +98,7 @@ def build_position_decisions(
     plan: pd.DataFrame | None = None,
     results: pd.DataFrame | None = None,
     candidate_pool: pd.DataFrame | None = None,
+    holding_review: pd.DataFrame | None = None,
     *,
     now: datetime | None = None,
     signal_ttl_minutes: int = 10,
@@ -114,6 +116,7 @@ def build_position_decisions(
     plan = plan.copy() if plan is not None and not plan.empty else pd.DataFrame(columns=["symbol"])
     results = results.copy() if results is not None and not results.empty else pd.DataFrame(columns=["symbol"])
     candidate_pool = candidate_pool.copy() if candidate_pool is not None and not candidate_pool.empty else pd.DataFrame(columns=["symbol"])
+    holding_review = holding_review.copy() if holding_review is not None and not holding_review.empty else pd.DataFrame(columns=["symbol"])
     frame = positions.copy()
     if "symbol" not in frame.columns:
         frame["symbol"] = ""
@@ -156,6 +159,29 @@ def build_position_decisions(
                 suffixes=("", "_pool"),
             )
 
+    if not holding_review.empty:
+        holding_review["symbol"] = holding_review["symbol"].astype(str).str.upper()
+        review_keep = [
+            col
+            for col in [
+                "symbol",
+                "trading_stream",
+                "recommended_holding_days",
+                "review_after_days",
+                "max_holding_days",
+                "holding_quality",
+                "holding_gate_reason",
+            ]
+            if col in holding_review.columns
+        ]
+        if review_keep:
+            frame = frame.merge(
+                holding_review[review_keep].drop_duplicates("symbol", keep="last"),
+                on="symbol",
+                how="left",
+                suffixes=("", "_holding"),
+            )
+
     if not results.empty:
         results = results.copy()
         results["symbol"] = results["symbol"].astype(str).str.upper()
@@ -174,7 +200,9 @@ def build_position_decisions(
         avg_entry = _num(row.get("avg_entry_price") or row.get("filled_avg_price"))
         stop_loss = _num(row.get("stop_loss_price"), default=float("nan"))
         take_profit = _num(row.get("take_profit_price"), default=float("nan"))
-        max_holding_days = _num(row.get("max_holding_days"), default=10.0)
+        holding_review_max = row.get("max_holding_days_holding")
+        max_holding_days = _num(holding_review_max if _text(holding_review_max) else row.get("max_holding_days"), default=10.0)
+        trading_stream = _text(row.get("trading_stream")) or ("same_day" if max_holding_days <= 1 else "multi_day")
         signal_age = _signal_age_minutes(row, now, fallback_signal_time)
         holding_days = _holding_days(row, now)
 
@@ -264,6 +292,7 @@ def build_position_decisions(
                 "unrealized_pl": _num(row.get("unrealized_pl")),
                 "unrealized_plpc": _num(row.get("unrealized_plpc")),
                 "latest_signal": latest_signal,
+                "trading_stream": trading_stream,
                 "signal_age_minutes": round(signal_age, 2) if signal_age is not None else "",
                 "stop_loss_price": round(stop_loss, 4) if pd.notna(stop_loss) else "",
                 "take_profit_price": round(take_profit, 4) if pd.notna(take_profit) else "",

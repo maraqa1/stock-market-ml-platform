@@ -15,6 +15,7 @@ OUTPUT_COLUMNS = [
     "symbol",
     "side",
     "trade_action",
+    "trading_stream",
     "status",
     "notional",
     "suggested_quantity",
@@ -152,7 +153,11 @@ def choose_holding_period(stats: list[HorizonStats], row: pd.Series) -> tuple[in
     volatility = str(row.get("volatility_tier") or "").strip().lower()
     configured_max = pd.to_numeric(row.get("max_holding_days"), errors="coerce")
     configured_max_days = int(configured_max) if pd.notna(configured_max) and configured_max > 0 else 10
-    if risk_tier == "speculative" or volatility in {"high", "extreme"}:
+    if selected.horizon_days <= 1:
+        max_days = 1
+        review_after = 1
+        reason = "same_day_edge_window"
+    elif risk_tier == "speculative" or volatility in {"high", "extreme"}:
         max_days = min(configured_max_days, max(selected.horizon_days, 3))
         review_after = 1
         reason = "shorter_hold_due_to_risk_or_volatility"
@@ -177,12 +182,14 @@ def build_holding_period_report(plan: pd.DataFrame, history: pd.DataFrame) -> pd
             continue
         stats = horizon_stats(history, symbol, str(row.get("side") or row.get("trade_action") or ""))
         holding_days, review_after, max_days, selected, reason = choose_holding_period(stats, row)
+        trading_stream = "same_day" if max_days <= 1 else "multi_day"
         exit_rule = "stop_or_take_profit_first;daily_review;close_at_max_holding_days"
         rows.append(
             {
                 "symbol": symbol,
                 "side": row.get("side", ""),
                 "trade_action": row.get("trade_action", ""),
+                "trading_stream": trading_stream,
                 "status": row.get("trade_quality_status", row.get("status", "")),
                 "notional": row.get("notional", row.get("approved_notional", "")),
                 "suggested_quantity": row.get("suggested_quantity", ""),

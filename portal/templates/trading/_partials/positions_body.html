@@ -2,7 +2,7 @@
 {% from "_macros/format.html" import money, qty, side, signed_money, signed_pct %}
 {% if not positions_api["positions"] %}
   <tr>
-    <td colspan="15" class="empty small">No open paper positions returned.</td>
+    <td colspan="16" class="empty small">No open paper positions returned.</td>
   </tr>
 {% else %}
   {% for row in positions_api["positions"] %}
@@ -10,6 +10,7 @@
     <tr class="row-clickable" data-position-id="{{ row.position_id }}" data-lineage-url="/trading/positions/{{ row.position_id }}/lineage">
       <td class="num-l col-pinned" data-sort-value="{{ row.symbol }}"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
       <td>{{ side(row.side or "long") }}</td>
+      <td data-sort-value="{{ row.trading_stream or '' }}">{{ pill(row.trading_stream or "multi_day") }}</td>
       <td data-sort-value="{{ row.qty or 0 }}">{{ qty(row.qty or 0) }}</td>
       <td data-sort-value="{{ row.entry_price or 0 }}">{{ money(row.entry_price or "") }}</td>
       <td data-sort-value="{{ row.current_price or 0 }}">{{ money(row.current_price or "") }}</td>

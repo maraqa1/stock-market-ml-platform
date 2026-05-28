@@ -102,6 +102,7 @@ def _latest_holding_review_by_symbol(root: Path) -> dict[str, dict[str, Any]]:
     if review.empty or "symbol" not in review.columns:
         return {}
     wanted = [
+        "trading_stream",
         "recommended_holding_days",
         "review_after_days",
         "max_holding_days",
@@ -130,6 +131,7 @@ def _attach_holding_review_to_records(rows: list[dict[str, Any]], root: Path) ->
         row["holding_review_status"] = "available" if review else "missing"
         for key in (
             "recommended_holding_days",
+            "trading_stream",
             "review_after_days",
             "max_holding_days",
             "holding_quality",

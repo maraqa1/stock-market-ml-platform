@@ -756,6 +756,7 @@ def latest_plan_fallback_candidates(
             "plan_fallback": True,
             "fallback_reason": "latest_approved_order_plan",
             "current_trade_action": trade_action,
+            "trading_stream": row.get("trading_stream"),
             "side": "sell" if bias == "short" else "buy",
             "nightly_bias": bias,
             "trade_quality_status": row.get("trade_quality_status"),
@@ -1146,6 +1147,7 @@ def apply_auto_open(
                         {
                             "holding_quality": review.get("holding_quality"),
                             "holding_gate_pass": review.get("holding_gate_pass"),
+                            "trading_stream": review.get("trading_stream"),
                             "recommended_holding_days": review.get("recommended_holding_days"),
                             "max_holding_days": review.get("max_holding_days"),
                             "holding_gate_reason": review.get("holding_gate_reason"),

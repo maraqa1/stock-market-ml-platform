@@ -51,6 +51,48 @@ def test_close_when_take_profit_is_triggered():
     assert "take_profit_triggered" in decisions.iloc[0]["decision_reason"]
 
 
+def test_holding_review_stream_overrides_plan_max_hold_for_same_day_positions():
+    positions = pd.DataFrame(
+        [
+            {
+                "symbol": "FLEX",
+                "qty": 5,
+                "current_price": 142,
+                "side": "long",
+                "submitted_at": "2026-05-07T15:00:00Z",
+            }
+        ]
+    )
+    plan = pd.DataFrame(
+        [
+            {
+                "symbol": "FLEX",
+                "trade_action": "Long",
+                "signal_generated_at": "2026-05-08T15:55:00Z",
+                "max_holding_days": 5,
+            }
+        ]
+    )
+    holding_review = pd.DataFrame(
+        [
+            {
+                "symbol": "FLEX",
+                "trading_stream": "same_day",
+                "max_holding_days": 1,
+                "recommended_holding_days": 1,
+            }
+        ]
+    )
+
+    decisions = build_position_decisions(positions, plan, holding_review=holding_review, now=NOW)
+    row = decisions.iloc[0]
+
+    assert row["trading_stream"] == "same_day"
+    assert row["max_holding_days"] == 1
+    assert row["decision"] == "close"
+    assert "max_holding_days_exceeded" in row["decision_reason"]
+
+
 def test_close_when_signal_no_longer_active():
     positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 142, "side": "long"}])
     plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "No Decision", "signal_generated_at": "2026-05-08T15:55:00Z"}])

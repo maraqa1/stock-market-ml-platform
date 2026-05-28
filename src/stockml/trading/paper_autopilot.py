@@ -17,6 +17,7 @@ from stockml.autopilot.open import (
     latest_near_miss_fallback_candidates,
     latest_plan_fallback_candidates,
     latest_per_symbol_forecast_fallback_candidates,
+    latest_holding_review_map,
     latest_strong_candidates,
     load_auto_open_config,
     ranked_fallback_candidates,
@@ -471,9 +472,14 @@ def build_fresh_monitor_decisions(
     plan_path = _latest_csv(portal_dir, "08_alpaca_paper_order_plan_*.csv")
     result_path = _latest_csv(portal_dir, "08_alpaca_paper_order_results_*.csv")
     candidate_pool_path = _latest_csv(portal_dir, "08_alpaca_paper_candidate_pool_*.csv")
+    holding_review_path = _latest_csv(
+        (Path(root) / "data" / "trading" / "holding_period") if root else (PORTAL_OUTPUTS_DIR.parent / "trading" / "holding_period"),
+        "holding_review_*.csv",
+    )
     plan = _read_csv(plan_path)
     results = _read_csv(result_path)
     candidate_pool = _read_csv(candidate_pool_path)
+    holding_review = _read_csv(holding_review_path)
     fallback_signal_time = (
         datetime.fromtimestamp(plan_path.stat().st_mtime, tz=timezone.utc)
         if plan_path and plan_path.exists()
@@ -484,6 +490,7 @@ def build_fresh_monitor_decisions(
         plan,
         results,
         candidate_pool,
+        holding_review,
         now=now or datetime.now(timezone.utc),
         signal_ttl_minutes=10,
         fallback_signal_time=fallback_signal_time,
@@ -493,6 +500,39 @@ def build_fresh_monitor_decisions(
     path = directory / f"position_decisions_{timestamp()}.csv"
     decisions.to_csv(path, index=False)
     return decisions, path
+
+
+def attach_holding_review_to_positions(positions: pd.DataFrame, root: Path | None = None) -> pd.DataFrame:
+    if positions.empty or "symbol" not in positions.columns:
+        return positions
+    reviews = latest_holding_review_map(root)
+    if not reviews:
+        return positions
+    out = positions.copy()
+    for column in [
+        "trading_stream",
+        "recommended_holding_days",
+        "review_after_days",
+        "max_holding_days",
+        "holding_quality",
+        "holding_gate_reason",
+    ]:
+        if column not in out.columns:
+            out[column] = ""
+    for idx, row in out.iterrows():
+        review = reviews.get(str(row.get("symbol") or "").upper().strip())
+        if not review:
+            continue
+        for column in [
+            "trading_stream",
+            "recommended_holding_days",
+            "review_after_days",
+            "max_holding_days",
+            "holding_quality",
+            "holding_gate_reason",
+        ]:
+            out.at[idx, column] = review.get(column, "")
+    return out
 
 
 def _position_plpc_by_symbol(positions: pd.DataFrame) -> dict[str, float]:
@@ -736,7 +776,7 @@ def tick(
     try:
         refreshed = refresh_func()
         tracking = _read_csv(refreshed.get("tracking_path"))
-        positions = _read_csv(refreshed.get("positions_path"))
+        positions = attach_holding_review_to_positions(_read_csv(refreshed.get("positions_path")), root)
         tracked_open_orders = _count_open_orders(tracking)
         broker_open_orders = (broker_open_orders_func or _count_broker_open_orders)(cfg)
         intraday_summary = intraday_decision_loader()

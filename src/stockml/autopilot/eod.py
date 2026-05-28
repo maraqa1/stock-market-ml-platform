@@ -124,11 +124,14 @@ def tag_dispositions(
         symbol = _symbol(row)
         plpc = _float(row.get("unrealized_plpc"))
         age = _float(row.get("age_days") or row.get("age") or 0)
+        trading_stream = str(row.get("trading_stream") or "").strip().lower()
         decision = monitor.get(symbol, "")
         dropped = bool(shortlist and symbol not in shortlist)
         disposition = "none"
         reason = "position_within_eod_rules"
-        if age >= cfg.time_stop_days:
+        if trading_stream == "same_day":
+            disposition, reason = "stale", "same_day_stream_eod"
+        elif age >= cfg.time_stop_days:
             disposition, reason = "stale", "time_stop"
         elif plpc < (cfg.weak_loss_pct / 100.0) and age >= 1:
             disposition, reason = "weak", "loss_and_age"

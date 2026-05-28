@@ -20,12 +20,18 @@ def _read_latest(pattern: str) -> tuple[pd.DataFrame, Path | None]:
     return (pd.read_csv(path, low_memory=False), path) if path and path.exists() else (pd.DataFrame(), None)
 
 
+def _read_latest_holding_review() -> pd.DataFrame:
+    path = latest_file(ROOT / "data" / "trading" / "holding_period", "holding_review_*.csv")
+    return pd.read_csv(path, low_memory=False) if path and path.exists() else pd.DataFrame()
+
+
 def main() -> int:
     ensure_data_dirs()
     stamp = timestamp()
     plan, plan_path = _read_latest("08_alpaca_paper_order_plan_*.csv")
     results, _ = _read_latest("08_alpaca_paper_order_results_*.csv")
     positions, _ = _read_latest("08_alpaca_paper_positions_*.csv")
+    holding_review = _read_latest_holding_review()
     fallback_signal_time = (
         datetime.fromtimestamp(plan_path.stat().st_mtime, tz=timezone.utc)
         if plan_path and plan_path.exists()
@@ -35,6 +41,7 @@ def main() -> int:
         positions,
         plan,
         results,
+        holding_review=holding_review,
         now=datetime.now(timezone.utc),
         signal_ttl_minutes=10,
         fallback_signal_time=fallback_signal_time,

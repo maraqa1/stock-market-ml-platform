@@ -97,7 +97,17 @@ def api_client():
     )
     _write_csv(
         root / "data" / "trading" / "holding_period" / "holding_review_1.csv",
-        [{"symbol": "AAA", "recommended_holding_days": 10, "review_after_days": 2, "max_holding_days": 5, "holding_quality": "watch", "holding_gate_reason": "positive_holding_edge_watch"}],
+        [
+            {
+                "symbol": "AAA",
+                "trading_stream": "multi_day",
+                "recommended_holding_days": 10,
+                "review_after_days": 2,
+                "max_holding_days": 5,
+                "holding_quality": "watch",
+                "holding_gate_reason": "positive_holding_edge_watch",
+            }
+        ],
     )
     _write_csv(
         root / "data" / "trading" / "operator_actions" / "operator_position_actions_1.csv",

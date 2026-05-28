@@ -68,6 +68,24 @@ def test_t_minus_15_trim_closes_only_weak_and_stale_positions():
     assert result["eod_banner"] == "EOD trim: closing 2 weak/stale positions."
 
 
+def test_same_day_stream_is_trimmed_before_close_even_when_profitable():
+    positions = pd.DataFrame([{"symbol": "DAY", "unrealized_plpc": 0.03, "age_days": 0, "trading_stream": "same_day"}])
+    calls = []
+
+    result = run_eod_tick(
+        positions,
+        now=datetime(2026, 5, 12, 15, 47, tzinfo=ET),
+        state={},
+        config=EODConfig(holdover_allowed=True),
+        close_func=lambda symbol, action: calls.append((symbol, action)) or {"status": "submitted", "message": "ok"},
+    )
+
+    assert result["eod_state"] == "trim"
+    assert result["eod_flatten_submitted"] == 1
+    assert calls == [("DAY", "close")]
+    assert result["eod_dispositions"][0]["reason"] == "same_day_stream_eod"
+
+
 def test_t_minus_5_flatten_closes_winners_by_default_and_honors_holdover_toggle():
     positions = pd.DataFrame([{"symbol": "WIN", "unrealized_plpc": 0.03, "age_days": 1}])
     calls = []

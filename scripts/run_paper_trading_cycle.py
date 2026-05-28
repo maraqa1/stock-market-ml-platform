@@ -21,15 +21,21 @@ def _read_latest(pattern: str) -> pd.DataFrame:
     return pd.read_csv(path, low_memory=False) if path and path.exists() else pd.DataFrame()
 
 
+def _read_latest_holding_review() -> pd.DataFrame:
+    path = latest_file(ROOT / "data" / "trading" / "holding_period", "holding_review_*.csv")
+    return pd.read_csv(path, low_memory=False) if path and path.exists() else pd.DataFrame()
+
+
 def main() -> int:
     ensure_data_dirs()
     stamp = timestamp()
     plan = _read_latest("08_alpaca_paper_order_plan_*.csv")
     results = _read_latest("08_alpaca_paper_order_results_*.csv")
     positions = _read_latest("08_alpaca_paper_positions_*.csv")
+    holding_review = _read_latest_holding_review()
     journal = build_trade_journal(plan, results)
     pnl = position_pnl_summary(positions)
-    decisions = build_position_decisions(positions, plan, results)
+    decisions = build_position_decisions(positions, plan, results, holding_review=holding_review)
     journal_path = write_trade_journal(journal, stamp)
     pnl_path = write_pnl_summary(pnl, stamp)
     decision_path = write_position_decisions(decisions, stamp)

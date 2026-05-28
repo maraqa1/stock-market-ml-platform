@@ -338,6 +338,7 @@ def test_positions_context_adds_holding_review_fields(tmp_path):
         [
             {
                 "symbol": "BNY",
+                "trading_stream": "multi_day",
                 "recommended_holding_days": 10,
                 "review_after_days": 2,
                 "max_holding_days": 5,
@@ -352,6 +353,7 @@ def test_positions_context_adds_holding_review_fields(tmp_path):
     row = ctx["positions"][0]
 
     assert row["holding_review_status"] == "available"
+    assert row["trading_stream"] == "multi_day"
     assert row["recommended_holding_days"] == 10
     assert row["review_after_days"] == 2
     assert row["max_holding_days"] == 5

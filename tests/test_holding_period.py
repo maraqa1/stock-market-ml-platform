@@ -3,8 +3,10 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.trading.holding_period import (
+    HorizonStats,
     build_holding_review,
     build_holding_period_report,
+    choose_holding_period,
     classify_holding_quality,
     generate_holding_period_report,
     horizon_stats,
@@ -65,6 +67,19 @@ def test_speculative_or_high_volatility_plan_uses_shorter_max_hold():
 
     assert report.iloc[0]["review_after_days"] == 1
     assert report.iloc[0]["max_holding_days"] <= max(3, report.iloc[0]["recommended_holding_days"])
+
+
+def test_one_day_edge_uses_same_day_stream_and_one_day_max_hold():
+    stats = [
+        HorizonStats(horizon_days=1, sample_count=500, mean_bps=80, median_bps=70, hit_rate=0.57, p25_bps=-10, p75_bps=130),
+        HorizonStats(horizon_days=3, sample_count=500, mean_bps=20, median_bps=15, hit_rate=0.51, p25_bps=-20, p75_bps=70),
+    ]
+    holding_days, review_after, max_days, _, reason = choose_holding_period(stats, _plan().iloc[0])
+
+    assert holding_days == 1
+    assert review_after == 1
+    assert max_days == 1
+    assert reason == "same_day_edge_window"
 
 
 def test_generate_holding_period_report_writes_artifact(tmp_path: Path):
