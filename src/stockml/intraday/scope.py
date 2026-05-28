@@ -15,6 +15,7 @@ from stockml.db.schema import pipeline_runs, shortlist_snapshots
 
 PositionLoader = Callable[[], list[dict[str, Any]]]
 MIN_SCOPE_SHORTLIST_ROWS = 25
+MANUAL_MOVERS_PATTERN = "intraday_movers_*.csv"
 
 
 def _symbol(value: Any) -> str:
@@ -53,6 +54,66 @@ def _safe_read_csv(path: Path | None, *, nrows: int | None = None) -> pd.DataFra
         return pd.read_csv(path, nrows=nrows)
     except Exception:
         return pd.DataFrame()
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(str(value).replace("%", "").replace(",", ""))
+    except Exception:
+        return default
+
+
+def _manual_mover_score(row: pd.Series) -> float:
+    raw = row.get("score")
+    if raw not in {None, ""} and pd.notna(raw):
+        return max(0.0, min(1.0, _safe_float(raw)))
+    move_pct = abs(_safe_float(row.get("move_pct", row.get("% chg", row.get("pct_chg", row.get("change_pct", 0))))))
+    dollar_traded = _safe_float(row.get("dollar_traded", row.get("$ traded", row.get("notional", 0))))
+    score = min(1.0, move_pct / 40.0)
+    if dollar_traded >= 100_000_000:
+        score += 0.10
+    elif dollar_traded >= 10_000_000:
+        score += 0.05
+    return max(0.35, min(1.0, score))
+
+
+def _latest_manual_mover_rows_from_artifacts(root: Path) -> list[dict[str, Any]]:
+    path = _latest_file(root, "trading/manual_movers", MANUAL_MOVERS_PATTERN)
+    frame = _safe_read_csv(path, nrows=500)
+    if frame.empty:
+        return []
+    symbol_col = next((column for column in ["symbol", "ticker", "SYMBOL"] if column in frame.columns), "")
+    if not symbol_col:
+        return []
+    rows: list[dict[str, Any]] = []
+    for idx, row in frame.iterrows():
+        symbol = _symbol(row.get(symbol_col))
+        if not symbol:
+            continue
+        side = str(row.get("side") or "").strip().lower()
+        move_pct = _safe_float(row.get("move_pct", row.get("% chg", row.get("pct_chg", row.get("change_pct", 0)))))
+        if side in {"buy", "long"}:
+            bias = "long"
+        elif side in {"sell", "short"}:
+            bias = "short"
+        else:
+            bias = "long" if move_pct >= 0 else "short"
+        rows.append(
+            {
+                "symbol": symbol,
+                "bias": bias,
+                "score": _manual_mover_score(row),
+                "rank": idx + 1,
+                "sector": row.get("sector") if "sector" in frame.columns else None,
+                "source": "manual_intraday_movers",
+                "manual_move_pct": move_pct,
+                "manual_last_price": row.get("last", row.get("current_price", "")),
+                "manual_dollar_traded": row.get("dollar_traded", row.get("$ traded", "")),
+            }
+        )
+    return rows
 
 
 def _latest_broad_shortlist_run_from_db(engine: Engine, selected: date, *, min_rows: int = MIN_SCOPE_SHORTLIST_ROWS) -> str | None:
@@ -205,6 +266,12 @@ def scope_rows_for_today(
         rows = _latest_shortlist_rows_from_artifacts(base)
 
     by_symbol = {row["symbol"]: dict(row) for row in rows if _symbol(row.get("symbol"))}
+    for row in _latest_manual_mover_rows_from_artifacts(base):
+        symbol = _symbol(row.get("symbol"))
+        if not symbol:
+            continue
+        existing = by_symbol.get(symbol, {})
+        by_symbol[symbol] = {**existing, **row}
     held_symbols = _symbols_from_positions(positions_loader()) if positions_loader is not None else set()
     for symbol in held_symbols:
         by_symbol.setdefault(

@@ -116,6 +116,21 @@ def test_scope_rows_prefer_latest_broad_shortlist_over_one_row_artifact():
     assert "SYM01" in symbols
 
 
+def test_scope_rows_add_manual_intraday_movers(tmp_path: Path):
+    path = tmp_path / "data" / "trading" / "manual_movers" / "intraday_movers_20260528_150000.csv"
+    path.parent.mkdir(parents=True)
+    path.write_text("symbol,last,move_pct,dollar_traded\nSNOW,243.84,39.13,7400000000\nKSS,15.30,18.29,180300000\n", encoding="utf-8")
+
+    rows = scope_rows_for_today(NOW.date(), root=tmp_path)
+
+    by_symbol = {row["symbol"]: row for row in rows}
+    assert sorted(by_symbol) == ["KSS", "SNOW"]
+    assert by_symbol["SNOW"]["bias"] == "long"
+    assert by_symbol["SNOW"]["source"] == "manual_intraday_movers"
+    assert by_symbol["SNOW"]["score"] >= 0.9
+    assert by_symbol["KSS"]["is_held"] is False
+
+
 def test_build_snapshot_computes_intraday_fields_from_quote_and_bars():
     provider = FakeProvider()
     row = {"symbol": "TSLA", "bias": "long", "score": 0.8, "is_held": True, "avg_dollar_volume_20d": 1_000_000}
