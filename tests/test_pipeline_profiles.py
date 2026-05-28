@@ -12,6 +12,7 @@ def test_load_pipeline_profiles():
     assert "nasdaq_500" in profiles
     assert profiles["nasdaq_500"]["exchange"] == "NASDAQ"
     assert profiles["nasdaq_500"]["limit_tickers"] == 500
+    assert profiles["nasdaq_500"]["publish_trading_artifacts"] is False
     assert "nyse_full" in profiles
     assert profiles["nyse_full"]["exchange"] == "NYSE"
     assert profiles["nyse_full"]["limit_tickers"] is None
@@ -20,6 +21,7 @@ def test_load_pipeline_profiles():
     assert profiles["nyse_full"]["metadata_fallback_provider"] == "yahoo_legacy"
     assert profiles["nyse_full"]["sentiment_provider"] == "eodhd"
     assert profiles["nyse_full"]["model_shards"] == 4
+    assert profiles["nyse_full"]["publish_trading_artifacts"] is False
     assert "us_full" in profiles
     assert profiles["us_full"]["exchanges"] == ["NYSE", "NASDAQ"]
     assert profiles["us_full"]["provider"] == "eodhd"
@@ -29,6 +31,7 @@ def test_load_pipeline_profiles():
     assert profiles["us_full"]["skip_gold_sentiment"] is False
     assert profiles["us_full"]["live_signal_mode"] is True
     assert profiles["us_full"]["baseline_only"] is True
+    assert profiles["us_full"]["publish_trading_artifacts"] is True
     assert profiles["us_full"]["run_trading_day_readiness"] is True
 
 
@@ -97,7 +100,31 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch):
     assert calls["model"]["model_shards"] == 20
     assert calls["model"]["live_signal_mode"] is True
     assert calls["model"]["baseline_only"] is True
+    assert calls["model"]["publish_latest"] is True
     assert calls["readiness"]["orders_planned"] == 10
+
+
+def test_limited_profile_does_not_publish_latest_trading_artifacts(monkeypatch):
+    calls = {}
+    validated = Path("validated.csv")
+    metadata = Path("metadata.csv")
+    features = Path("features.csv")
+    gold = Path("gold.csv")
+
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_us_equity_universe", lambda: None)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.download_price_history", lambda **kwargs: None)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_price_quality_report", lambda **kwargs: {"validated_universe": validated})
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_metadata_enriched", lambda **kwargs: {"metadata_enriched": metadata})
+    monkeypatch.setattr("stockml.pipeline.profile_runner._metadata_quality_gate", lambda *args, **kwargs: None)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_feature_panel", lambda **kwargs: {"feature_panel": features})
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_sentiment_panel", lambda **kwargs: {})
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_gold_dataset", lambda **kwargs: {"gold_dataset": gold})
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_model_outputs", lambda **kwargs: calls.setdefault("model", kwargs))
+
+    run_profile("nasdaq_500")
+
+    assert calls["model"]["limit_tickers"] == 500
+    assert calls["model"]["publish_latest"] is False
 
 
 def test_metadata_quality_gate_rejects_missing_market_caps(tmp_path: Path):

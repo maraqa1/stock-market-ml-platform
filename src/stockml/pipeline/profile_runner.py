@@ -81,8 +81,14 @@ def _limit(profile: Dict[str, Any], override_limit: int | None) -> int | None:
     return override_limit if override_limit is not None else profile.get("limit_tickers")
 
 
+def _publish_trading_artifacts(profile_name: str, profile: Dict[str, Any], limit: int | None) -> bool:
+    if limit:
+        return False
+    return bool(profile.get("publish_trading_artifacts", profile_name == "us_full"))
+
+
 def run_trading_day_readiness_gate() -> dict[str, Any]:
-    quality = build_pipeline_quality_report(PROJECT_ROOT)
+    quality = build_pipeline_quality_report(PROJECT_ROOT, profile_name="us_full")
     if quality.get("status") != "ok":
         raise RuntimeError(f"trading_day_readiness_failed: quality_gate_failed path={quality.get('path')}")
 
@@ -123,9 +129,11 @@ def run_profile(
     limit = _limit(profile, override_limit)
     exchange = profile.get("exchanges", profile.get("exchange"))
     effective_provider = provider_name or profile.get("provider")
+    publish_trading_artifacts = _publish_trading_artifacts(profile_name, profile, limit)
 
     log(f"Starting profile pipeline: {profile_name}")
     log(f"Scope: exchange={exchange_scope_label(exchange)} limit={limit or 'FULL'}")
+    log(f"Publish canonical trading artifacts: {publish_trading_artifacts}")
     manifest = PipelineManifest(profile_name)
     log(f"Pipeline manifest: {manifest.path}")
 
@@ -218,6 +226,7 @@ def run_profile(
                 model_shards=int(profile.get("model_shards", 1) or 1),
                 live_signal_mode=bool(profile.get("live_signal_mode", False)),
                 baseline_only=bool(profile.get("baseline_only", False)),
+                publish_latest=publish_trading_artifacts,
             )
             manifest.stage_ok("model", model_paths)
 

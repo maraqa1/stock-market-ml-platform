@@ -72,7 +72,7 @@ tmp_env="$(mktemp)"
   if [[ -n "${STOCKML_DB_PORT:-}" ]]; then
     printf 'STOCKML_DB_PORT="%s"\n' "$(escape_env_value "$STOCKML_DB_PORT")"
   fi
-  printf 'STOCKML_PROFILE="%s"\n' "$(escape_env_value "${STOCKML_PROFILE:-nyse_full}")"
+  printf 'STOCKML_PROFILE="%s"\n' "$(escape_env_value "${STOCKML_PROFILE:-us_full}")"
   printf 'STOCKML_WRITE_DATABASE="%s"\n' "$(escape_env_value "${STOCKML_WRITE_DATABASE:-0}")"
   printf 'PORT="%s"\n' "$(escape_env_value "$PORT")"
   if [[ -n "${DATABASE_URL:-$EXISTING_DATABASE_URL}" ]]; then

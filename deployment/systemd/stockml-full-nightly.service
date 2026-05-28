@@ -7,7 +7,7 @@ After=network-online.target postgresql.service
 Type=oneshot
 WorkingDirectory=/home/massa/stock-market-ml-platform
 Environment=PYTHONPATH=/home/massa/stock-market-ml-platform/src
-Environment=STOCKML_PROFILE=nyse_full
+Environment=STOCKML_PROFILE=us_full
 Environment=STOCKML_WRITE_DATABASE=0
 EnvironmentFile=-/etc/stockml/stockml.env
-ExecStart=/bin/bash -lc '/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_profile_pipeline.py --profile "${STOCKML_PROFILE}" $([[ "${STOCKML_WRITE_DATABASE}" == "1" ]] && echo "--write-database") && /opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_alpaca_paper_trader.py --plan-only && /opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_per_symbol_forecast.py'
+ExecStart=/bin/bash -lc '/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_profile_pipeline.py --profile "${STOCKML_PROFILE}" $([[ "${STOCKML_WRITE_DATABASE}" == "1" ]] && echo "--write-database") && if [[ "${STOCKML_PROFILE}" == "us_full" ]]; then /opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_per_symbol_forecast.py; else echo "Skipping trading publish steps for non-us_full profile ${STOCKML_PROFILE}"; fi'

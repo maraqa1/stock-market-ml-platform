@@ -8,10 +8,11 @@ def test_full_nightly_generates_per_symbol_forecast_after_order_plan():
     service = (ROOT / "deployment" / "systemd" / "stockml-full-nightly.service").read_text(encoding="utf-8")
 
     pipeline_index = service.index("scripts/run_profile_pipeline.py")
-    plan_index = service.index("scripts/run_alpaca_paper_trader.py --plan-only")
     forecast_index = service.index("scripts/run_per_symbol_forecast.py")
 
-    assert pipeline_index < plan_index < forecast_index
+    assert "STOCKML_PROFILE=us_full" in service
+    assert '"${STOCKML_PROFILE}" == "us_full"' in service
+    assert pipeline_index < forecast_index
 
 
 def test_intraday_clock_generates_per_symbol_forecast_before_autopilot():

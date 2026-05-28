@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -40,7 +41,59 @@ REPORT_COLUMNS = [
 ]
 
 
-def _latest_artifacts(root: Path) -> dict[str, Path | None]:
+def _manifest_path(root: Path, manifest: dict[str, object], stage: str, *keys: str) -> Path | None:
+    stages = manifest.get("stages")
+    if not isinstance(stages, dict):
+        return None
+    stage_data = stages.get(stage)
+    if not isinstance(stage_data, dict) or stage_data.get("status") != "ok":
+        return None
+    outputs = stage_data.get("outputs")
+    if not isinstance(outputs, dict):
+        return None
+    for key in keys:
+        value = outputs.get(key)
+        if not value:
+            continue
+        path = Path(str(value))
+        if not path.is_absolute():
+            path = root / path
+        if path.exists():
+            return path
+    return None
+
+
+def _manifest_artifacts(root: Path, profile_name: str) -> dict[str, Path | None] | None:
+    manifests = sorted(
+        (root / "data" / "pipeline_runs").glob("*/manifest.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for manifest_path in manifests:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if manifest.get("status") != "ok" or manifest.get("profile") != profile_name:
+            continue
+        artifacts = {
+            "universe": _manifest_path(root, manifest, "universe", "tradable_universe"),
+            "validated": _manifest_path(root, manifest, "price", "validated_universe"),
+            "metadata": _manifest_path(root, manifest, "metadata", "metadata_enriched"),
+            "features": _manifest_path(root, manifest, "features", "feature_panel"),
+            "gold": _manifest_path(root, manifest, "gold", "gold_dataset"),
+            "model": _manifest_path(root, manifest, "model", "predictions", "signal_table", "model_predictions_latest"),
+        }
+        if all(artifacts.values()):
+            return artifacts
+    return None
+
+
+def _latest_artifacts(root: Path, profile_name: str | None = "us_full") -> dict[str, Path | None]:
+    if profile_name:
+        artifacts = _manifest_artifacts(root, profile_name)
+        if artifacts is not None:
+            return artifacts
     interim = root / "data" / "interim"
     processed = root / "data" / "processed"
     gold = root / "data" / "gold"
@@ -165,11 +218,12 @@ def build_pipeline_quality_report(
     root: Path | None = None,
     thresholds: PipelineQualityThresholds | None = None,
     stamp: str | None = None,
+    profile_name: str | None = "us_full",
 ) -> dict[str, object]:
     base = Path(root).resolve() if root else PROJECT_ROOT
     ensure_data_dirs()
     cfg = thresholds or PipelineQualityThresholds()
-    artifacts = _latest_artifacts(base)
+    artifacts = _latest_artifacts(base, profile_name=profile_name)
 
     universe_symbols = _read_symbols(artifacts["universe"], ["symbol", "ticker", "yahoo_ticker"])
     validated_symbols = _read_symbols(artifacts["validated"], ["yahoo_ticker", "ticker", "symbol"])
@@ -252,4 +306,3 @@ def build_pipeline_quality_report(
         "failed_checks": int(len(failed)),
         "failures": failed.to_dict("records"),
     }
-

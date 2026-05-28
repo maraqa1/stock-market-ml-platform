@@ -20,7 +20,7 @@ from stockml.models.ranking_model import (
 )
 
 
-def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
+def _write_artifacts(artifacts: ModelArtifacts, stamp: str, *, publish_latest: bool = True) -> Dict[str, Path]:
     outputs = {
         "predictions": MODEL_OUTPUTS_DIR / f"advanced_model_latest_predictions_{stamp}.csv",
         "signal_table": MODEL_OUTPUTS_DIR / f"advanced_model_signal_table_{stamp}.csv",
@@ -36,11 +36,15 @@ def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
         "feature_audit": MODEL_OUTPUTS_DIR / f"feature_audit_{stamp}.csv",
         "rejected_features": MODEL_OUTPUTS_DIR / f"rejected_features_{stamp}.csv",
         "model_config": MODEL_OUTPUTS_DIR / f"model_config_{stamp}.json",
+    }
+    latest_outputs = {
         "model_predictions_latest": MODEL_OUTPUTS_DIR / "model_predictions_latest.csv",
         "validation_leaderboard_latest": MODEL_OUTPUTS_DIR / "validation_leaderboard.csv",
         "feature_audit_latest": MODEL_OUTPUTS_DIR / "feature_audit.csv",
         "rejected_features_latest": MODEL_OUTPUTS_DIR / "rejected_features.csv",
     }
+    if publish_latest:
+        outputs.update(latest_outputs)
     artifacts.predictions.to_csv(outputs["predictions"], index=False)
     artifacts.signal_table.to_csv(outputs["signal_table"], index=False)
     artifacts.top_long.to_csv(outputs["top_long"], index=False)
@@ -55,10 +59,11 @@ def _write_artifacts(artifacts: ModelArtifacts, stamp: str) -> Dict[str, Path]:
     artifacts.feature_audit.to_csv(outputs["feature_audit"], index=False)
     artifacts.rejected_features.to_csv(outputs["rejected_features"], index=False)
     outputs["model_config"].write_text(model_config_json(artifacts.model_config), encoding="utf-8")
-    artifacts.predictions.to_csv(outputs["model_predictions_latest"], index=False)
-    artifacts.validation_leaderboard.to_csv(outputs["validation_leaderboard_latest"], index=False)
-    artifacts.feature_audit.to_csv(outputs["feature_audit_latest"], index=False)
-    artifacts.rejected_features.to_csv(outputs["rejected_features_latest"], index=False)
+    if publish_latest:
+        artifacts.predictions.to_csv(outputs["model_predictions_latest"], index=False)
+        artifacts.validation_leaderboard.to_csv(outputs["validation_leaderboard_latest"], index=False)
+        artifacts.feature_audit.to_csv(outputs["feature_audit_latest"], index=False)
+        artifacts.rejected_features.to_csv(outputs["rejected_features_latest"], index=False)
     return outputs
 
 
@@ -189,6 +194,7 @@ def build_model_outputs(
     model_shards: int = 1,
     live_signal_mode: bool = False,
     baseline_only: bool = False,
+    publish_latest: bool = True,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
@@ -226,7 +232,7 @@ def build_model_outputs(
         log(f"Loaded Gold dataset for model: {len(gold):,} rows")
         artifacts = train_predict_from_gold(gold, top_n=top_n, live_signal_mode=live_signal_mode, baseline_only=baseline_only)
         meta_paths = _add_meta_label_artifacts(artifacts, stamp, skip_validation=live_signal_mode)
-    paths = _write_artifacts(artifacts, stamp)
+    paths = _write_artifacts(artifacts, stamp, publish_latest=publish_latest)
     paths.update(meta_paths)
     for name, path in paths.items():
         log(f"{name}: {path}")
@@ -241,6 +247,7 @@ def main() -> int:
     parser.add_argument("--model-shards", type=int, default=1)
     parser.add_argument("--live-signal-mode", action="store_true", help="Skip expensive walk-forward/meta validation and produce live rankings.")
     parser.add_argument("--baseline-only", action="store_true", help="Use baseline feature ranking instead of fitting LightGBM.")
+    parser.add_argument("--no-publish-latest", action="store_true", help="Write timestamped model outputs without updating canonical latest files.")
     args = parser.parse_args()
     build_model_outputs(
         gold_file=args.gold_file,
@@ -249,6 +256,7 @@ def main() -> int:
         model_shards=args.model_shards,
         live_signal_mode=args.live_signal_mode,
         baseline_only=args.baseline_only,
+        publish_latest=not args.no_publish_latest and args.limit_tickers is None,
     )
     return 0
 

@@ -59,7 +59,7 @@ def main() -> int:
         log(f"Sentiment pipeline failed but full pipeline will continue: {exc}")
 
     build_gold_dataset(limit_tickers=limit, exchange=args.exchange)
-    build_model_outputs(limit_tickers=limit)
+    build_model_outputs(limit_tickers=limit, publish_latest=limit is None)
     log("Full stockml pipeline complete")
     return 0
 

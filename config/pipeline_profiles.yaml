@@ -13,6 +13,7 @@ profiles:
     run_sentiment: true
     run_gold: true
     run_model: true
+    publish_trading_artifacts: false
 
   nasdaq_1500:
     description: "Growth slice: first 1,500 NASDAQ tradable common-stock candidates."
@@ -28,6 +29,7 @@ profiles:
     run_sentiment: true
     run_gold: true
     run_model: true
+    publish_trading_artifacts: false
 
   nasdaq_full:
     description: Full NASDAQ tradable common-stock universe.
@@ -43,6 +45,7 @@ profiles:
     run_sentiment: true
     run_gold: true
     run_model: true
+    publish_trading_artifacts: false
 
   nyse_full:
     description: Full NYSE tradable common-stock universe using EODHD market data.
@@ -63,6 +66,7 @@ profiles:
     run_sentiment: true
     run_gold: true
     run_model: true
+    publish_trading_artifacts: false
 
   us_full:
     description: Full NYSE and NASDAQ tradable common-stock universe using EODHD market data.
@@ -89,4 +93,5 @@ profiles:
     run_sentiment: true
     run_gold: true
     run_model: true
+    publish_trading_artifacts: true
     run_trading_day_readiness: true
