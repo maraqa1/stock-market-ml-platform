@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any, Dict
 
@@ -429,7 +430,8 @@ def run_profile(
 
         if profile.get("run_trading_day_readiness", False):
             current_stage = "trading_day_readiness"
-            readiness = run_trading_day_readiness_gate(manifest.run_id, recorder_enabled=recorder_enabled, manifest_data=manifest.data)
+            manifest_snapshot = json.loads(json.dumps(manifest.data, default=str))
+            readiness = run_trading_day_readiness_gate(manifest.run_id, recorder_enabled=recorder_enabled, manifest_data=manifest_snapshot)
             manifest.stage_ok("trading_day_readiness", readiness)
             log(f"Trading day readiness complete: {readiness}")
 

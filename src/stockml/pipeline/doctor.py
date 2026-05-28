@@ -48,9 +48,12 @@ def _latest_manifest(root: Path, profile_name: str) -> tuple[Path | None, dict[s
 
 
 def _resolve(root: Path, value: object) -> Path | None:
-    if not value:
+    if not value or isinstance(value, (bool, int, float)):
         return None
-    path = Path(str(value))
+    text = str(value)
+    if not any(token in text for token in ("/", "\\")) and Path(text).suffix.lower() not in {".csv", ".json", ".parquet", ".txt"}:
+        return None
+    path = Path(text)
     return path if path.is_absolute() else root / path
 
 

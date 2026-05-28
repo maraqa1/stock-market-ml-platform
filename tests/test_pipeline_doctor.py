@@ -15,11 +15,21 @@ def _write_manifest(root: Path, run_id: str, payload: dict) -> Path:
 
 def _ok_manifest(root: Path) -> dict:
     stages = {}
-    for stage in ("universe", "price", "metadata", "features", "gold", "model", "trading_day_readiness"):
-        artifact = root / "data" / "artifact" / f"{stage}.csv"
-        artifact.parent.mkdir(parents=True, exist_ok=True)
-        artifact.write_text("symbol\nAAA\n", encoding="utf-8")
-        stages[stage] = {"status": "ok", "outputs": {"artifact": str(artifact)}, "finished_at": "2026-05-28T09:00:00"}
+    artifact_dir = root / "data" / "artifact"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    files = {
+        "universe": ("tradable_universe", "symbol\nAAA\n"),
+        "price": ("validated_universe", "yahoo_ticker\nAAA\n"),
+        "metadata": ("metadata_enriched", "ticker,market_cap\nAAA,1000000000\n"),
+        "features": ("feature_panel", "ticker\nAAA\n"),
+        "gold": ("gold_dataset", "date,ticker,market_cap\n2026-05-28,AAA,1000000000\n"),
+        "model": ("predictions", "ticker\nAAA\n"),
+        "trading_day_readiness": ("plan_path", "symbol\nAAA\n"),
+    }
+    for stage, (key, content) in files.items():
+        artifact = artifact_dir / f"{stage}.csv"
+        artifact.write_text(content, encoding="utf-8")
+        stages[stage] = {"status": "ok", "outputs": {key: str(artifact)}, "finished_at": "2026-05-28T09:00:00"}
     return {
         "run_id": "run-ok",
         "profile": "us_full",
