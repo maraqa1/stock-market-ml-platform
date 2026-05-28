@@ -513,6 +513,9 @@ def test_per_symbol_forecast_fallback_candidates_select_most_profitable_confirme
     assert candidates[0]["details"]["per_symbol_forecast_fallback"] is True
     assert candidates[0]["details"]["fallback_reason"] == "per_symbol_forecast_confirmed_candidate"
     assert candidates[0]["promotion_score"] == 100
+    assert candidates[0]["trade_action"] == "Long"
+    assert candidates[0]["directional_action"] == "Long"
+    assert candidates[0]["trade_quality_status"] == "approved"
 
 
 def test_per_symbol_forecast_fallback_candidates_require_quality_flags(tmp_path):
