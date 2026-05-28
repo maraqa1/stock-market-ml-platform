@@ -101,6 +101,29 @@ def test_generate_holding_period_report_writes_artifact(tmp_path: Path):
     assert written.iloc[0]["symbol"] == "AAA"
 
 
+def test_generate_holding_period_report_adds_current_open_positions(tmp_path: Path):
+    plan_path = tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_20260520_090000.csv"
+    positions_path = tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_20260520_091000.csv"
+    gold_path = tmp_path / "data" / "gold" / "06_us_gold_ml_dataset_20260520_060000.csv"
+    plan_path.parent.mkdir(parents=True)
+    gold_path.parent.mkdir(parents=True)
+    _plan(symbol="AAA").to_csv(plan_path, index=False)
+    pd.DataFrame([{"symbol": "BBB", "qty": -4, "side": "short", "current_price": 25.0, "market_value": -100.0}]).to_csv(
+        positions_path,
+        index=False,
+    )
+    pd.concat([_history("AAA"), _history("BBB")], ignore_index=True).to_csv(gold_path, index=False)
+
+    result = generate_holding_period_report(tmp_path, stamp="20260520_091500")
+
+    review = pd.read_csv(result["review_path"])
+    bbb = review[review["symbol"].eq("BBB")].iloc[0]
+    assert set(review["symbol"]) == {"AAA", "BBB"}
+    assert bbb["trade_action"] == "Short"
+    assert bbb["side"] == "sell"
+    assert result["positions_path"].endswith("08_alpaca_paper_positions_20260520_091000.csv")
+
+
 def test_load_gold_history_for_symbols_reads_only_selected_tickers(tmp_path: Path):
     gold_path = tmp_path / "gold.csv"
     pd.concat([_history("AAA"), _history("BBB")], ignore_index=True).to_csv(gold_path, index=False)

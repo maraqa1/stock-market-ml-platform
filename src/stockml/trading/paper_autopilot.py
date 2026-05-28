@@ -29,6 +29,7 @@ from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
 from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
+from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
 
@@ -910,6 +911,12 @@ def tick(
                 post_open_orders = max(post_tracked_open_orders, post_broker_open_orders)
                 post_open_positions = int(len(post_positions))
                 if post_open_orders > 0 or post_open_positions > open_positions:
+                    if post_open_positions > open_positions:
+                        try:
+                            generate_holding_period_report(root, position_file=Path(post_open_refreshed.get("positions_path")))
+                        except Exception:
+                            pass
+                        post_positions = attach_holding_review_to_positions(post_positions, root)
                     refreshed = post_open_refreshed
                     tracking = post_tracking
                     positions = post_positions

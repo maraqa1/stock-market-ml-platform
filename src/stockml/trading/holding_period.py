@@ -67,6 +67,11 @@ def latest_plan_path(root: Path | None = None) -> Path | None:
     return latest_file(base / "data" / "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
 
 
+def latest_positions_path(root: Path | None = None) -> Path | None:
+    base = Path(root).resolve() if root else PORTAL_OUTPUTS_DIR.parent.parent
+    return latest_file(base / "data" / "portal_outputs", "08_alpaca_paper_positions_*.csv")
+
+
 def latest_gold_path(root: Path | None = None) -> Path | None:
     base = Path(root).resolve() if root else GOLD_DIR.parent.parent
     return latest_file(base / "data" / "gold", "06_us_gold_ml_dataset_*.csv")
@@ -85,6 +90,52 @@ def _symbol_set(plan: pd.DataFrame) -> set[str]:
     if plan.empty or "symbol" not in plan.columns:
         return set()
     return {str(value).upper().strip() for value in plan["symbol"].dropna() if str(value).strip()}
+
+
+def _open_positions_as_plan_rows(positions: pd.DataFrame) -> pd.DataFrame:
+    if positions.empty or "symbol" not in positions.columns:
+        return pd.DataFrame()
+    rows = []
+    for row in positions.fillna("").to_dict("records"):
+        symbol = str(row.get("symbol") or "").upper().strip()
+        if not symbol:
+            continue
+        qty = pd.to_numeric(row.get("qty", row.get("quantity", "")), errors="coerce")
+        side_text = str(row.get("side") or "").strip().lower()
+        is_short = side_text == "short" or (pd.notna(qty) and float(qty) < 0)
+        price = row.get("current_price") or row.get("last_price") or row.get("avg_entry_price") or row.get("market_price") or ""
+        rows.append(
+            {
+                "symbol": symbol,
+                "side": "sell" if is_short else "buy",
+                "trade_action": "Short" if is_short else "Long",
+                "trade_quality_status": "open_position",
+                "notional": abs(float(row.get("market_value") or 0)) if str(row.get("market_value") or "").strip() else "",
+                "suggested_quantity": abs(float(qty)) if pd.notna(qty) else "",
+                "current_price": price,
+                "risk_tier": row.get("risk_tier", ""),
+                "volatility_tier": row.get("volatility_tier", ""),
+                "liquidity_tier": row.get("liquidity_tier", ""),
+                "max_holding_days": row.get("max_holding_days", 10),
+                "stop_loss_price": row.get("stop_loss_price", ""),
+                "take_profit_price": row.get("take_profit_price", ""),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _append_open_positions_to_plan(plan: pd.DataFrame, positions: pd.DataFrame) -> pd.DataFrame:
+    position_rows = _open_positions_as_plan_rows(positions)
+    if position_rows.empty:
+        return plan
+    if plan.empty:
+        return position_rows
+    out = pd.concat([plan, position_rows], ignore_index=True, sort=False)
+    out["__symbol"] = out["symbol"].fillna("").astype(str).str.upper().str.strip()
+    out["__source_priority"] = 0
+    out.loc[out.index >= len(plan), "__source_priority"] = 1
+    out = out.sort_values(["__symbol", "__source_priority"]).drop_duplicates("__symbol", keep="last")
+    return out.drop(columns=["__symbol", "__source_priority"])
 
 
 def load_gold_history_for_symbols(gold_path: Path, symbols: Iterable[str], chunksize: int = 250_000) -> pd.DataFrame:
@@ -270,16 +321,21 @@ def generate_holding_period_report(
     root: Path | None = None,
     plan_file: Path | None = None,
     gold_file: Path | None = None,
+    position_file: Path | None = None,
     stamp: str | None = None,
+    include_open_positions: bool = True,
 ) -> dict[str, object]:
     base = Path(root).resolve() if root else None
     plan_path = plan_file or latest_plan_path(base)
     gold_path = gold_file or latest_gold_path(base)
+    positions_path = position_file or (latest_positions_path(base) if include_open_positions else None)
     if plan_path is None or gold_path is None:
         frame = pd.DataFrame(columns=OUTPUT_COLUMNS)
         review = pd.DataFrame(columns=REVIEW_COLUMNS)
     else:
         plan = _read_csv(plan_path)
+        if include_open_positions:
+            plan = _append_open_positions_to_plan(plan, _read_csv(positions_path))
         history = load_gold_history_for_symbols(gold_path, _symbol_set(plan))
         frame = build_holding_period_report(plan, history)
         review = build_holding_review(plan, history)
@@ -296,4 +352,5 @@ def generate_holding_period_report(
         "review_blocked": int((~review["holding_gate_pass"].astype(bool)).sum()) if "holding_gate_pass" in review.columns else 0,
         "plan_path": str(plan_path or ""),
         "gold_path": str(gold_path or ""),
+        "positions_path": str(positions_path or ""),
     }
