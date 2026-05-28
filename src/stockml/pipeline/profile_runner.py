@@ -7,7 +7,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from stockml.common.logging_utils import log
-from stockml.common.paths import PROJECT_ROOT
+from stockml.common.paths import INTERIM_DIR, PROCESSED_DIR, PROJECT_ROOT, latest_file
 from stockml.common.profiles import load_profile
 from stockml.common.exchange_scope import exchange_scope_label
 from stockml.db.loaders import load_latest_outputs
@@ -87,6 +87,13 @@ def _publish_trading_artifacts(profile_name: str, profile: Dict[str, Any], limit
     return bool(profile.get("publish_trading_artifacts", profile_name == "us_full"))
 
 
+def _required_latest(directory: Path, pattern: str, label: str) -> Path:
+    path = latest_file(directory, pattern)
+    if path is None:
+        raise FileNotFoundError(f"No reusable {label} artifact found matching {pattern}")
+    return path
+
+
 def run_trading_day_readiness_gate() -> dict[str, Any]:
     quality = build_pipeline_quality_report(PROJECT_ROOT, profile_name="us_full")
     if quality.get("status") != "ok":
@@ -124,6 +131,8 @@ def run_profile(
     skip_sentiment: bool = False,
     write_database: bool = False,
     provider_name: str | None = None,
+    reuse_existing_artifacts: bool = False,
+    skip_price_download: bool = False,
 ) -> None:
     profile = load_profile(profile_name)
     limit = _limit(profile, override_limit)
@@ -134,32 +143,55 @@ def run_profile(
     log(f"Starting profile pipeline: {profile_name}")
     log(f"Scope: exchange={exchange_scope_label(exchange)} limit={limit or 'FULL'}")
     log(f"Publish canonical trading artifacts: {publish_trading_artifacts}")
+    if reuse_existing_artifacts:
+        log("Reuse existing artifacts: enabled (universe, price, metadata, and sentiment stages will not call external providers)")
+    elif skip_price_download:
+        log("Price download: skipped (price validation will reuse the existing price store)")
     manifest = PipelineManifest(profile_name)
     log(f"Pipeline manifest: {manifest.path}")
 
     current_stage = "start"
     try:
-        if profile.get("run_universe", True):
+        if reuse_existing_artifacts:
+            current_stage = "universe"
+            universe_paths = {"tradable_universe": _required_latest(INTERIM_DIR, "02_us_tradable_universe_*.csv", "tradable universe")}
+            manifest.stage_ok("universe", universe_paths)
+        elif profile.get("run_universe", True):
             current_stage = "universe"
             universe_outputs = build_us_equity_universe()
             manifest.stage_ok("universe", universe_outputs if isinstance(universe_outputs, dict) else {})
 
-        if profile.get("run_price", True):
+        if reuse_existing_artifacts:
             current_stage = "price"
-            download_price_history(
-                start_date=str(profile.get("start_date", "2018-01-01")),
-                batch_size=int(profile.get("batch_size", 75)),
-                sleep_seconds=float(profile.get("sleep_seconds", 1.0)),
-                limit=limit,
-                exchange=exchange,
-                provider_name=effective_provider,
-            )
+            price_paths = {"validated_universe": _required_latest(INTERIM_DIR, "03_us_price_validated_universe_*.csv", "validated universe")}
+            manifest.stage_ok("price", price_paths)
+        elif profile.get("run_price", True):
+            current_stage = "price"
+            if not skip_price_download:
+                download_price_history(
+                    start_date=str(profile.get("start_date", "2018-01-01")),
+                    batch_size=int(profile.get("batch_size", 75)),
+                    sleep_seconds=float(profile.get("sleep_seconds", 1.0)),
+                    limit=limit,
+                    exchange=exchange,
+                    provider_name=effective_provider,
+                )
             price_paths = build_price_quality_report(provider_name=effective_provider)
             manifest.stage_ok("price", price_paths)
         else:
             price_paths = {}
 
-        if profile.get("run_metadata", True):
+        if reuse_existing_artifacts:
+            current_stage = "metadata"
+            metadata_paths = {"metadata_enriched": _required_latest(INTERIM_DIR, "04_us_metadata_enriched_*.csv", "metadata")}
+            _metadata_quality_gate(
+                metadata_paths.get("metadata_enriched"),
+                price_paths.get("validated_universe"),
+                min_validated_coverage=float(profile.get("min_metadata_validated_coverage", 0.75)),
+                min_market_cap_coverage=float(profile.get("min_metadata_market_cap_coverage", 0.70)),
+            )
+            manifest.stage_ok("metadata", metadata_paths)
+        elif profile.get("run_metadata", True):
             current_stage = "metadata"
             metadata_provider = profile.get("metadata_provider", effective_provider)
             metadata_paths = build_metadata_enriched(
@@ -192,7 +224,12 @@ def run_profile(
         else:
             feature_paths = {}
 
-        if profile.get("run_sentiment", True) and not skip_sentiment:
+        if reuse_existing_artifacts and profile.get("run_sentiment", True) and not skip_sentiment:
+            current_stage = "sentiment"
+            sentiment_path = latest_file(PROCESSED_DIR, "05_news_sentiment_panel_*.csv")
+            sentiment_paths = {"sentiment_panel": sentiment_path} if sentiment_path else {}
+            manifest.stage_ok("sentiment", sentiment_paths or {"warning": "no_reusable_sentiment_panel_found"})
+        elif profile.get("run_sentiment", True) and not skip_sentiment:
             current_stage = "sentiment"
             try:
                 sentiment_paths = build_sentiment_panel(limit=limit, provider_name=profile.get("sentiment_provider"))
@@ -255,6 +292,12 @@ def main() -> int:
     parser.add_argument("--profile", default="nyse_full")
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--skip-sentiment", action="store_true")
+    parser.add_argument("--skip-price-download", action="store_true", help="Reuse the existing raw price store and rebuild price validation without downloading.")
+    parser.add_argument(
+        "--reuse-existing-artifacts",
+        action="store_true",
+        help="Do not call external providers; reuse latest universe, validated price, metadata, and sentiment artifacts.",
+    )
     parser.add_argument("--write-database", action="store_true")
     parser.add_argument("--provider", default=None, help="Market data provider for price and metadata jobs: yahoo_legacy or eodhd.")
     args = parser.parse_args()
@@ -264,6 +307,8 @@ def main() -> int:
         skip_sentiment=args.skip_sentiment,
         write_database=args.write_database,
         provider_name=args.provider,
+        reuse_existing_artifacts=args.reuse_existing_artifacts,
+        skip_price_download=args.skip_price_download,
     )
     return 0
 

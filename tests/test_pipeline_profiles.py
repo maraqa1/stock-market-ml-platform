@@ -127,6 +127,89 @@ def test_limited_profile_does_not_publish_latest_trading_artifacts(monkeypatch):
     assert calls["model"]["publish_latest"] is False
 
 
+def test_profile_runner_can_reuse_existing_artifacts_without_downloads(monkeypatch):
+    calls = {}
+    universe = Path("universe.csv")
+    validated = Path("validated.csv")
+    metadata = Path("metadata.csv")
+    sentiment = Path("sentiment.csv")
+    features = Path("features.csv")
+    gold = Path("gold.csv")
+
+    def fake_latest_file(directory, pattern):
+        if pattern.startswith("02_us_tradable_universe_"):
+            return universe
+        if pattern.startswith("03_us_price_validated_universe_"):
+            return validated
+        if pattern.startswith("04_us_metadata_enriched_"):
+            return metadata
+        if pattern.startswith("05_news_sentiment_panel_"):
+            return sentiment
+        raise AssertionError(f"unexpected latest file lookup: {pattern}")
+
+    monkeypatch.setattr("stockml.pipeline.profile_runner.latest_file", fake_latest_file)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_us_equity_universe", lambda: pytest.fail("universe should be reused"))
+    monkeypatch.setattr("stockml.pipeline.profile_runner.download_price_history", lambda **kwargs: pytest.fail("price download should be reused"))
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_price_quality_report", lambda **kwargs: pytest.fail("price validation should be reused"))
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_metadata_enriched", lambda **kwargs: pytest.fail("metadata should be reused"))
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_sentiment_panel", lambda **kwargs: pytest.fail("sentiment should be reused"))
+    monkeypatch.setattr("stockml.pipeline.profile_runner._metadata_quality_gate", lambda *args, **kwargs: calls.setdefault("metadata_gate", args))
+
+    def fake_features(**kwargs):
+        calls["features"] = kwargs
+        return {"feature_panel": features}
+
+    def fake_gold(**kwargs):
+        calls["gold"] = kwargs
+        return {"gold_dataset": gold}
+
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_feature_panel", fake_features)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_gold_dataset", fake_gold)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_model_outputs", lambda **kwargs: calls.setdefault("model", kwargs))
+    monkeypatch.setattr(
+        "stockml.pipeline.profile_runner.run_trading_day_readiness_gate",
+        lambda: calls.setdefault("readiness", {"orders_planned": 10}),
+    )
+
+    run_profile("us_full", reuse_existing_artifacts=True)
+
+    assert calls["metadata_gate"][0] == metadata
+    assert calls["metadata_gate"][1] == validated
+    assert calls["features"]["universe_file"] == validated
+    assert calls["features"]["metadata_file"] == metadata
+    assert calls["gold"]["feature_file"] == features
+    assert calls["gold"]["sentiment_file"] == sentiment
+    assert calls["model"]["gold_file"] == gold
+
+
+def test_profile_runner_can_skip_price_download_but_rebuild_validation(monkeypatch):
+    calls = {}
+    validated = Path("validated.csv")
+    metadata = Path("metadata.csv")
+    features = Path("features.csv")
+    gold = Path("gold.csv")
+
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_us_equity_universe", lambda: None)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.download_price_history", lambda **kwargs: pytest.fail("price download should be skipped"))
+    def fake_price_quality(**kwargs):
+        calls["price_quality"] = kwargs
+        return {"validated_universe": validated}
+
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_price_quality_report", fake_price_quality)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_metadata_enriched", lambda **kwargs: {"metadata_enriched": metadata})
+    monkeypatch.setattr("stockml.pipeline.profile_runner._metadata_quality_gate", lambda *args, **kwargs: None)
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_feature_panel", lambda **kwargs: {"feature_panel": features})
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_sentiment_panel", lambda **kwargs: {})
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_gold_dataset", lambda **kwargs: {"gold_dataset": gold})
+    monkeypatch.setattr("stockml.pipeline.profile_runner.build_model_outputs", lambda **kwargs: calls.setdefault("model", kwargs))
+    monkeypatch.setattr("stockml.pipeline.profile_runner.run_trading_day_readiness_gate", lambda: {"orders_planned": 10})
+
+    run_profile("us_full", skip_price_download=True)
+
+    assert calls["price_quality"]["provider_name"] == "eodhd"
+    assert calls["model"]["gold_file"] == gold
+
+
 def test_metadata_quality_gate_rejects_missing_market_caps(tmp_path: Path):
     validated = tmp_path / "validated.csv"
     metadata = tmp_path / "metadata.csv"

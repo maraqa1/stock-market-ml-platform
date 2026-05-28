@@ -34,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", default="us_full")
     parser.add_argument("--limit-tickers", type=int, default=None)
     parser.add_argument("--skip-profile", action="store_true", help="Only run quality, plan-only, and holding review against current artifacts.")
+    parser.add_argument("--skip-price-download", action="store_true", help="When running the profile, rebuild price validation from the existing price store without downloading.")
+    parser.add_argument("--reuse-existing-artifacts", action="store_true", help="When running the profile, avoid external providers and reuse latest upstream artifacts.")
     parser.add_argument("--write-database", action="store_true")
     parser.add_argument("--provider", default=None)
     args = parser.parse_args(argv)
@@ -44,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
             override_limit=args.limit_tickers,
             write_database=args.write_database,
             provider_name=args.provider,
+            reuse_existing_artifacts=args.reuse_existing_artifacts,
+            skip_price_download=args.skip_price_download,
         )
 
     quality = build_pipeline_quality_report(ROOT)
