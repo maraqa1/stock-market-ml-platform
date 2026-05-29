@@ -93,6 +93,8 @@ def _unix_seconds(value: object) -> int:
 
 
 def _parse_intraday_timestamp(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return pd.to_datetime(series, errors="coerce", utc=True)
     numeric = pd.to_numeric(series, errors="coerce")
     if numeric.notna().any():
         median = float(numeric.dropna().median())

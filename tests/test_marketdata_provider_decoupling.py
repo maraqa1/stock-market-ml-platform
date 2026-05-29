@@ -101,6 +101,15 @@ def test_eodhd_normalizes_intraday_unix_seconds():
     assert out.loc[0, "timestamp"].month == 3
 
 
+def test_eodhd_normalizes_already_parsed_intraday_timestamps():
+    raw = [{"timestamp": pd.Timestamp("2026-03-02T14:30:00Z"), "open": 10, "high": 11, "low": 9, "close": 10.5, "volume": 1000}]
+
+    out = normalize_eodhd_intraday_rows(raw, "aaa", "stamp")
+
+    assert len(out) == 1
+    assert out.loc[0, "timestamp"] == pd.Timestamp("2026-03-02T14:30:00Z")
+
+
 def test_eodhd_provider_fetches_intraday_bars_with_unix_window():
     calls = []
 

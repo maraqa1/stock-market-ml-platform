@@ -33,6 +33,8 @@ def _date_end(value: date | str) -> pd.Timestamp:
 
 
 def _parse_bar_timestamps(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return pd.to_datetime(series, errors="coerce", utc=True)
     numeric = pd.to_numeric(series, errors="coerce")
     if numeric.notna().any():
         median = float(numeric.dropna().median())
