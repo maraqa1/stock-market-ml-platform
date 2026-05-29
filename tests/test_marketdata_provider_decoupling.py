@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.marketdata.providers.base import MarketDataProvider
-from stockml.marketdata.providers.eodhd import EodhdProvider, normalize_eodhd_eod_rows, scrub_eodhd_secret, to_eodhd_symbol
+from stockml.marketdata.providers.eodhd import EodhdProvider, normalize_eodhd_eod_rows, normalize_eodhd_intraday_rows, scrub_eodhd_secret, to_eodhd_symbol
 from stockml.marketdata.providers.factory import provider_from_name
 from stockml.marketdata.providers.yahoo_legacy import empty_fundamentals_row, normalize_yfinance_download
 from stockml.marketdata.schemas import FUNDAMENTAL_COLUMNS, PRICE_COLUMNS
@@ -80,6 +80,42 @@ def test_eodhd_provider_fetches_price_rows_with_us_suffix():
     assert calls[0][0].endswith("/eod/AAA.US")
     assert calls[0][1]["from"] == "2026-05-01"
     assert calls[0][1]["api_token"] == "key"
+
+
+def test_eodhd_normalizes_intraday_rows_to_spec72_schema():
+    raw = [{"datetime": "2026-05-29 14:30:00", "open": 10, "high": 11, "low": 9, "close": 10.5, "volume": 1000}]
+
+    out = normalize_eodhd_intraday_rows(raw, "aaa", "stamp")
+
+    assert out.loc[0, "symbol"] == "AAA"
+    assert str(out.loc[0, "timestamp"]) == "2026-05-29 14:30:00+00:00"
+    assert out.loc[0, "vwap"] == 10.5
+
+
+def test_eodhd_provider_fetches_intraday_bars_with_unix_window():
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [{"datetime": "2026-05-29 14:30:00", "open": 10, "high": 11, "low": 9, "close": 10.5, "volume": 1000}]
+
+    class Session:
+        def get(self, url, params, timeout):
+            calls.append((url, params, timeout))
+            return Response()
+
+    provider = EodhdProvider(api_key="key", session=Session())
+    bars, failure = provider.fetch_intraday_bars("aaa", start="2026-05-29T14:00:00Z", end="2026-05-29T15:00:00Z", download_timestamp="stamp")
+
+    assert failure is None
+    assert bars.loc[0, "symbol"] == "AAA"
+    assert calls[0][0].endswith("/intraday/AAA.US")
+    assert calls[0][1]["interval"] == "5m"
+    assert isinstance(calls[0][1]["from"], int)
+    assert isinstance(calls[0][1]["to"], int)
 
 
 def test_eodhd_provider_maps_fundamentals_to_canonical_schema():

@@ -13,6 +13,7 @@ from stockml.marketdata.schemas import FUNDAMENTAL_COLUMNS, PRICE_COLUMNS
 
 
 EODHD_BASE_URL = "https://eodhd.com/api"
+INTRADAY_COLUMNS = ["symbol", "timestamp", "open", "high", "low", "close", "volume", "vwap", "spread_bps", "source", "download_timestamp"]
 
 
 def to_eodhd_symbol(ticker: str, *, default_exchange_suffix: str = "US") -> str:
@@ -81,6 +82,40 @@ def normalize_eodhd_eod_rows(rows: list[dict[str, Any]], ticker: str, download_t
 
     out = out.dropna(subset=["date", "ticker"])
     out = out.drop_duplicates(["ticker", "date"], keep="last")
+    return out
+
+
+def _unix_seconds(value: object) -> int:
+    parsed = pd.to_datetime(value, errors="coerce", utc=True)
+    if pd.isna(parsed):
+        raise ValueError(f"Invalid timestamp: {value}")
+    return int(parsed.timestamp())
+
+
+def normalize_eodhd_intraday_rows(rows: list[dict[str, Any]], ticker: str, download_timestamp: str) -> pd.DataFrame:
+    if not rows:
+        return pd.DataFrame(columns=INTRADAY_COLUMNS)
+
+    out = pd.DataFrame(rows)
+    if "datetime" in out.columns and "timestamp" not in out.columns:
+        out = out.rename(columns={"datetime": "timestamp"})
+    if "date" in out.columns and "timestamp" not in out.columns:
+        out = out.rename(columns={"date": "timestamp"})
+    if "gmtoffset" in out.columns:
+        out = out.drop(columns=["gmtoffset"])
+    out["symbol"] = str(ticker).upper().strip()
+    out["source"] = "eodhd"
+    out["download_timestamp"] = download_timestamp
+    for column in ["open", "high", "low", "close", "volume", "vwap", "spread_bps"]:
+        if column not in out.columns:
+            out[column] = pd.NA
+    out["timestamp"] = pd.to_datetime(out.get("timestamp"), errors="coerce", utc=True)
+    for column in ["open", "high", "low", "close", "volume", "vwap", "spread_bps"]:
+        out[column] = pd.to_numeric(out[column], errors="coerce")
+    out["vwap"] = out["vwap"].fillna(out["close"])
+    out = out[INTRADAY_COLUMNS].copy()
+    out = out.dropna(subset=["symbol", "timestamp", "open", "high", "low", "close"])
+    out = out.drop_duplicates(["symbol", "timestamp"], keep="last")
     return out
 
 
@@ -163,6 +198,37 @@ class EodhdProvider(MarketDataProvider):
 
         prices = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame(columns=PRICE_COLUMNS)
         return prices, pd.DataFrame(failures, columns=["ticker", "start", "reason"])
+
+    def fetch_intraday_bars(
+        self,
+        ticker: str,
+        *,
+        start: str,
+        end: str,
+        interval: str = "5m",
+        download_timestamp: str,
+    ) -> tuple[pd.DataFrame, dict[str, object] | None]:
+        clean_ticker = str(ticker).upper().strip()
+        provider_symbol = to_eodhd_symbol(clean_ticker, default_exchange_suffix=self.default_exchange_suffix)
+        try:
+            payload = self._get_json(
+                f"intraday/{provider_symbol}",
+                {
+                    "interval": interval,
+                    "from": _unix_seconds(start),
+                    "to": _unix_seconds(end),
+                },
+            )
+            if isinstance(payload, dict) and (payload.get("code") or payload.get("message")):
+                return pd.DataFrame(columns=INTRADAY_COLUMNS), {"symbol": clean_ticker, "start": start, "end": end, "reason": scrub_eodhd_secret(payload)[:500]}
+            if not isinstance(payload, list) or not payload:
+                return pd.DataFrame(columns=INTRADAY_COLUMNS), {"symbol": clean_ticker, "start": start, "end": end, "reason": "empty_download"}
+            normalized = normalize_eodhd_intraday_rows(payload, clean_ticker, download_timestamp)
+            if normalized.empty:
+                return normalized, {"symbol": clean_ticker, "start": start, "end": end, "reason": "empty_normalized_download"}
+            return normalized, None
+        except Exception as exc:
+            return pd.DataFrame(columns=INTRADAY_COLUMNS), {"symbol": clean_ticker, "start": start, "end": end, "reason": scrub_eodhd_secret(exc)[:500]}
 
     def fetch_fundamentals(self, ticker: str, *, company: str = "", exchange: str = "") -> dict[str, object]:
         clean_ticker = str(ticker).upper().strip()

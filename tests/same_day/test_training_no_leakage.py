@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
+from scripts import measure_same_day_edge
 from stockml.same_day.training import (
     balance_classes,
     build_markdown_report,
@@ -114,3 +116,12 @@ def test_report_records_class_balances():
 
     assert "Class balance before downsampling: {0: 10, 1: 5}" in report
     assert "Class balance after downsampling: {0: 5, 1: 5}" in report
+
+
+def test_measure_same_day_edge_missing_file_message(capsys):
+    with pytest.raises(SystemExit):
+        measure_same_day_edge.main(["--bars-file", "missing_5min_bars.csv"])
+
+    err = capsys.readouterr().err
+    assert "bars file not found" in err
+    assert "scripts/download_intraday_history.py" in err
