@@ -15,6 +15,8 @@ from stockml.sentiment.provider_factory import sentiment_providers_from_name
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
 from stockml.sentiment.simple_sentiment_model import classify_score, score_text
 
+SENTIMENT_STORE_FILE = PROCESSED_DIR / "05_news_sentiment_store.csv"
+
 
 def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
     try:
@@ -30,6 +32,77 @@ def latest_universe_for_sentiment() -> Path:
     if path is None:
         raise FileNotFoundError("No universe file found for sentiment pipeline.")
     return path
+
+
+def _as_date(value: date | str | None, default: date) -> date:
+    if value is None:
+        return default
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return default
+    return parsed.date()
+
+
+def load_sentiment_store(store_file: Path = SENTIMENT_STORE_FILE) -> pd.DataFrame:
+    if not store_file.exists():
+        return pd.DataFrame(columns=SENTIMENT_COLUMNS)
+    frame = pd.read_csv(store_file, low_memory=False)
+    for col in SENTIMENT_COLUMNS:
+        if col not in frame.columns:
+            frame[col] = pd.NA
+    frame = frame[SENTIMENT_COLUMNS].copy()
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+    frame["ticker"] = frame["ticker"].astype(str).str.upper().str.strip()
+    return frame.dropna(subset=["date", "ticker"])
+
+
+def save_sentiment_store(frame: pd.DataFrame, store_file: Path = SENTIMENT_STORE_FILE) -> None:
+    store_file.parent.mkdir(parents=True, exist_ok=True)
+    out = frame.copy()
+    for col in SENTIMENT_COLUMNS:
+        if col not in out.columns:
+            out[col] = pd.NA
+    out = out[SENTIMENT_COLUMNS].copy()
+    out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    out["ticker"] = out["ticker"].astype(str).str.upper().str.strip()
+    out = out.dropna(subset=["date", "ticker"])
+    out = out.sort_values(["ticker", "date"])
+    out = out.drop_duplicates(["ticker", "date"], keep="last")
+    out.to_csv(store_file, index=False)
+    log(f"Updated canonical sentiment store: {store_file} ({len(out):,} rows)")
+
+
+def determine_sentiment_windows(
+    tickers: Iterable[str],
+    store: pd.DataFrame,
+    *,
+    start_date: str = "2018-01-01",
+    as_of_date: date | str | None = None,
+    force_full: bool = False,
+    delta_overlap_days: int = 1,
+) -> tuple[dict[str, tuple[date, date]], bool]:
+    clean_tickers = sorted({str(t).upper().strip() for t in tickers if str(t).strip()})
+    end_date = _as_date(as_of_date, date.today())
+    floor_date = _as_date(start_date, date(2018, 1, 1))
+    full_mode = force_full or store.empty
+    if full_mode:
+        return {ticker: (floor_date, end_date) for ticker in clean_tickers}, True
+
+    working = store.copy()
+    working["date"] = pd.to_datetime(working["date"], errors="coerce")
+    working["ticker"] = working["ticker"].astype(str).str.upper().str.strip()
+    latest_by_ticker = working.groupby("ticker")["date"].max().to_dict()
+    overlap = max(1, int(delta_overlap_days or 1))
+    windows: dict[str, tuple[date, date]] = {}
+    for ticker in clean_tickers:
+        latest = latest_by_ticker.get(ticker)
+        if latest is None or pd.isna(latest):
+            windows[ticker] = (floor_date, end_date)
+            continue
+        from_date = max(floor_date, pd.Timestamp(latest).date() - timedelta(days=overlap - 1))
+        if from_date <= end_date:
+            windows[ticker] = (from_date, end_date)
+    return windows, False
 
 
 def _article_date(article: Dict[str, object]) -> Optional[pd.Timestamp]:
@@ -113,6 +186,7 @@ def build_sentiment_panel_for_tickers(
     provider_name: str | None = None,
     lookback_days: int | None = None,
     as_of_date: date | str | None = None,
+    ticker_windows: dict[str, tuple[date, date]] | None = None,
 ) -> Dict[str, pd.DataFrame]:
     providers = sentiment_providers_from_name(provider_name)
     clean_tickers = [str(t).upper().strip() for t in tickers if str(t).strip()]
@@ -120,8 +194,13 @@ def build_sentiment_panel_for_tickers(
         clean_tickers = clean_tickers[:limit]
 
     effective_lookback = lookback_days if lookback_days is not None else _env_int("STOCKML_SENTIMENT_LOOKBACK_DAYS", 2)
-    end_date = pd.to_datetime(as_of_date if as_of_date is not None else date.today(), errors="coerce").date()
+    end_date = _as_date(as_of_date, date.today())
     start_date = end_date - timedelta(days=max(0, effective_lookback - 1))
+    if ticker_windows:
+        starts = [window[0] for window in ticker_windows.values()]
+        ends = [window[1] for window in ticker_windows.values()]
+        start_date = min(starts) if starts else start_date
+        end_date = max(ends) if ends else end_date
     total = len(clean_tickers)
     provider_names = ",".join(provider.source_name for provider in providers) or "none"
     progress_every = _env_int("STOCKML_SENTIMENT_PROGRESS_EVERY", 50)
@@ -144,10 +223,11 @@ def build_sentiment_panel_for_tickers(
         ticker_panels = []
         errors = []
         provider_counts = {}
+        ticker_start, ticker_end = ticker_windows.get(ticker, (start_date, end_date)) if ticker_windows else (start_date, end_date)
         for provider in providers:
             try:
                 if hasattr(provider, "fetch_articles_between"):
-                    articles = provider.fetch_articles_between(ticker, from_date=start_date, to_date=end_date)
+                    articles = provider.fetch_articles_between(ticker, from_date=ticker_start, to_date=ticker_end)
                 else:
                     articles = provider.fetch_articles(ticker)
                 provider_counts[provider.source_name] = len(articles)
@@ -242,35 +322,73 @@ def build_sentiment_panel(
     limit: Optional[int] = None,
     provider_name: str | None = None,
     lookback_days: int | None = None,
+    start_date: str = "2018-01-01",
+    force_full: bool = False,
+    delta_overlap_days: int = 1,
 ) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     universe = pd.read_csv(latest_universe_for_sentiment(), dtype=str)
     ticker_col = "yahoo_ticker" if "yahoo_ticker" in universe.columns else "ticker"
+    tickers = universe[ticker_col].dropna().astype(str).str.upper().str.strip()
+    if limit:
+        tickers = tickers.head(limit)
+
+    store = load_sentiment_store()
+    if lookback_days is not None:
+        as_of = date.today()
+        start = as_of - timedelta(days=max(0, lookback_days - 1))
+        windows = {ticker: (start, as_of) for ticker in tickers if ticker}
+        full_mode = False
+    else:
+        windows, full_mode = determine_sentiment_windows(
+            tickers,
+            store,
+            start_date=start_date,
+            force_full=force_full,
+            delta_overlap_days=delta_overlap_days,
+        )
+    mode = "full" if full_mode else "delta"
+    log(f"Sentiment download mode: {mode}")
+    log(f"Tickers in sentiment universe: {len(list(tickers)):,}")
+    log(f"Tickers requiring sentiment download: {len(windows):,}")
     result = build_sentiment_panel_for_tickers(
-        universe[ticker_col],
-        limit=limit,
+        windows.keys(),
         provider_name=provider_name,
         lookback_days=lookback_days,
+        ticker_windows=windows,
     )
 
-    panel_path = PROCESSED_DIR / f"05_news_sentiment_panel_{stamp}.csv"
-    result["panel"].to_csv(panel_path, index=False)
-    log(f"Wrote news sentiment panel: {panel_path} ({len(result['panel']):,} rows)")
+    delta_path = PROCESSED_DIR / f"05_news_sentiment_{mode}_{stamp}.csv"
+    result["panel"].to_csv(delta_path, index=False)
+    log(f"Wrote news sentiment {mode} file: {delta_path} ({len(result['panel']):,} rows)")
+
+    combined = pd.concat([store, result["panel"]], ignore_index=True) if not store.empty else result["panel"]
+    save_sentiment_store(combined)
 
     quality_path = INTERIM_DIR / f"05_news_sentiment_quality_{stamp}.csv"
     result["quality"].to_csv(quality_path, index=False)
     log(f"Wrote news sentiment quality: {quality_path} ({len(result['quality']):,} rows)")
-    return {"sentiment_panel": panel_path, "sentiment_quality": quality_path}
+    return {"sentiment_panel": SENTIMENT_STORE_FILE, "sentiment_delta": delta_path, "sentiment_quality": quality_path}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--provider", default=None, help="Sentiment provider: eodhd or legacy.")
-    parser.add_argument("--lookback-days", type=int, default=None, help="Recent news window to fetch; defaults to STOCKML_SENTIMENT_LOOKBACK_DAYS or 2.")
+    parser.add_argument("--start-date", default="2018-01-01")
+    parser.add_argument("--force-full", action="store_true")
+    parser.add_argument("--delta-overlap-days", type=int, default=1)
+    parser.add_argument("--lookback-days", type=int, default=None, help="Compatibility override for a stateless recent news window.")
     args = parser.parse_args()
-    paths = build_sentiment_panel(limit=args.limit, provider_name=args.provider, lookback_days=args.lookback_days)
+    paths = build_sentiment_panel(
+        limit=args.limit,
+        provider_name=args.provider,
+        lookback_days=args.lookback_days,
+        start_date=args.start_date,
+        force_full=args.force_full,
+        delta_overlap_days=args.delta_overlap_days,
+    )
     for name, path in paths.items():
         log(f"{name}: {path}")
     return 0

@@ -369,7 +369,9 @@ def run_profile(
                 sentiment_paths = build_sentiment_panel(
                     limit=limit,
                     provider_name=profile.get("sentiment_provider"),
-                    lookback_days=profile.get("sentiment_lookback_days"),
+                    start_date=str(profile.get("sentiment_start_date", profile.get("start_date", "2018-01-01"))),
+                    force_full=bool(profile.get("sentiment_force_full", False)),
+                    delta_overlap_days=int(profile.get("sentiment_delta_overlap_days", 1) or 1),
                 )
                 manifest.stage_ok("sentiment", sentiment_paths)
             except Exception as exc:

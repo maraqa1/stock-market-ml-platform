@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
 
+import pandas as pd
+
 from stockml.sentiment.build_sentiment_panel import aggregate_articles
 from stockml.sentiment.build_sentiment_panel import build_sentiment_panel_for_tickers
+from stockml.sentiment.build_sentiment_panel import determine_sentiment_windows
+from stockml.sentiment.build_sentiment_panel import save_sentiment_store
 from stockml.sentiment.build_sentiment_panel import _combine_provider_panels
 from stockml.sentiment.cnbc_news_provider import _matches_ticker
 from stockml.sentiment.eodhd_news_provider import EodhdNewsProvider, _normalize_eodhd_article
@@ -176,3 +180,56 @@ def test_sentiment_panel_uses_recent_window(monkeypatch):
     build_sentiment_panel_for_tickers(["AAA"], provider_name="fake", lookback_days=2, as_of_date="2026-05-29")
 
     assert calls == [("AAA", "2026-05-28", "2026-05-29")]
+
+
+def test_sentiment_windows_bootstrap_when_store_missing():
+    windows, full_mode = determine_sentiment_windows(
+        ["AAA", "BBB"],
+        pd.DataFrame(),
+        start_date="2018-01-01",
+        as_of_date="2026-05-29",
+    )
+
+    assert full_mode is True
+    assert windows == {
+        "AAA": (datetime(2018, 1, 1).date(), datetime(2026, 5, 29).date()),
+        "BBB": (datetime(2018, 1, 1).date(), datetime(2026, 5, 29).date()),
+    }
+
+
+def test_sentiment_windows_delta_from_store_latest_date():
+    store = pd.DataFrame(
+        [
+            {"date": "2026-05-27", "ticker": "AAA"},
+            {"date": "2026-05-28", "ticker": "BBB"},
+        ]
+    )
+
+    windows, full_mode = determine_sentiment_windows(
+        ["AAA", "BBB", "CCC"],
+        store,
+        start_date="2018-01-01",
+        as_of_date="2026-05-29",
+        delta_overlap_days=1,
+    )
+
+    assert full_mode is False
+    assert windows["AAA"] == (datetime(2026, 5, 27).date(), datetime(2026, 5, 29).date())
+    assert windows["BBB"] == (datetime(2026, 5, 28).date(), datetime(2026, 5, 29).date())
+    assert windows["CCC"] == (datetime(2018, 1, 1).date(), datetime(2026, 5, 29).date())
+
+
+def test_sentiment_store_deduplicates_by_ticker_date(tmp_path):
+    store_path = tmp_path / "sentiment_store.csv"
+    frame = pd.DataFrame(
+        [
+            {"date": "2026-05-28", "ticker": "AAA", "article_count": 1, "sentiment_score_mean": 0.1},
+            {"date": "2026-05-28", "ticker": "AAA", "article_count": 2, "sentiment_score_mean": 0.2},
+        ]
+    )
+
+    save_sentiment_store(frame, store_path)
+    stored = pd.read_csv(store_path)
+
+    assert len(stored) == 1
+    assert stored.loc[0, "article_count"] == 2
