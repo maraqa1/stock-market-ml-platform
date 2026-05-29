@@ -148,20 +148,13 @@ def candidate_signals_from_bars(
     rows: list[dict[str, Any]] = []
     for symbol, group in frame.sort_values(["symbol", "timestamp"]).groupby("symbol"):
         by_time = group.copy().reset_index(drop=True)
-        avg_by_bar = (
-            by_time.assign(bar_time=by_time["timestamp"].dt.tz_convert("America/New_York").dt.strftime("%H:%M"))
-            .groupby("bar_time")["volume"]
-            .mean()
-            .astype(float)
-            .to_dict()
-        )
-        for decision_time in by_time["timestamp"].iloc[8:-8]:
-            tod = _utc(decision_time).tz_convert("America/New_York").time()
-            if tod < pd.Timestamp("10:00").time() or tod > pd.Timestamp("15:00").time():
+        features_by_time = _minimal_feature_frame(by_time)
+        for index in range(8, max(8, len(by_time) - 8)):
+            decision_time = by_time.at[index, "timestamp"]
+            feature_row = features_by_time.iloc[index]
+            if not bool(feature_row.get("__eligible", False)):
                 continue
-            features = compute_minimal_features(by_time, decision_time, average_volume_by_bar=avg_by_bar)
-            if features is None:
-                continue
+            features = {column: float(feature_row[column]) for column in FEATURE_COLUMNS}
             long_fired = features["return_5m"] > 0 and features["return_15m"] > 0 and features["relative_volume"] > 1.5
             short_fired = features["return_5m"] < 0 and features["return_15m"] < 0 and features["relative_volume"] > 1.5
             for direction, fired in (("long", long_fired), ("short", short_fired)):
@@ -188,6 +181,58 @@ def candidate_signals_from_bars(
                     }
                 )
     return pd.DataFrame(rows)
+
+
+def _minimal_feature_frame(group: pd.DataFrame) -> pd.DataFrame:
+    """Vectorized SPEC 72 feature rows keyed by decision-time row index."""
+
+    out = pd.DataFrame(index=group.index)
+    stamp = pd.to_datetime(group["timestamp"], utc=True)
+    ny_stamp = stamp.dt.tz_convert("America/New_York")
+    tod = ny_stamp.dt.time
+    latest = group.shift(1)
+
+    open_px = pd.to_numeric(latest["open"], errors="coerce")
+    close_px = pd.to_numeric(latest["close"], errors="coerce")
+    open_15 = pd.to_numeric(group["open"].shift(4), errors="coerce")
+    open_30 = pd.to_numeric(group["open"].shift(7), errors="coerce")
+    volume = pd.to_numeric(latest["volume"], errors="coerce")
+
+    out["return_5m"] = np.where((open_px > 0) & (close_px > 0), np.log(close_px / open_px), 0.0)
+    out["return_15m"] = np.where((open_15 > 0) & (close_px > 0), np.log(close_px / open_15), 0.0)
+    out["return_30m"] = np.where((open_30 > 0) & (close_px > 0), np.log(close_px / open_30), 0.0)
+
+    bar_time = ny_stamp.shift(1).dt.strftime("%H:%M")
+    avg_volume = volume.groupby(bar_time).transform("mean")
+    out["relative_volume"] = np.where(avg_volume > 0, volume / avg_volume, 0.0)
+
+    close = pd.to_numeric(group["close"], errors="coerce")
+    vol = pd.to_numeric(group["volume"], errors="coerce")
+    out["dollar_volume_15m"] = (close * vol).shift(1).rolling(4, min_periods=1).sum().fillna(0.0)
+
+    if "vwap" in group.columns and not pd.to_numeric(group["vwap"], errors="coerce").isna().all():
+        vwap_value = pd.to_numeric(group["vwap"], errors="coerce").shift(1)
+    else:
+        prev_vol = vol.shift(1).fillna(0)
+        cumulative_vol = prev_vol.cumsum()
+        cumulative_pxv = (close.shift(1).fillna(0) * prev_vol).cumsum()
+        vwap_value = cumulative_pxv / cumulative_vol.replace(0, np.nan)
+    out["vwap_distance_bps_5m"] = np.where(vwap_value > 0, (close_px - vwap_value) / vwap_value * 10_000, 0.0)
+
+    high = pd.to_numeric(group["high"], errors="coerce").shift(1).cummax()
+    low = pd.to_numeric(group["low"], errors="coerce").shift(1).cummin()
+    spread = high - low
+    out["intraday_range_position"] = np.where(spread > 0, (close_px - low) / spread, 0.5)
+    out["intraday_range_position"] = out["intraday_range_position"].clip(0.0, 1.0)
+    out["time_of_day_bucket"] = stamp.map(time_of_day_bucket).astype(float)
+
+    out = out.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    out["__eligible"] = (
+        (tod >= pd.Timestamp("10:00").time())
+        & (tod <= pd.Timestamp("15:00").time())
+        & group["open"].shift(7).notna()
+    )
+    return out
 
 
 def liquidity_tier(dollar_volume_15m: float) -> str:
