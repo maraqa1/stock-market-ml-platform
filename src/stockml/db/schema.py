@@ -49,6 +49,7 @@ PROMOTION_DRY_RUN_EVENT_TYPES = ("confirmed",)
 EOD_STATES = ("review", "trim", "observe", "flatten", "verify", "postclose")
 EOD_DISPOSITIONS = ("weak", "stale", "winner_hold", "none")
 INTRADAY_CANDIDATE_SNAPSHOT_STATUS = ("ok", "data_unavailable", "provider_error")
+INTRADAY_FEATURE_STATUS = ("ok", "data_unavailable", "provider_error", "halted", "out_of_universe")
 INTRADAY_PROMOTION_VERDICTS = ("block", "watch", "promote_to_selection", "promote_to_selection_strong")
 ROTATION_RECOMMENDATION_VERDICTS = ("proposed", "confirmed", "overridden", "expired", "blocked")
 ROTATION_REASONS = ("HIGHER_PROMOTION_SCORE", "HELD_SIGNAL_STALE", "HELD_NEGATIVE_TREND", "HELD_DROPPED_FROM_SHORTLIST")
@@ -427,6 +428,22 @@ intraday_candidate_snapshots = Table(
     UniqueConstraint("symbol", "bar_close_at", name="uq_ics_symbol_bar_close_at"),
     Index("ix_ics_snapshot_at", "snapshot_at"),
     Index("ix_ics_symbol_snapshot", "symbol", "snapshot_at"),
+)
+
+intraday_features = Table(
+    "intraday_features",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("computed_at", DateTime(timezone=True), nullable=False),
+    Column("decision_time", DateTime(timezone=True), nullable=False),
+    Column("bar_close_at", DateTime(timezone=True), nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("status", String(30), nullable=False),
+    Column("features", JSON, nullable=False),
+    CheckConstraint(_in_values("status", INTRADAY_FEATURE_STATUS), name="ck_intraday_features_status"),
+    UniqueConstraint("symbol", "decision_time", name="uq_intraday_features_symbol_decision_time"),
+    Index("ix_if_decision_time", "decision_time"),
+    Index("ix_if_symbol_decision", "symbol", "decision_time"),
 )
 
 intraday_promotion_log = Table(
