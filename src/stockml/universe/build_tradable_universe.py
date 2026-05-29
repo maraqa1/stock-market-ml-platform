@@ -32,17 +32,19 @@ def build_us_equity_universe(output_raw: Path = RAW_DIR, output_interim: Path = 
     tradable.to_csv(tradable_path, index=False)
     log(f"Wrote tradable universe: {tradable_path} ({len(tradable):,} rows)")
 
-    summary = pd.DataFrame(
-        [
-            {"metric": "raw_rows", "value": len(universe)},
-            {"metric": "cleaned_rows", "value": len(cleaned)},
-            {"metric": "tradable_rows", "value": len(tradable)},
-            {"metric": "excluded_rows", "value": int((~cleaned["is_tradable_common_stock_candidate"]).sum())},
-            {"metric": "nasdaq_rows", "value": int((tradable["listing_exchange"] == "NASDAQ").sum())},
-            {"metric": "nyse_rows", "value": int((tradable["listing_exchange"] == "NYSE").sum())},
-            {"metric": "nyseamerican_rows", "value": int((tradable["listing_exchange"] == "NYSEAMERICAN").sum())},
-        ]
-    )
+    summary_rows = [
+        {"metric": "raw_rows", "value": len(universe)},
+        {"metric": "cleaned_rows", "value": len(cleaned)},
+        {"metric": "tradable_rows", "value": len(tradable)},
+        {"metric": "excluded_rows", "value": int((~cleaned["is_tradable_common_stock_candidate"]).sum())},
+        {"metric": "nasdaq_rows", "value": int((tradable["listing_exchange"] == "NASDAQ").sum())},
+        {"metric": "nyse_rows", "value": int((tradable["listing_exchange"] == "NYSE").sum())},
+        {"metric": "nyseamerican_rows", "value": int((tradable["listing_exchange"] == "NYSEAMERICAN").sum())},
+    ]
+    excluded = cleaned[~cleaned["is_tradable_common_stock_candidate"]].copy()
+    for reason, count in excluded["exclude_reason"].value_counts().sort_index().items():
+        summary_rows.append({"metric": f"excluded_{reason}", "value": int(count)})
+    summary = pd.DataFrame(summary_rows)
 
     summary_path = output_interim / f"02_us_universe_summary_{stamp}.csv"
     summary.to_csv(summary_path, index=False)

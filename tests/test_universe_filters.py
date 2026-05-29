@@ -65,6 +65,38 @@ def sample_universe() -> pd.DataFrame:
                 "etf_flag": "N",
                 "source": "otherlisted",
             },
+            {
+                "symbol": "BADF",
+                "yahoo_ticker": "BADF",
+                "company": "Bad Filing Corp Common Stock",
+                "security_name": "Bad Filing Corp Common Stock",
+                "listing_exchange": "NASDAQ",
+                "test_issue": "N",
+                "financial_status": "D",
+                "etf_flag": "N",
+                "source": "nasdaqlisted",
+            },
+            {
+                "symbol": "LIQD",
+                "yahoo_ticker": "LIQD",
+                "company": "Example Liquidating Trust Common Stock",
+                "security_name": "Example Liquidating Trust Common Stock",
+                "listing_exchange": "NYSE",
+                "test_issue": "N",
+                "etf_flag": "N",
+                "source": "otherlisted",
+            },
+            {
+                "symbol": "SPACU",
+                "yahoo_ticker": "SPACU",
+                "company": "Example Acquisition Corp Unit",
+                "security_name": "Example Acquisition Corp Unit",
+                "listing_exchange": "NASDAQ",
+                "test_issue": "N",
+                "financial_status": "N",
+                "etf_flag": "N",
+                "source": "nasdaqlisted",
+            },
         ]
     )
 
@@ -82,6 +114,9 @@ def test_clean_universe_excludes_non_common_instruments():
     assert excluded["SPY"] in {"exchange_not_allowed", "etf"}
     assert excluded["ABCW"] == "non_common_security_name"
     assert excluded["TEST"] == "test_issue"
+    assert excluded["BADF"] == "financial_status_not_normal"
+    assert excluded["LIQD"] == "non_common_security_name"
+    assert excluded["SPACU"] == "non_common_security_name"
 
 
 def test_yahoo_ticker_format_is_preserved_for_class_shares():

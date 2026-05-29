@@ -8,6 +8,13 @@ import pandas as pd
 DEFAULT_ALLOWED_EXCHANGES = {"NASDAQ", "NYSE", "NYSEAMERICAN"}
 
 NON_COMMON_NAME_PATTERNS = [
+    r"\bACQUISITION CORP(?:ORATION)?\b",
+    r"\bBANKRUPT(?:CY)?\b",
+    r"\bBLANK CHECK\b",
+    r"\bBUSINESS COMBINATION\b",
+    r"\bLIQUIDAT(?:E|ED|ING|ION)\b",
+    r"\bRECEIVERSHIP\b",
+    r"\bREORGANIZATION\b",
     r"\bETF\b",
     r"\bETN\b",
     r"\bFUND\b",
@@ -80,6 +87,7 @@ def classify_exclusion_reason(row: pd.Series, allowed_exchanges: Iterable[str] =
     exchange = str(row.get("listing_exchange", "")).upper().strip()
     etf = str(row.get("etf_flag", "")).upper().strip()
     test = str(row.get("test_issue", "")).upper().strip()
+    financial_status = str(row.get("financial_status", "")).upper().strip()
 
     if not symbol:
         return "missing_symbol"
@@ -89,6 +97,9 @@ def classify_exclusion_reason(row: pd.Series, allowed_exchanges: Iterable[str] =
 
     if test == "Y":
         return "test_issue"
+
+    if financial_status and financial_status != "N":
+        return "financial_status_not_normal"
 
     if etf == "Y":
         return "etf"
