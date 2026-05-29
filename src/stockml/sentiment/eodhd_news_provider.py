@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import os
 from typing import Any, Dict, List
 
@@ -46,6 +46,15 @@ class EodhdNewsProvider(NewsProviderBase):
         return self._owned_session
 
     def fetch_articles(self, ticker: str) -> List[Dict[str, object]]:
+        return self.fetch_articles_between(ticker)
+
+    def fetch_articles_between(
+        self,
+        ticker: str,
+        *,
+        from_date: date | str | None = None,
+        to_date: date | str | None = None,
+    ) -> List[Dict[str, object]]:
         if not self.api_key:
             raise RuntimeError("EODHD_API_KEY is not set")
 
@@ -54,14 +63,19 @@ class EodhdNewsProvider(NewsProviderBase):
             return []
 
         provider_symbol = to_eodhd_symbol(clean_ticker, default_exchange_suffix=self.default_exchange_suffix)
+        params: dict[str, object] = {
+            "s": provider_symbol,
+            "limit": self.limit,
+            "api_token": self.api_key,
+            "fmt": "json",
+        }
+        if from_date is not None:
+            params["from"] = str(from_date)
+        if to_date is not None:
+            params["to"] = str(to_date)
         response = self._session().get(
             f"{self.base_url}/news",
-            params={
-                "s": provider_symbol,
-                "limit": self.limit,
-                "api_token": self.api_key,
-                "fmt": "json",
-            },
+            params=params,
             timeout=self.timeout,
         )
         response.raise_for_status()

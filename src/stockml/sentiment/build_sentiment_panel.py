@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import os
 from pathlib import Path
 import time
@@ -111,17 +111,26 @@ def build_sentiment_panel_for_tickers(
     tickers: Iterable[str],
     limit: Optional[int] = None,
     provider_name: str | None = None,
+    lookback_days: int | None = None,
+    as_of_date: date | str | None = None,
 ) -> Dict[str, pd.DataFrame]:
     providers = sentiment_providers_from_name(provider_name)
     clean_tickers = [str(t).upper().strip() for t in tickers if str(t).strip()]
     if limit:
         clean_tickers = clean_tickers[:limit]
 
+    effective_lookback = lookback_days if lookback_days is not None else _env_int("STOCKML_SENTIMENT_LOOKBACK_DAYS", 2)
+    end_date = pd.to_datetime(as_of_date if as_of_date is not None else date.today(), errors="coerce").date()
+    start_date = end_date - timedelta(days=max(0, effective_lookback - 1))
     total = len(clean_tickers)
     provider_names = ",".join(provider.source_name for provider in providers) or "none"
     progress_every = _env_int("STOCKML_SENTIMENT_PROGRESS_EVERY", 50)
     slow_after_sec = _env_int("STOCKML_SENTIMENT_SLOW_SECONDS", 15)
-    log(f"Building sentiment panel: tickers={total:,} providers={provider_names}")
+    log(
+        "Building sentiment panel: "
+        f"tickers={total:,} providers={provider_names} "
+        f"from={start_date} to={end_date} lookback_days={effective_lookback}"
+    )
 
     panels = []
     quality_rows = []
@@ -137,7 +146,10 @@ def build_sentiment_panel_for_tickers(
         provider_counts = {}
         for provider in providers:
             try:
-                articles = provider.fetch_articles(ticker)
+                if hasattr(provider, "fetch_articles_between"):
+                    articles = provider.fetch_articles_between(ticker, from_date=start_date, to_date=end_date)
+                else:
+                    articles = provider.fetch_articles(ticker)
                 provider_counts[provider.source_name] = len(articles)
                 ticker_panels.append(aggregate_articles(ticker, articles, provider.source_name))
             except Exception as exc:
@@ -226,12 +238,21 @@ def _combine_provider_panels(ticker: str, provider_panels: List[pd.DataFrame], e
     return out[SENTIMENT_COLUMNS]
 
 
-def build_sentiment_panel(limit: Optional[int] = None, provider_name: str | None = None) -> Dict[str, Path]:
+def build_sentiment_panel(
+    limit: Optional[int] = None,
+    provider_name: str | None = None,
+    lookback_days: int | None = None,
+) -> Dict[str, Path]:
     ensure_data_dirs()
     stamp = timestamp()
     universe = pd.read_csv(latest_universe_for_sentiment(), dtype=str)
     ticker_col = "yahoo_ticker" if "yahoo_ticker" in universe.columns else "ticker"
-    result = build_sentiment_panel_for_tickers(universe[ticker_col], limit=limit, provider_name=provider_name)
+    result = build_sentiment_panel_for_tickers(
+        universe[ticker_col],
+        limit=limit,
+        provider_name=provider_name,
+        lookback_days=lookback_days,
+    )
 
     panel_path = PROCESSED_DIR / f"05_news_sentiment_panel_{stamp}.csv"
     result["panel"].to_csv(panel_path, index=False)
@@ -247,8 +268,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--provider", default=None, help="Sentiment provider: eodhd or legacy.")
+    parser.add_argument("--lookback-days", type=int, default=None, help="Recent news window to fetch; defaults to STOCKML_SENTIMENT_LOOKBACK_DAYS or 2.")
     args = parser.parse_args()
-    paths = build_sentiment_panel(limit=args.limit, provider_name=args.provider)
+    paths = build_sentiment_panel(limit=args.limit, provider_name=args.provider, lookback_days=args.lookback_days)
     for name, path in paths.items():
         log(f"{name}: {path}")
     return 0

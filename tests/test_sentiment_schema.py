@@ -111,6 +111,32 @@ def test_eodhd_provider_reuses_session_and_reads_timeout_env(monkeypatch):
     assert [call["timeout"] for call in session.calls] == [7, 7]
 
 
+def test_eodhd_provider_passes_news_date_window():
+    class FakeSession:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, url, params, timeout):
+            self.calls.append(params)
+
+            class Response:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    return []
+
+            return Response()
+
+    session = FakeSession()
+    provider = EodhdNewsProvider(api_key="key", session=session, timeout=3)
+
+    provider.fetch_articles_between("AAPL", from_date="2026-05-28", to_date="2026-05-29")
+
+    assert session.calls[0]["from"] == "2026-05-28"
+    assert session.calls[0]["to"] == "2026-05-29"
+
+
 def test_sentiment_panel_logs_progress(monkeypatch, capsys):
     class FakeProvider:
         source_name = "fake_news"
@@ -133,3 +159,20 @@ def test_sentiment_panel_logs_progress(monkeypatch, capsys):
     assert "Sentiment progress 2/3" in output
     assert "Sentiment progress 3/3" in output
     assert len(result["quality"]) == 3
+
+
+def test_sentiment_panel_uses_recent_window(monkeypatch):
+    calls = []
+
+    class FakeProvider:
+        source_name = "fake_news"
+
+        def fetch_articles_between(self, ticker, from_date=None, to_date=None):
+            calls.append((ticker, str(from_date), str(to_date)))
+            return []
+
+    monkeypatch.setattr("stockml.sentiment.build_sentiment_panel.sentiment_providers_from_name", lambda provider_name: [FakeProvider()])
+
+    build_sentiment_panel_for_tickers(["AAA"], provider_name="fake", lookback_days=2, as_of_date="2026-05-29")
+
+    assert calls == [("AAA", "2026-05-28", "2026-05-29")]

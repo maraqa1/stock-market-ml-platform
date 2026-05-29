@@ -366,7 +366,11 @@ def run_profile(
         elif profile.get("run_sentiment", True) and not skip_sentiment:
             current_stage = "sentiment"
             try:
-                sentiment_paths = build_sentiment_panel(limit=limit, provider_name=profile.get("sentiment_provider"))
+                sentiment_paths = build_sentiment_panel(
+                    limit=limit,
+                    provider_name=profile.get("sentiment_provider"),
+                    lookback_days=profile.get("sentiment_lookback_days"),
+                )
                 manifest.stage_ok("sentiment", sentiment_paths)
             except Exception as exc:
                 sentiment_paths = {}

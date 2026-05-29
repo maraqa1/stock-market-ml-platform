@@ -98,6 +98,7 @@ def test_profile_runner_passes_same_run_artifacts(monkeypatch, tmp_path: Path):
     assert calls["metadata"]["fallback_provider_name"] == "yahoo_legacy"
     assert calls["features"]["universe_file"] == validated
     assert calls["features"]["metadata_file"] == metadata
+    assert calls["sentiment"]["lookback_days"] == 2
     assert calls["gold"]["feature_file"] == features
     assert calls["gold"]["sentiment_file"] == sentiment
     assert calls["gold"]["shard_rows"] == 750000
