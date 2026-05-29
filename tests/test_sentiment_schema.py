@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from stockml.sentiment.build_sentiment_panel import aggregate_articles
+from stockml.sentiment.build_sentiment_panel import build_sentiment_panel_for_tickers
 from stockml.sentiment.build_sentiment_panel import _combine_provider_panels
 from stockml.sentiment.cnbc_news_provider import _matches_ticker
 from stockml.sentiment.eodhd_news_provider import EodhdNewsProvider, _normalize_eodhd_article
@@ -80,3 +81,55 @@ def test_sentiment_provider_factory_selects_eodhd():
 
     assert len(providers) == 1
     assert isinstance(providers[0], EodhdNewsProvider)
+
+
+def test_eodhd_provider_reuses_session_and_reads_timeout_env(monkeypatch):
+    class FakeSession:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, url, params, timeout):
+            self.calls.append({"url": url, "params": params, "timeout": timeout})
+
+            class Response:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    return []
+
+            return Response()
+
+    monkeypatch.setenv("STOCKML_EODHD_NEWS_TIMEOUT", "7")
+    session = FakeSession()
+    provider = EodhdNewsProvider(api_key="key", session=session)
+
+    provider.fetch_articles("AAPL")
+    provider.fetch_articles("MSFT")
+
+    assert provider.timeout == 7
+    assert [call["timeout"] for call in session.calls] == [7, 7]
+
+
+def test_sentiment_panel_logs_progress(monkeypatch, capsys):
+    class FakeProvider:
+        source_name = "fake_news"
+
+        def fetch_articles(self, ticker):
+            return [
+                {
+                    "providerPublishTime": int(datetime(2026, 5, 29, tzinfo=timezone.utc).timestamp()),
+                    "title": f"{ticker} reports strong demand",
+                }
+            ]
+
+    monkeypatch.setenv("STOCKML_SENTIMENT_PROGRESS_EVERY", "2")
+    monkeypatch.setattr("stockml.sentiment.build_sentiment_panel.sentiment_providers_from_name", lambda provider_name: [FakeProvider()])
+
+    result = build_sentiment_panel_for_tickers(["AAA", "BBB", "CCC"], provider_name="fake")
+
+    output = capsys.readouterr().out
+    assert "Building sentiment panel: tickers=3" in output
+    assert "Sentiment progress 2/3" in output
+    assert "Sentiment progress 3/3" in output
+    assert len(result["quality"]) == 3

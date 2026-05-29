@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import os
 from pathlib import Path
+import time
 from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
@@ -12,6 +14,13 @@ from stockml.common.paths import INTERIM_DIR, PROCESSED_DIR, ensure_data_dirs, l
 from stockml.sentiment.provider_factory import sentiment_providers_from_name
 from stockml.sentiment.sentiment_schema import SENTIMENT_COLUMNS
 from stockml.sentiment.simple_sentiment_model import classify_score, score_text
+
+
+def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int(str(os.getenv(name, "")).strip() or default))
+    except Exception:
+        return default
 
 
 def latest_universe_for_sentiment() -> Path:
@@ -108,9 +117,21 @@ def build_sentiment_panel_for_tickers(
     if limit:
         clean_tickers = clean_tickers[:limit]
 
+    total = len(clean_tickers)
+    provider_names = ",".join(provider.source_name for provider in providers) or "none"
+    progress_every = _env_int("STOCKML_SENTIMENT_PROGRESS_EVERY", 50)
+    slow_after_sec = _env_int("STOCKML_SENTIMENT_SLOW_SECONDS", 15)
+    log(f"Building sentiment panel: tickers={total:,} providers={provider_names}")
+
     panels = []
     quality_rows = []
-    for ticker in clean_tickers:
+    ok_count = 0
+    no_articles_count = 0
+    provider_error_count = 0
+    total_articles = 0
+    started = time.perf_counter()
+    for index, ticker in enumerate(clean_tickers, start=1):
+        ticker_started = time.perf_counter()
         ticker_panels = []
         errors = []
         provider_counts = {}
@@ -127,6 +148,14 @@ def build_sentiment_panel_for_tickers(
         status = "ok" if not panel.empty and panel["article_count"].sum() > 0 else "no_articles"
         if errors and status == "no_articles":
             status = "provider_error"
+        articles_for_ticker = int(panel["article_count"].sum()) if not panel.empty and "article_count" in panel.columns else 0
+        total_articles += articles_for_ticker
+        if status == "ok":
+            ok_count += 1
+        elif status == "provider_error":
+            provider_error_count += 1
+        else:
+            no_articles_count += 1
         panels.append(panel)
         quality_rows.append(
             {
@@ -136,6 +165,21 @@ def build_sentiment_panel_for_tickers(
                 "provider_article_counts": "|".join(f"{key}:{value}" for key, value in provider_counts.items()),
             }
         )
+        ticker_elapsed = time.perf_counter() - ticker_started
+        if ticker_elapsed >= slow_after_sec:
+            log(
+                "Sentiment slow ticker "
+                f"{ticker} elapsed_sec={ticker_elapsed:.1f} status={status} "
+                f"articles={articles_for_ticker} errors={len(errors)}"
+            )
+        if index == 1 or index == total or index % progress_every == 0:
+            elapsed = time.perf_counter() - started
+            log(
+                "Sentiment progress "
+                f"{index:,}/{total:,} ok={ok_count:,} no_articles={no_articles_count:,} "
+                f"provider_error={provider_error_count:,} articles={total_articles:,} "
+                f"elapsed_sec={elapsed:.1f}"
+            )
 
     return {
         "panel": pd.concat(panels, ignore_index=True) if panels else pd.DataFrame(columns=SENTIMENT_COLUMNS),

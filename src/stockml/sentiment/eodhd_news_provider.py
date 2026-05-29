@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from typing import Any, Dict, List
 
 from stockml.marketdata.providers.eodhd import EODHD_BASE_URL, eodhd_api_key_from_env, to_eodhd_symbol
 from stockml.sentiment.news_provider_base import NewsProviderBase
+
+
+def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int(str(os.getenv(name, "")).strip() or default))
+    except Exception:
+        return default
 
 
 class EodhdNewsProvider(NewsProviderBase):
@@ -17,22 +25,25 @@ class EodhdNewsProvider(NewsProviderBase):
         session: Any | None = None,
         base_url: str = EODHD_BASE_URL,
         default_exchange_suffix: str = "US",
-        timeout: int = 30,
-        limit: int = 25,
+        timeout: int | None = None,
+        limit: int | None = None,
     ) -> None:
         self.api_key = api_key if api_key is not None else eodhd_api_key_from_env()
         self.session = session
+        self._owned_session: Any | None = None
         self.base_url = base_url.rstrip("/")
         self.default_exchange_suffix = default_exchange_suffix
-        self.timeout = timeout
-        self.limit = limit
+        self.timeout = timeout if timeout is not None else _env_int("STOCKML_EODHD_NEWS_TIMEOUT", 10)
+        self.limit = limit if limit is not None else _env_int("STOCKML_EODHD_NEWS_LIMIT", 25)
 
     def _session(self) -> Any:
         if self.session is not None:
             return self.session
         import requests
 
-        return requests
+        if self._owned_session is None:
+            self._owned_session = requests.Session()
+        return self._owned_session
 
     def fetch_articles(self, ticker: str) -> List[Dict[str, object]]:
         if not self.api_key:
