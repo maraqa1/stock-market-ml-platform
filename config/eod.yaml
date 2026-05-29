@@ -3,6 +3,8 @@ eod:
   submit_postclose_rescue_orders: false
   trim_weak_at_t_minus_15: true
   holdover_allowed: false
+  multi_day_max_holding_days: 5
+  same_day_must_flatten: true
   time_stop_days: 20
   weak_loss_pct: -1.0
   winner_hold_pct: 2.0

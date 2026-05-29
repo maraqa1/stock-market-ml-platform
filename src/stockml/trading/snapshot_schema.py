@@ -54,6 +54,11 @@ class Pool(str, Enum):
     OPEN_POSITIONS = "open_positions"
 
 
+class StrategyStream(str, Enum):
+    MULTI_DAY_FORECAST = "multi_day_forecast"
+    SAME_DAY_MOMENTUM = "same_day_momentum"
+
+
 @dataclass
 class SnapshotRow:
     snapshot_at: datetime
@@ -80,6 +85,7 @@ class SnapshotRow:
     notional: float | None = None
     quantity: int | None = None
     data_age_seconds: int = 0
+    strategy_stream: StrategyStream | None = None
     raw_json: dict[str, Any] = field(default_factory=dict)
 
 
@@ -108,6 +114,7 @@ CANONICAL_COLUMNS = [
     "notional",
     "quantity",
     "data_age_seconds",
+    "strategy_stream",
     "raw_json",
 ]
 
@@ -161,6 +168,8 @@ def validate_snapshot_row(row: SnapshotRow) -> SnapshotRow:
         raise ValueError("snapshot_data_age_must_be_non_negative")
     if row.pool == Pool.PER_SYMBOL_FORECAST and row.display_score is not None:
         raise ValueError("per_symbol_forecast_display_score_must_be_empty")
+    if row.strategy_stream is not None and not isinstance(row.strategy_stream, StrategyStream):
+        raise ValueError("invalid_snapshot_strategy_stream")
     if row.final_verdict not in FINAL_VERDICTS:
         raise ValueError("invalid_snapshot_final_verdict")
     if row.final_verdict == "approved" and row.primary_reject_reason:
@@ -221,6 +230,7 @@ def snapshot_row_to_record(row: SnapshotRow, *, source: str = "") -> dict[str, A
         "notional": row.notional if row.notional is not None else "",
         "quantity": row.quantity if row.quantity is not None else "",
         "data_age_seconds": row.data_age_seconds,
+        "strategy_stream": row.strategy_stream.value if row.strategy_stream else "",
         "raw_json": json.dumps(row.raw_json, default=str, sort_keys=True),
     }
     record.update(

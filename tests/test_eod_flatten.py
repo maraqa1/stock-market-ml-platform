@@ -120,7 +120,7 @@ def test_multi_day_stream_still_closes_when_weak_or_stale_at_eod():
     assert calls == [("RISK", "close")]
 
 
-def test_t_minus_5_flatten_closes_winners_by_default_and_honors_holdover_toggle():
+def test_t_minus_5_flatten_uses_per_position_must_flatten_flag():
     positions = pd.DataFrame([{"symbol": "WIN", "unrealized_plpc": 0.03, "age_days": 1}])
     calls = []
 
@@ -133,23 +133,22 @@ def test_t_minus_5_flatten_closes_winners_by_default_and_honors_holdover_toggle(
     )
 
     assert result["eod_state"] == "flatten"
-    assert result["eod_flatten_submitted"] == 1
-    assert calls == ["WIN"]
+    assert result["eod_flatten_submitted"] == 0
+    assert calls == []
 
-    holdover = run_eod_tick(
-        positions,
+    flagged = run_eod_tick(
+        pd.DataFrame([{"symbol": "WIN", "unrealized_plpc": 0.03, "age_days": 1, "must_flatten_at_eod": True}]),
         now=datetime(2026, 5, 12, 15, 56, tzinfo=ET),
         state={},
-        config=EODConfig(holdover_allowed=True),
+        config=EODConfig(holdover_allowed=False),
         close_func=lambda symbol, action: {"status": "submitted", "message": "ok"},
     )
 
-    assert holdover["eod_flatten_submitted"] == 0
-    assert holdover["eod_holdover_allowed"] is True
+    assert flagged["eod_flatten_submitted"] == 1
 
 
 def test_verify_rescue_flattens_remaining_positions_before_close():
-    positions = pd.DataFrame([{"symbol": "ANGI", "unrealized_plpc": 0.0, "age_days": 0}])
+    positions = pd.DataFrame([{"symbol": "ANGI", "unrealized_plpc": 0.0, "age_days": 0, "must_flatten_at_eod": True}])
     calls = []
 
     verify = run_eod_tick(
@@ -185,7 +184,7 @@ def test_postclose_does_not_queue_regular_market_close_by_default():
 
 
 def test_postclose_rescue_orders_require_explicit_opt_in():
-    positions = pd.DataFrame([{"symbol": "ANGI", "unrealized_plpc": 0.0, "age_days": 0}])
+    positions = pd.DataFrame([{"symbol": "ANGI", "unrealized_plpc": 0.0, "age_days": 0, "must_flatten_at_eod": True}])
     calls = []
 
     postclose = run_eod_tick(

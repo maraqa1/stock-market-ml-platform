@@ -16,6 +16,7 @@ from stockml.trading.snapshot_schema import (
     ScoreBasis,
     ScoreState,
     SnapshotRow,
+    StrategyStream,
     default_stage_verdicts,
     snapshot_row_to_record,
     validate_snapshot_row,
@@ -97,6 +98,27 @@ def pool_from_value(value: str) -> Pool:
         return Pool(str(value))
     except ValueError:
         raise ValueError(f"unsupported_snapshot_pool:{value}") from None
+
+
+def strategy_stream_from_row(row: dict[str, Any], pool: Pool) -> StrategyStream | None:
+    value = str(first_value(row, ["strategy_stream", "trading_stream"], "") or "").strip().lower()
+    aliases = {
+        "multi_day": StrategyStream.MULTI_DAY_FORECAST,
+        "multi_day_forecast": StrategyStream.MULTI_DAY_FORECAST,
+        "multiday": StrategyStream.MULTI_DAY_FORECAST,
+        "same_day": StrategyStream.SAME_DAY_MOMENTUM,
+        "same_day_momentum": StrategyStream.SAME_DAY_MOMENTUM,
+        "intraday": StrategyStream.SAME_DAY_MOMENTUM,
+    }
+    if value:
+        if value not in aliases:
+            raise ValueError("invalid_snapshot_strategy_stream")
+        return aliases[value]
+    if pool == Pool.INTRADAY_PROMOTION:
+        return StrategyStream.SAME_DAY_MOMENTUM
+    if pool in {Pool.MODEL_SHORTLIST, Pool.PER_SYMBOL_FORECAST, Pool.NEAR_MISS, Pool.TODAYS_BASKET, Pool.REJECTED_TRIMMED, Pool.ACTION_QUEUE, Pool.OPEN_POSITIONS}:
+        return StrategyStream.MULTI_DAY_FORECAST
+    return None
 
 
 def _score_basis(pool: Pool, row: dict[str, Any]) -> ScoreBasis:
@@ -342,6 +364,7 @@ def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: da
     not_evaluated_reasons = _stage_not_evaluated_reasons(pool_enum, stage_verdicts)
     if not_evaluated_reasons:
         raw_json["stage_not_evaluated_reasons"] = not_evaluated_reasons
+    strategy_stream = strategy_stream_from_row(row, pool_enum)
     snapshot_row = SnapshotRow(
         snapshot_at=snapshot_at,
         pool=pool_enum,
@@ -367,6 +390,7 @@ def build_snapshot_row(pool: str | Pool, row: dict[str, Any], *, snapshot_at: da
         notional=float_or_none(first_value(row, ["planned_notional", "approved_notional", "notional", "market_value"])),
         quantity=int_or_none(first_value(row, ["planned_quantity", "suggested_quantity", "qty", "filled_qty"])),
         data_age_seconds=max(0, int((snapshot_at - generated).total_seconds())),
+        strategy_stream=strategy_stream,
         raw_json=raw_json,
     )
     return validate_snapshot_row(snapshot_row)

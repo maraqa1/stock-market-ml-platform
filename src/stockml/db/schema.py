@@ -53,6 +53,7 @@ INTRADAY_PROMOTION_VERDICTS = ("block", "watch", "promote_to_selection", "promot
 ROTATION_RECOMMENDATION_VERDICTS = ("proposed", "confirmed", "overridden", "expired", "blocked")
 ROTATION_REASONS = ("HIGHER_PROMOTION_SCORE", "HELD_SIGNAL_STALE", "HELD_NEGATIVE_TREND", "HELD_DROPPED_FROM_SHORTLIST")
 AUTOPILOT_OPEN_VERDICTS = ("opened", "blocked", "failed")
+STRATEGY_STREAMS = ("multi_day_forecast", "same_day_momentum")
 
 
 def _in_values(column: str, values: tuple[str, ...]) -> str:

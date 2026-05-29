@@ -22,6 +22,36 @@ def side_for_action(action: str) -> str:
     return "sell" if str(action).lower() == "short" else "buy"
 
 
+def bool_value(value: Any, default: bool = False) -> bool:
+    if value in [None, ""]:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n"}:
+        return False
+    return default
+
+
+def text_value(value: Any, default: str = "") -> str:
+    if value in [None, ""]:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    text = str(value).strip()
+    return text or default
+
+
 def validate_order_payload(order: dict[str, Any], max_order_notional: float | None = None) -> OrderValidationResult:
     symbol = str(order.get("symbol") or "").strip().upper()
     side = str(order.get("side") or "").strip().lower()
@@ -143,6 +173,10 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
         "stop_loss_price": row.get("stop_loss_price", ""),
         "take_profit_price": row.get("take_profit_price", ""),
         "max_holding_days": row.get("max_holding_days", ""),
+        "strategy_stream": text_value(row.get("strategy_stream"), "multi_day_forecast"),
+        "trading_stream": text_value(row.get("trading_stream"), "multi_day"),
+        "must_flatten_at_eod": bool_value(row.get("must_flatten_at_eod", False)),
+        "max_hold_until": text_value(row.get("max_hold_until"), ""),
         "trade_quality_status": status if approved else "rejected",
         "trade_quality_reason": row.get("trade_quality_reason", ""),
         "order_eligible": bool(row.get("order_eligible", approved and notional > 0)),

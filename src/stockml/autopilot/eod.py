@@ -24,6 +24,8 @@ class EODConfig:
     submit_postclose_rescue_orders: bool = False
     trim_weak_at_t_minus_15: bool = True
     holdover_allowed: bool = False
+    multi_day_max_holding_days: int = 5
+    same_day_must_flatten: bool = True
     time_stop_days: int = 20
     weak_loss_pct: float = -1.0
     winner_hold_pct: float = 2.0
@@ -42,6 +44,8 @@ def load_config(path: Path | str = CONFIG_PATH) -> EODConfig:
         submit_postclose_rescue_orders=bool(data.get("submit_postclose_rescue_orders", False)),
         trim_weak_at_t_minus_15=bool(data.get("trim_weak_at_t_minus_15", True)),
         holdover_allowed=bool(data.get("holdover_allowed", False)),
+        multi_day_max_holding_days=int(data.get("multi_day_max_holding_days", 5)),
+        same_day_must_flatten=bool(data.get("same_day_must_flatten", True)),
         time_stop_days=int(data.get("time_stop_days", 20)),
         weak_loss_pct=float(data.get("weak_loss_pct", -1.0)),
         winner_hold_pct=float(data.get("winner_hold_pct", 2.0)),
@@ -96,6 +100,58 @@ def _symbol(row: dict[str, Any]) -> str:
     return str(row.get("symbol") or "").upper()
 
 
+def _bool(value: Any, default: bool = False) -> bool:
+    if value in [None, ""]:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n"}:
+        return False
+    return default
+
+
+def _strategy_stream(row: dict[str, Any]) -> str:
+    value = str(row.get("strategy_stream") or row.get("trading_stream") or "").strip().lower()
+    aliases = {
+        "same_day": "same_day_momentum",
+        "same_day_momentum": "same_day_momentum",
+        "intraday": "same_day_momentum",
+        "multi_day": "multi_day_forecast",
+        "multi_day_forecast": "multi_day_forecast",
+        "multiday": "multi_day_forecast",
+    }
+    return aliases.get(value, "multi_day_forecast")
+
+
+def _max_hold_expired(row: dict[str, Any], now: datetime) -> bool:
+    value = row.get("max_hold_until")
+    if value in [None, ""]:
+        return False
+    try:
+        parsed = pd.Timestamp(value)
+    except Exception:
+        return False
+    if pd.isna(parsed):
+        return False
+    return _local(now).date() > parsed.date()
+
+
+def _must_flatten(row: dict[str, Any], strategy_stream: str, config: EODConfig) -> bool:
+    if "must_flatten_at_eod" in row:
+        return _bool(row.get("must_flatten_at_eod"), default=False)
+    if "must_flatten_eod" in row:
+        return _bool(row.get("must_flatten_eod"), default=False)
+    return bool(config.same_day_must_flatten and strategy_stream == "same_day_momentum")
+
+
 def _latest_monitor_by_symbol(monitor_decisions: pd.DataFrame | None) -> dict[str, str]:
     if monitor_decisions is None or monitor_decisions.empty or "symbol" not in monitor_decisions.columns:
         return {}
@@ -115,8 +171,10 @@ def tag_dispositions(
     monitor_decisions: pd.DataFrame | None = None,
     shortlist_symbols: set[str] | None = None,
     config: EODConfig | None = None,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     cfg = config or load_config()
+    evaluation_time = now or datetime.now(tz=MARKET_TZ)
     monitor = _latest_monitor_by_symbol(monitor_decisions)
     shortlist = {symbol.upper() for symbol in (shortlist_symbols or set()) if symbol}
     rows: list[dict[str, Any]] = []
@@ -124,12 +182,15 @@ def tag_dispositions(
         symbol = _symbol(row)
         plpc = _float(row.get("unrealized_plpc"))
         age = _float(row.get("age_days") or row.get("age") or 0)
-        trading_stream = str(row.get("trading_stream") or "").strip().lower()
+        strategy_stream = _strategy_stream(row)
+        must_flatten = _must_flatten(row, strategy_stream, cfg)
         decision = monitor.get(symbol, "")
         dropped = bool(shortlist and symbol not in shortlist)
         disposition = "none"
         reason = "position_within_eod_rules"
-        if trading_stream == "same_day":
+        if _max_hold_expired(row, evaluation_time):
+            disposition, reason = "stale", "max_hold_until_exceeded"
+        elif must_flatten:
             disposition, reason = "stale", "same_day_stream_eod"
         elif age >= cfg.time_stop_days:
             disposition, reason = "stale", "time_stop"
@@ -141,14 +202,32 @@ def tag_dispositions(
             disposition, reason = "weak", "dropped_from_shortlist"
         elif plpc >= (cfg.winner_hold_pct / 100.0) and decision in {"", "safe", "keep", "hold", "watch"}:
             disposition, reason = "winner_hold", "profitable_winner"
-        rows.append({"symbol": symbol, "disposition": disposition, "reason": reason, "plpc": plpc, "age": age, "trading_stream": trading_stream})
+        rows.append(
+            {
+                "symbol": symbol,
+                "disposition": disposition,
+                "reason": reason,
+                "plpc": plpc,
+                "age": age,
+                "strategy_stream": strategy_stream,
+                "trading_stream": row.get("trading_stream") or ("same_day" if strategy_stream == "same_day_momentum" else "multi_day"),
+                "must_flatten_at_eod": must_flatten,
+                "max_hold_until": row.get("max_hold_until") or "",
+            }
+        )
     return rows
 
 
 def _should_flatten_position(row: dict[str, Any], config: EODConfig) -> bool:
     disposition = str(row.get("disposition") or "")
-    trading_stream = str(row.get("trading_stream") or "").strip().lower()
-    if trading_stream == "multi_day" and disposition in {"none", "winner_hold"}:
+    strategy_stream = _strategy_stream(row)
+    must_flatten = _must_flatten(row, strategy_stream, config)
+    if not must_flatten:
+        reason = str(row.get("reason") or "")
+        if disposition == "stale" and reason in {"max_hold_until_exceeded", "time_stop"}:
+            return True
+        if config.holdover_allowed and disposition == "winner_hold":
+            return False
         return False
     if config.holdover_allowed and disposition == "winner_hold":
         return False
@@ -192,7 +271,7 @@ def run_eod_tick(
     if stage == "inactive":
         return {"eod_state": "inactive", "eod_banner": "", "eod_actions": 0, "eod_flatten_submitted": 0, "eod_remaining": int(len(positions))}
 
-    dispositions = tag_dispositions(positions, monitor_decisions=monitor_decisions, shortlist_symbols=shortlist_symbols, config=cfg)
+    dispositions = tag_dispositions(positions, monitor_decisions=monitor_decisions, shortlist_symbols=shortlist_symbols, config=cfg, now=now)
     disposition_by_symbol = {row["symbol"]: row for row in dispositions}
     symbols_to_close: list[str] = []
     if stage == "trim" and cfg.trim_weak_at_t_minus_15:
