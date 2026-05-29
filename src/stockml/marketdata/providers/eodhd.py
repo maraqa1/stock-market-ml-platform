@@ -92,6 +92,17 @@ def _unix_seconds(value: object) -> int:
     return int(parsed.timestamp())
 
 
+def _parse_intraday_timestamp(series: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    if numeric.notna().any():
+        median = float(numeric.dropna().median())
+        if median > 1_000_000_000_000:
+            return pd.to_datetime(numeric, errors="coerce", utc=True, unit="ms")
+        if median > 1_000_000_000:
+            return pd.to_datetime(numeric, errors="coerce", utc=True, unit="s")
+    return pd.to_datetime(series, errors="coerce", utc=True)
+
+
 def normalize_eodhd_intraday_rows(rows: list[dict[str, Any]], ticker: str, download_timestamp: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=INTRADAY_COLUMNS)
@@ -109,7 +120,7 @@ def normalize_eodhd_intraday_rows(rows: list[dict[str, Any]], ticker: str, downl
     for column in ["open", "high", "low", "close", "volume", "vwap", "spread_bps"]:
         if column not in out.columns:
             out[column] = pd.NA
-    out["timestamp"] = pd.to_datetime(out.get("timestamp"), errors="coerce", utc=True)
+    out["timestamp"] = _parse_intraday_timestamp(out.get("timestamp"))
     for column in ["open", "high", "low", "close", "volume", "vwap", "spread_bps"]:
         out[column] = pd.to_numeric(out[column], errors="coerce")
     out["vwap"] = out["vwap"].fillna(out["close"])

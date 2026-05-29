@@ -32,6 +32,17 @@ def _date_end(value: date | str) -> pd.Timestamp:
     return pd.Timestamp(value, tz="UTC") + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
 
 
+def _parse_bar_timestamps(series: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    if numeric.notna().any():
+        median = float(numeric.dropna().median())
+        if median > 1_000_000_000_000:
+            return pd.to_datetime(numeric, errors="coerce", utc=True, unit="ms")
+        if median > 1_000_000_000:
+            return pd.to_datetime(numeric, errors="coerce", utc=True, unit="s")
+    return pd.to_datetime(series, errors="coerce", utc=True)
+
+
 def normalize_intraday_bars(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     if "ticker" in out.columns and "symbol" not in out.columns:
@@ -44,7 +55,7 @@ def normalize_intraday_bars(frame: pd.DataFrame) -> pd.DataFrame:
         if column not in out.columns:
             out[column] = pd.NA
     out["symbol"] = out["symbol"].astype(str).str.upper().str.strip()
-    out["timestamp"] = pd.to_datetime(out["timestamp"], errors="coerce", utc=True)
+    out["timestamp"] = _parse_bar_timestamps(out["timestamp"])
     for column in ["open", "high", "low", "close", "volume", "vwap", "spread_bps"]:
         out[column] = pd.to_numeric(out[column], errors="coerce")
     out["vwap"] = out["vwap"].fillna(out["close"])

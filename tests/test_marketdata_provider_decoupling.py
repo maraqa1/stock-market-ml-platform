@@ -92,6 +92,15 @@ def test_eodhd_normalizes_intraday_rows_to_spec72_schema():
     assert out.loc[0, "vwap"] == 10.5
 
 
+def test_eodhd_normalizes_intraday_unix_seconds():
+    raw = [{"timestamp": 1772461800, "open": 10, "high": 11, "low": 9, "close": 10.5, "volume": 1000}]
+
+    out = normalize_eodhd_intraday_rows(raw, "aaa", "stamp")
+
+    assert out.loc[0, "timestamp"].year == 2026
+    assert out.loc[0, "timestamp"].month == 3
+
+
 def test_eodhd_provider_fetches_intraday_bars_with_unix_window():
     calls = []
 

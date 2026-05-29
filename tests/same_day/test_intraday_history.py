@@ -30,6 +30,27 @@ def test_normalizes_intraday_bars_schema():
     assert out.loc[0, "vwap"] == 10.5
 
 
+def test_normalizes_intraday_unix_seconds():
+    raw = pd.DataFrame(
+        [
+            {
+                "symbol": "AAA",
+                "timestamp": 1772461800,
+                "open": 10,
+                "high": 11,
+                "low": 9,
+                "close": 10.5,
+                "volume": 1000,
+            }
+        ]
+    )
+
+    out = normalize_intraday_bars(raw)
+
+    assert out.loc[0, "timestamp"].year == 2026
+    assert out.loc[0, "timestamp"].month == 3
+
+
 def test_cache_deduplicates_symbol_timestamp(tmp_path):
     store = tmp_path / "bars.csv"
     frame = pd.DataFrame(
