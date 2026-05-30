@@ -35,13 +35,13 @@ This registry maps platform functions to the modules, scripts, migrations, confi
 | Intraday promotion scoring | `src/stockml/intraday/promotion.py`, `promotion_score.py` | `migrations/011_intraday_promotion_log_up.sql` | SPEC 46 |
 | Same-day edge validation | `src/stockml/same_day/labels.py`, `training.py` | reports under `reports/same_day_edge/` | SPEC 72 |
 | Intraday history downloader | `src/stockml/intraday/history.py` | raw intraday store | SPEC 72 support |
-| Same-day feature panel | `src/stockml/same_day/features.py`, `universe.py`, `feature_worker.py` | `migrations/017_intraday_features_up.sql` | SPEC 74 |
+| Same-day feature panel | `src/stockml/same_day/features.py`, `universe.py`, `feature_worker.py`; `scripts/run_same_day_feature_tick.py` | `migrations/017_intraday_features_up.sql` | SPEC 74 |
 | Same-day gates | `src/stockml/same_day/gates.py` | `config/same_day.yaml` | SPEC 76 |
 | Stream arbitration | `src/stockml/arbitration/arbitrator.py`, `conflicts.py` | `migrations/018_arbitration_conflicts_up.sql` | SPEC 76 |
-| Same-day scoring | `src/stockml/same_day/scoring.py`, `score_worker.py` | `migrations/019_same_day_scoring_up.sql` | SPEC 77 |
+| Same-day scoring | `src/stockml/same_day/scoring.py`, `score_worker.py`; `scripts/run_same_day_score_tick.py` | `migrations/019_same_day_scoring_up.sql` | SPEC 77 |
 | Same-day operator view and missed opportunities | `portal/services/same_day_view.py`, `src/stockml/same_day/missed_ops.py`, `scripts/generate_missed_ops_report.py` | `migrations/020_same_day_missed_opportunities_up.sql` | SPEC 78 |
 | Same-day sizing and stream attribution | `src/stockml/trading/position_sizing.py`, `src/stockml/trading/order_planner.py`, `src/stockml/reports/daily.py` | `config/same_day.yaml` | SPEC 79 |
-| Same-day Autopilot promotion contract | `src/stockml/autopilot/same_day_promotion.py`, `src/stockml/autopilot/same_day_auto.py` | `migrations/021_same_day_promotion_evaluations_up.sql`, `config/autopilot.yaml` | SPEC 80 |
+| Same-day Autopilot promotion contract | `src/stockml/autopilot/same_day_promotion.py`, `src/stockml/autopilot/same_day_auto.py`; `scripts/run_same_day_promotion_evaluation.py` | `migrations/021_same_day_promotion_evaluations_up.sql`, `config/autopilot.yaml` | SPEC 80 |
 
 ## Risk, Safety, And EOD
 

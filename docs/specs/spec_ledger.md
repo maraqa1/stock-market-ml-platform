@@ -110,6 +110,7 @@ Core files:
 - `src/stockml/same_day/features.py`
 - `src/stockml/same_day/universe.py`
 - `src/stockml/same_day/feature_worker.py`
+- `scripts/run_same_day_feature_tick.py`
 
 Focused tests:
 - `tests/same_day/test_features.py`
@@ -152,6 +153,7 @@ Core files:
 - `src/stockml/same_day/scoring.py`
 - `src/stockml/same_day/score_worker.py`
 - `src/stockml/same_day/training.py`
+- `scripts/run_same_day_score_tick.py`
 
 Focused tests:
 - `tests/same_day/test_scoring.py`
@@ -195,6 +197,7 @@ Core files:
 - `src/stockml/autopilot/same_day_promotion.py`
 - `src/stockml/autopilot/same_day_auto.py`
 - `portal/templates/autopilot/same_day_promotion.html`
+- `scripts/run_same_day_promotion_evaluation.py`
 
 Focused tests:
 
