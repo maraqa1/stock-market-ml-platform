@@ -1,0 +1,16 @@
+version: 1
+same_day:
+  gates:
+    min_avg_dollar_volume_20d: 20000000
+    min_price: 5
+    max_price: 500
+    min_market_cap: 500000000
+    max_spread_bps: 15
+    max_spread_bps_zscore_20d: 2.0
+    min_signal_age_seconds: 300
+    max_signal_age_seconds: 3600
+    min_continuation_probability: 0.60
+    max_reversal_probability: 0.35
+    max_symbol_attempts_today: 2
+    max_daily_candidates: 20
+    sector_alignment_tolerance_pct: 0.5

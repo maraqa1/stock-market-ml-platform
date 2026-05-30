@@ -446,6 +446,20 @@ intraday_features = Table(
     Index("ix_if_symbol_decision", "symbol", "decision_time"),
 )
 
+arbitration_conflicts = Table(
+    "arbitration_conflicts",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("logged_at", DateTime(timezone=True), nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("multi_day_action", String(50)),
+    Column("same_day_action", String(50)),
+    Column("resolution", String(100), nullable=False),
+    Column("details", JSON, nullable=False),
+    Index("ix_arbitration_conflicts_logged_at", "logged_at"),
+    Index("ix_arbitration_conflicts_symbol_logged_at", "symbol", "logged_at"),
+)
+
 intraday_promotion_log = Table(
     "intraday_promotion_log",
     metadata,

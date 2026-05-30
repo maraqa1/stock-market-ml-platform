@@ -299,6 +299,18 @@ def test_build_order_plan_uses_notional_paper_orders():
     assert plan.iloc[0]["client_order_id"] == "stockml-20260508-AAA-buy"
 
 
+def test_order_plan_preserves_strategy_stream():
+    signals = pd.DataFrame(
+        [trade_signal("DAY", "Long", 0.8, strategy_stream="same_day_momentum", trading_stream="same_day", must_flatten_at_eod=True)]
+    )
+
+    plan = build_order_plan(signals, config(max_orders=1))
+
+    assert plan.iloc[0]["strategy_stream"] == "same_day_momentum"
+    assert plan.iloc[0]["trading_stream"] == "same_day"
+    assert bool(plan.iloc[0]["must_flatten_at_eod"]) is True
+
+
 def test_build_order_plan_returns_empty_when_required_columns_missing():
     plan = build_order_plan(pd.DataFrame([{"ticker": "AAA"}]), config())
     assert plan.empty
