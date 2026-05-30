@@ -30,6 +30,38 @@ def test_cleanup_never_selects_protected_canonical_files(tmp_path):
     assert [path.name for path in selected] == ["advanced_model_latest_predictions_20260501_000000.csv"]
 
 
+def test_cleanup_retains_model_outputs_by_artifact_family(tmp_path):
+    for stamp in ["20260501_000000", "20260502_000000", "20260503_000000"]:
+        _write(tmp_path / "data" / "model_outputs" / f"advanced_model_latest_predictions_{stamp}.csv", "pred")
+        _write(tmp_path / "data" / "model_outputs" / f"advanced_model_signal_table_{stamp}.csv", "signal")
+        _write(tmp_path / "data" / "model_outputs" / f"meta_label_predictions_{stamp}_shard1.csv", "meta1")
+        _write(tmp_path / "data" / "model_outputs" / f"meta_label_predictions_{stamp}_shard2.csv", "meta2")
+
+    selected = stale_files([RetentionPattern("data/model_outputs", "*.csv", keep=2, family_retention=True)], root=tmp_path)
+    names = {path.name for path in selected}
+
+    assert names == {
+        "advanced_model_latest_predictions_20260501_000000.csv",
+        "advanced_model_signal_table_20260501_000000.csv",
+        "meta_label_predictions_20260501_000000_shard1.csv",
+        "meta_label_predictions_20260501_000000_shard2.csv",
+    }
+
+
+def test_cleanup_retains_portal_outputs_by_artifact_family(tmp_path):
+    for stamp in ["20260501_000000", "20260502_000000", "20260503_000000"]:
+        _write(tmp_path / "data" / "portal_outputs" / f"07_portal_signals_{stamp}.csv", "gold")
+        _write(tmp_path / "data" / "portal_outputs" / f"08_alpaca_paper_candidate_pool_{stamp}.csv", "pool")
+
+    selected = stale_files([RetentionPattern("data/portal_outputs", "*.csv", keep=2, family_retention=True)], root=tmp_path)
+    names = {path.name for path in selected}
+
+    assert names == {
+        "07_portal_signals_20260501_000000.csv",
+        "08_alpaca_paper_candidate_pool_20260501_000000.csv",
+    }
+
+
 def test_cleanup_preserves_configured_number_of_gold_files(tmp_path):
     for idx in range(4):
         _write(tmp_path / "data" / "gold" / f"06_us_gold_ml_dataset_2026052{idx}_000000.csv", str(idx))

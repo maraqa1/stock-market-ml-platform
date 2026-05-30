@@ -17,6 +17,7 @@ class RetentionPattern:
     pattern: str
     keep: int
     recursive: bool = False
+    family_retention: bool = False
 
 
 DEFAULT_PATTERNS = [
@@ -39,9 +40,9 @@ DEFAULT_PATTERNS = [
     RetentionPattern("data/interim", "00_candidate_funnel_artifacts_*.csv", 10),
     RetentionPattern("data/processed", "*.csv", 3),
     RetentionPattern("data/gold", "06_us_gold_ml_dataset_*.csv", 2),
-    RetentionPattern("data/model_outputs", "*.csv", 5),
-    RetentionPattern("data/model_outputs", "*.json", 5),
-    RetentionPattern("data/portal_outputs", "*.csv", 5),
+    RetentionPattern("data/model_outputs", "*.csv", 5, family_retention=True),
+    RetentionPattern("data/model_outputs", "*.json", 5, family_retention=True),
+    RetentionPattern("data/portal_outputs", "*.csv", 5, family_retention=True),
     RetentionPattern("data/trading", "*.csv", 10, recursive=True),
     RetentionPattern("reports", "*.csv", 10, recursive=True),
 ]
@@ -57,6 +58,7 @@ PROTECTED_NAMES = {
 }
 
 STAMP_PATTERN = re.compile(r"(20\d{6}_\d{6})")
+SHARD_PATTERN = re.compile(r"_shard\d+")
 
 
 def _artifact_sort_key(path: Path) -> tuple[str, float, str]:
@@ -80,12 +82,26 @@ def _files_for(pattern: RetentionPattern, root: Path) -> list[Path]:
     return sorted(files, key=_artifact_sort_key, reverse=True)
 
 
+def _family_key(path: Path) -> str:
+    stem = STAMP_PATTERN.sub("{stamp}", path.stem)
+    stem = SHARD_PATTERN.sub("_shard{n}", stem)
+    return f"{path.parent}:{stem}{path.suffix}"
+
+
 def stale_files(patterns: Iterable[RetentionPattern], root: Path = ROOT) -> list[Path]:
     stale: dict[Path, None] = {}
     for pattern in patterns:
         files = _files_for(pattern, root)
-        for path in files[max(pattern.keep, 0):]:
-            stale[path] = None
+        if pattern.family_retention:
+            families: dict[str, list[Path]] = {}
+            for path in files:
+                families.setdefault(_family_key(path), []).append(path)
+            for family_files in families.values():
+                for path in family_files[max(pattern.keep, 0):]:
+                    stale[path] = None
+        else:
+            for path in files[max(pattern.keep, 0):]:
+                stale[path] = None
     return sorted(stale, key=lambda path: path.stat().st_size, reverse=True)
 
 
@@ -112,41 +128,41 @@ def main() -> int:
     args = parser.parse_args()
 
     patterns = [
-        RetentionPattern(p.directory, p.pattern, args.keep_interim if p.directory == "data/interim" else p.keep, p.recursive)
+        RetentionPattern(p.directory, p.pattern, args.keep_interim if p.directory == "data/interim" else p.keep, p.recursive, p.family_retention)
         for p in DEFAULT_PATTERNS
     ]
     patterns = [
-        RetentionPattern(p.directory, p.pattern, args.keep_raw_delta, p.recursive)
+        RetentionPattern(p.directory, p.pattern, args.keep_raw_delta, p.recursive, p.family_retention)
         if p.directory == "data/raw" and p.pattern == "03_us_price_history_delta_*.csv"
         else p
         for p in patterns
     ]
     patterns = [
-        RetentionPattern(p.directory, p.pattern, args.keep_processed, p.recursive)
+        RetentionPattern(p.directory, p.pattern, args.keep_processed, p.recursive, p.family_retention)
         if p.directory == "data/processed"
         else p
         for p in patterns
     ]
     patterns = [
-        RetentionPattern(p.directory, p.pattern, args.keep_gold, p.recursive)
+        RetentionPattern(p.directory, p.pattern, args.keep_gold, p.recursive, p.family_retention)
         if p.directory == "data/gold"
         else p
         for p in patterns
     ]
     patterns = [
-        RetentionPattern(p.directory, p.pattern, args.keep_model, p.recursive)
+        RetentionPattern(p.directory, p.pattern, args.keep_model, p.recursive, p.family_retention)
         if p.directory == "data/model_outputs"
         else p
         for p in patterns
     ]
     patterns = [
-        RetentionPattern(p.directory, p.pattern, args.keep_portal, p.recursive)
+        RetentionPattern(p.directory, p.pattern, args.keep_portal, p.recursive, p.family_retention)
         if p.directory == "data/portal_outputs"
         else p
         for p in patterns
     ]
     patterns = [
-        RetentionPattern(p.directory, p.pattern, args.keep_trading, p.recursive)
+        RetentionPattern(p.directory, p.pattern, args.keep_trading, p.recursive, p.family_retention)
         if p.directory == "data/trading"
         else p
         for p in patterns
