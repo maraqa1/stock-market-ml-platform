@@ -93,7 +93,11 @@ def score_tick(
                 reversal_probability=score.reversal_probability,
                 same_day_attempts_today_for_symbol=attempts,
                 same_day_candidates_today_count=daily_count,
-                engine=db,
+                # Avoid opening a second connection against the active write
+                # transaction. SQLite in-memory tests share one DBAPI
+                # connection, so a kill-switch read on the engine can roll
+                # back uncommitted signal rows from earlier symbols.
+                engine=None,
                 now=stamp,
             )
             gate_outcome = "passed" if gate_result.passed else f"blocked:{gate_result.reason}"
