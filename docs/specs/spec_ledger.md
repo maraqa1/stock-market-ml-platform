@@ -4,6 +4,12 @@ This ledger records the specifications used to build the StockML paper-trading p
 
 Live trading status: **permanently disabled**. Same-day work is paper-only.
 
+Companion rebuild documents:
+
+- `docs/specs/platform_blueprint.md`
+- `docs/specs/function_registry.md`
+- `docs/specs/spec_pack_same_day_72_80.md`
+
 ## Historical Core Specs
 
 | Spec | Title | Status | Evidence |

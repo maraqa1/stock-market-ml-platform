@@ -6,6 +6,8 @@ This directory is the canonical home for platform specifications and the functio
 
 - `spec_ledger.md` records implemented, planned, partial, and reconstructed specs.
 - `function_registry.md` maps platform capabilities to modules, scripts, configs, migrations, and tests.
+- `platform_blueprint.md` describes the end-to-end architecture and rebuild contract.
+- `spec_pack_same_day_72_80.md` preserves the same-day momentum spec pack.
 
 ## Maintenance Rule
 
