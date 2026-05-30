@@ -1,5 +1,11 @@
 # StockML Spec Archive
 
+Canonical spec records now live in `docs/specs/`.
+
+- `docs/specs/spec_ledger.md` is the active implementation ledger.
+- `docs/specs/function_registry.md` maps platform functions to code, migrations, configs, tests, and specs.
+- This file remains as the legacy archive for older reconstructed notes.
+
 This file is the durable ledger for specs that have been implemented or queued in
 the paper-trading platform. Some older entries are reconstructed from commit
 history, tests, migrations, and operator-session evidence; those entries are
