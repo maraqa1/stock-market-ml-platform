@@ -58,7 +58,7 @@ def test_contract_evaluation_writes_daily_row():
     with engine.connect() as conn:
         rows = conn.execute(select(same_day_promotion_evaluations)).mappings().all()
     assert len(rows) == 1
-    assert rows[0]["evaluated_at"] == NOW
+    assert rows[0]["evaluated_at"].replace(tzinfo=timezone.utc) == NOW
     assert rows[0]["criteria_met"] == result["criteria_met"]
     assert rows[0]["activated"] is False
     assert {row["name"] for row in rows[0]["criteria_results"]} == {
