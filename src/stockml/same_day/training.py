@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -21,6 +22,36 @@ FEATURE_COLUMNS = [
     "intraday_range_position",
     "time_of_day_bucket",
 ]
+FULL_FEATURE_COLUMNS = [
+    "return_5m_pct",
+    "return_15m_pct",
+    "return_30m_pct",
+    "return_60m_pct",
+    "relative_volume",
+    "dollar_volume_15m",
+    "dollar_volume_today_so_far",
+    "liquidity_ratio",
+    "spread_bps",
+    "spread_bps_zscore_20d",
+    "quote_age_sec",
+    "vwap_distance_bps_5m",
+    "intraday_range_position",
+    "pullback_from_high_pct",
+    "pullback_from_low_pct",
+    "consecutive_5m_bars_in_direction",
+    "range_open_to_now_pct",
+    "gap_pct_from_prior_close",
+    "gap_direction",
+    "seconds_to_open",
+    "seconds_to_close",
+    "time_of_day_bucket",
+    "seconds_since_signal_first_fired",
+    "spy_intraday_move_pct",
+    "sector_etf_intraday_move_pct",
+    "prior_day_relative_volume",
+    "volatility_20d",
+    "atr_5m",
+]
 
 
 @dataclass(frozen=True)
@@ -30,6 +61,13 @@ class Fold:
     train_end: pd.Timestamp
     test_start: pd.Timestamp
     test_end: pd.Timestamp
+
+
+@dataclass(frozen=True)
+class PromotionDecision:
+    promoted: bool
+    reasons: list[str]
+    metrics: dict[str, Any]
 
 
 def _utc(value: Any) -> pd.Timestamp:
@@ -542,3 +580,47 @@ def run_same_day_edge_measurement(bars: pd.DataFrame, *, report_dir: Path | None
     path = output_dir / f"{stamp or timestamp()}.md"
     path.write_text(report, encoding="utf-8")
     return path
+
+
+def write_model_lineage(
+    output_dir: Path,
+    *,
+    model_id: str,
+    training_data_sha: str,
+    hyperparameters: dict[str, Any],
+    validation_metrics: dict[str, Any],
+    feature_list: list[str],
+    direction: str = "both",
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "model_id": model_id,
+        "direction": direction,
+        "training_data_sha": training_data_sha,
+        "hyperparameters": hyperparameters,
+        "validation_metrics": validation_metrics,
+        "feature_list": feature_list,
+    }
+    path = output_dir / f"{model_id}_{direction}_lineage.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def evaluate_model_promotion(
+    new_metrics: dict[str, Any],
+    current_metrics: dict[str, Any] | None = None,
+    *,
+    calibration_error_limit: float = 0.08,
+    max_feature_importance_share: float = 0.40,
+) -> PromotionDecision:
+    current = current_metrics or {}
+    reasons: list[str] = []
+    if float(new_metrics.get("auc", 0.0)) < float(current.get("auc", 0.0)):
+        reasons.append("auc_below_current")
+    if float(new_metrics.get("top_bucket_calibration_error", 1.0)) > calibration_error_limit:
+        reasons.append("calibration_error_above_limit")
+    if float(new_metrics.get("max_feature_importance_share", 1.0)) > max_feature_importance_share:
+        reasons.append("feature_importance_concentration")
+    if float(new_metrics.get("mean_net_bps_at_060", -1e9)) < float(current.get("mean_net_bps_at_060", -1e9)):
+        reasons.append("mean_net_bps_below_current")
+    return PromotionDecision(promoted=not reasons, reasons=reasons, metrics=dict(new_metrics))

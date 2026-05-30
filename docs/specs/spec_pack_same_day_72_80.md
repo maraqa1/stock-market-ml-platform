@@ -294,17 +294,17 @@ PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
 
 ## SPEC 77 - Same-Day Model Scoring And Candidate Generation
 
-Status: planned.
+Status: implemented-pending-vm.
 
 Goal: score the same-day model every 5 minutes using SPEC 74 features, apply SPEC 76 gates, and produce same-day candidate artifacts.
 
-Expected files:
+Core files:
 
 - `src/stockml/same_day/training.py`
 - `src/stockml/same_day/scoring.py`
 - `src/stockml/same_day/score_worker.py`
 
-Expected tables:
+Tables:
 
 - `same_day_candidates`
 - `same_day_signal_log`
@@ -318,6 +318,11 @@ Expected behavior:
 - Signal log row for every universe symbol each tick.
 - Candidate rows only for gate-passed signals.
 - No order submission.
+
+Focused tests:
+
+- `tests/same_day/test_scoring.py`
+- `tests/test_pipeline_event_schema.py`
 
 SPEC 77 must not begin until SPEC 76 VM result is recorded as green.
 

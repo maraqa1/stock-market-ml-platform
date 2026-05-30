@@ -38,6 +38,7 @@ This registry maps platform functions to the modules, scripts, migrations, confi
 | Same-day feature panel | `src/stockml/same_day/features.py`, `universe.py`, `feature_worker.py` | `migrations/017_intraday_features_up.sql` | SPEC 74 |
 | Same-day gates | `src/stockml/same_day/gates.py` | `config/same_day.yaml` | SPEC 76 |
 | Stream arbitration | `src/stockml/arbitration/arbitrator.py`, `conflicts.py` | `migrations/018_arbitration_conflicts_up.sql` | SPEC 76 |
+| Same-day scoring | `src/stockml/same_day/scoring.py`, `score_worker.py` | `migrations/019_same_day_scoring_up.sql` | SPEC 77 |
 
 ## Risk, Safety, And EOD
 
@@ -75,7 +76,7 @@ These are planned by SPEC 77-80 and intentionally not implemented yet.
 
 | Spec | Planned Function | Expected Location |
 | --- | --- | --- |
-| 77 | Same-day production training, scoring, candidates, signal log | `src/stockml/same_day/training.py`, `scoring.py`, `score_worker.py`; migrations for `same_day_candidates`, `same_day_signal_log` |
+| 77 | Same-day production training, scoring, candidates, signal log | `src/stockml/same_day/training.py`, `scoring.py`, `score_worker.py`; `migrations/019_same_day_scoring_up.sql` |
 | 78 | Same-day operator UI and missed-opportunity report | portal same-day views/services; `src/stockml/same_day/missed_ops.py` |
 | 79 | Stream attribution and same-day sizing | `src/stockml/order_planner/sizing.py` or existing sizing module; `src/stockml/reports/daily.py`; `config/same_day.yaml` |
 | 80 | Same-day Autopilot promotion contract | `src/stockml/autopilot/same_day_promotion.py`, `same_day_auto.py`; promotion UI; migration `same_day_promotion_evaluations` |

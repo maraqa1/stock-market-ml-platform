@@ -69,7 +69,7 @@ Execution gate: SPEC 72 must produce a report, operator must read it, and operat
 | 74 | Intraday feature panel | implemented | `499debe` | `17 passed` on VM |
 | 75 | Per-position EOD flatten extension | implemented | `83295c0` | `39 passed` on VM |
 | 76 | Same-day gates and arbitration | implemented-pending-vm | `52c1cd2` | Awaiting VM result |
-| 77 | Same-day model scoring and candidate generation | planned | Not started | Blocked until SPEC 76 VM verification is recorded |
+| 77 | Same-day model scoring and candidate generation | implemented-pending-vm | local commit pending | Requires VM verification |
 | 78 | Same-day operator UI and missed-opportunity report | planned | Not started | Must follow SPEC 77 |
 | 79 | Same-day stream attribution and position sizing | planned | Not started | Must follow SPEC 78 |
 | 80 | Same-day Autopilot promotion contract | planned | Not started | Must follow SPEC 79 and Paper Assist data accumulation |
@@ -145,6 +145,18 @@ Focused tests:
 - `tests/test_alpaca_order_planner.py`
 - `tests/test_pipeline_event_schema.py`
 
+### SPEC 77
+
+Core files:
+- `migrations/019_same_day_scoring_up.sql`
+- `src/stockml/same_day/scoring.py`
+- `src/stockml/same_day/score_worker.py`
+- `src/stockml/same_day/training.py`
+
+Focused tests:
+- `tests/same_day/test_scoring.py`
+- `tests/test_pipeline_event_schema.py`
+
 ## Required Update Before SPEC 77
 
 Record the VM result for SPEC 76:
@@ -161,3 +173,18 @@ PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
 ```
 
 If green, update SPEC 76 status from `implemented-pending-vm` to `implemented` and record the pass count.
+
+## Required Update Before SPEC 78
+
+Record the VM result for SPEC 77:
+
+```bash
+cd /home/massa/stock-market-ml-platform
+git pull --ff-only origin dev
+
+PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
+  tests/same_day/test_scoring.py \
+  tests/same_day/test_gates.py \
+  tests/arbitration/test_arbitrator.py \
+  tests/test_pipeline_event_schema.py
+```

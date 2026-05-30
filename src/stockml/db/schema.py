@@ -50,6 +50,7 @@ EOD_STATES = ("review", "trim", "observe", "flatten", "verify", "postclose")
 EOD_DISPOSITIONS = ("weak", "stale", "winner_hold", "none")
 INTRADAY_CANDIDATE_SNAPSHOT_STATUS = ("ok", "data_unavailable", "provider_error")
 INTRADAY_FEATURE_STATUS = ("ok", "data_unavailable", "provider_error", "halted", "out_of_universe")
+SAME_DAY_DIRECTIONS = ("long", "short")
 INTRADAY_PROMOTION_VERDICTS = ("block", "watch", "promote_to_selection", "promote_to_selection_strong")
 ROTATION_RECOMMENDATION_VERDICTS = ("proposed", "confirmed", "overridden", "expired", "blocked")
 ROTATION_REASONS = ("HIGHER_PROMOTION_SCORE", "HELD_SIGNAL_STALE", "HELD_NEGATIVE_TREND", "HELD_DROPPED_FROM_SHORTLIST")
@@ -458,6 +459,49 @@ arbitration_conflicts = Table(
     Column("details", JSON, nullable=False),
     Index("ix_arbitration_conflicts_logged_at", "logged_at"),
     Index("ix_arbitration_conflicts_symbol_logged_at", "symbol", "logged_at"),
+)
+
+same_day_candidates = Table(
+    "same_day_candidates",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("generated_at", DateTime(timezone=True), nullable=False),
+    Column("decision_time", DateTime(timezone=True), nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("direction", String(10), nullable=False),
+    Column("continuation_probability", Float, nullable=False),
+    Column("reversal_probability", Float, nullable=False),
+    Column("model_id", String(200), nullable=False),
+    Column("features_id", Integer, ForeignKey("intraday_features.id"), nullable=False),
+    Column("same_day_confidence", Float),
+    Column("same_day_reason", Text, nullable=False),
+    Column("strategy_stream", String(50), nullable=False, default="same_day_momentum"),
+    Column("max_hold_days", Integer, nullable=False, default=1),
+    Column("must_flatten_eod", Boolean, nullable=False, default=True),
+    Column("arbitration_outcome", String(100)),
+    CheckConstraint(_in_values("direction", SAME_DAY_DIRECTIONS), name="ck_same_day_candidates_direction"),
+    CheckConstraint(_in_values("strategy_stream", STRATEGY_STREAMS), name="ck_same_day_candidates_strategy_stream"),
+    UniqueConstraint("symbol", "decision_time", name="uq_same_day_candidates_symbol_decision_time"),
+    Index("ix_sdc_decision_time", "decision_time"),
+    Index("ix_sdc_symbol_decision", "symbol", "decision_time"),
+)
+
+same_day_signal_log = Table(
+    "same_day_signal_log",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("logged_at", DateTime(timezone=True), nullable=False),
+    Column("decision_time", DateTime(timezone=True), nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("direction", String(10), nullable=False),
+    Column("continuation_probability", Float, nullable=False),
+    Column("reversal_probability", Float, nullable=False),
+    Column("gate_outcome", String(100), nullable=False),
+    Column("block_reason", String(100)),
+    Column("features_id", Integer, ForeignKey("intraday_features.id")),
+    CheckConstraint(_in_values("direction", SAME_DAY_DIRECTIONS), name="ck_same_day_signal_log_direction"),
+    Index("ix_sdsl_decision_time", "decision_time"),
+    Index("ix_sdsl_symbol", "symbol", "decision_time"),
 )
 
 intraday_promotion_log = Table(
