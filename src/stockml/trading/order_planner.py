@@ -10,6 +10,7 @@ from stockml.models.meta_labeling import load_meta_label_config
 from stockml.common.paths import MODEL_OUTPUTS_DIR, latest_file
 from stockml.trading.config import AlpacaConfig
 from stockml.trading.order_builder import order_row
+from stockml.trading.position_sizing import apply_same_day_sizing
 from stockml.trading.trade_quality_gate import apply_trade_quality_gate
 
 
@@ -230,6 +231,8 @@ def build_candidate_pool(
     config: AlpacaConfig,
     price_snapshot: Optional[pd.DataFrame] = None,
     metadata: Optional[pd.DataFrame] = None,
+    open_positions: Optional[pd.DataFrame] = None,
+    same_day_realized_pnl_today: float = 0.0,
 ) -> pd.DataFrame:
     filtered = _ranked_shortlist(signals, config)
     if filtered.empty:
@@ -250,6 +253,12 @@ def build_candidate_pool(
         return pool
     pool["candidate_rank"] = range(1, len(pool) + 1)
     pool["candidate_status"] = pool["trade_quality_status"]
+    pool = apply_same_day_sizing(
+        pool,
+        account_equity=config.account_equity,
+        open_positions=open_positions,
+        same_day_realized_pnl_today=same_day_realized_pnl_today,
+    )
     return pool
 
 
@@ -292,8 +301,17 @@ def build_order_plan(
     config: AlpacaConfig,
     price_snapshot: Optional[pd.DataFrame] = None,
     metadata: Optional[pd.DataFrame] = None,
+    open_positions: Optional[pd.DataFrame] = None,
+    same_day_realized_pnl_today: float = 0.0,
 ) -> pd.DataFrame:
-    candidate_pool = build_candidate_pool(signals, config, price_snapshot=price_snapshot, metadata=metadata)
+    candidate_pool = build_candidate_pool(
+        signals,
+        config,
+        price_snapshot=price_snapshot,
+        metadata=metadata,
+        open_positions=open_positions,
+        same_day_realized_pnl_today=same_day_realized_pnl_today,
+    )
     if candidate_pool.empty:
         return pd.DataFrame()
     gated = _select_final_orders(candidate_pool, config)

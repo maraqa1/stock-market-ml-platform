@@ -43,7 +43,7 @@ def test_daily_report_builds_all_sections_and_persists_row():
                     "event_at": stamp,
                     "event_type": "filled",
                     "source": "paper_autopilot",
-                    "details": {"symbol": "AAA", "realized_pnl": 12.5, "return_pct": 1.25, "account_equity": 1030, "unrealized_pnl": 5},
+                    "details": {"symbol": "AAA", "strategy_stream": "same_day_momentum", "realized_pnl": 12.5, "return_pct": 1.25, "account_equity": 1030, "unrealized_pnl": 5},
                 },
             ],
         )
@@ -79,7 +79,7 @@ def test_daily_report_builds_all_sections_and_persists_row():
                 size_usd=100,
                 verdict="opened",
                 order_id="order-1",
-                details={},
+                details={"strategy_stream": "same_day_momentum"},
             )
         )
         conn.execute(
@@ -110,6 +110,9 @@ def test_daily_report_builds_all_sections_and_persists_row():
     assert report["sections"]["account_state"]["total_pnl"] == 17.5
     assert report["sections"]["trading_activity"]["orders_submitted"] == 2
     assert report["sections"]["autopilot_actions"]["auto_opens"]["count"] == 1
+    assert report["sections"]["stream_attribution"]["same_day_momentum"]["auto_opens_count"] == 1
+    assert report["sections"]["stream_attribution"]["same_day_momentum"]["realized_pnl"] == 12.5
+    assert "multi_day_forecast" in report["sections"]["stream_attribution"]
     assert report["sections"]["candidate_flow"]["promotions_to_selection_strong"] == 1
     assert report["sections"]["missed_opportunities"] == []
     assert {row["code"] for row in report["sections"]["next_day_recommendations"]} == {"KILL_SWITCH_REVIEW", "ROTATION_REVIEW"}

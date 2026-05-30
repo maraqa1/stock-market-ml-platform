@@ -162,6 +162,43 @@ def _autopilot_section(position_rows: list[dict[str, Any]], open_rows: list[dict
     }
 
 
+def _stream(row: dict[str, Any]) -> str:
+    details = _details(row)
+    value = details.get("strategy_stream") or details.get("trading_stream") or row.get("strategy_stream")
+    text = str(value or "multi_day_forecast").strip().lower()
+    if text in {"same_day", "same_day_momentum"}:
+        return "same_day_momentum"
+    return "multi_day_forecast"
+
+
+def _stream_attribution_section(position_rows: list[dict[str, Any]], open_rows: list[dict[str, Any]], kill_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    out: dict[str, dict[str, Any]] = {}
+    for stream in ["multi_day_forecast", "same_day_momentum"]:
+        stream_position_rows = [row for row in position_rows if _stream(row) == stream]
+        stream_open_rows = [row for row in open_rows if _stream(row) == stream]
+        realized = [_float(_details(row).get("realized_pnl")) for row in stream_position_rows if _details(row).get("realized_pnl") is not None]
+        wins = [value for value in realized if value > 0]
+        closes = [row for row in stream_position_rows if str(row.get("event_type")) in {"monitor_close", "operator_close", "submitted"}]
+        out[stream] = {
+            "auto_closes_count": len(closes),
+            "auto_opens_count": sum(1 for row in stream_open_rows if row.get("verdict") == "opened"),
+            "paper_assist_opens_count": sum(1 for row in stream_open_rows if row.get("verdict") in {"confirmed", "paper_assist_opened"}),
+            "realized_pnl": round(sum(realized), 2),
+            "unrealized_pnl_delta": round(sum(_float(_details(row).get("unrealized_pnl_delta")) for row in stream_position_rows), 2),
+            "number_of_trades": len(realized),
+            "hit_rate": round(len(wins) / len(realized) * 100, 2) if realized else None,
+            "average_hold_time": "",
+            "average_slippage_bps": round(_avg([_float(_details(row).get("slippage_bps")) for row in stream_position_rows]), 4),
+            "kill_switch_trips": sum(1 for row in kill_rows if stream in str(row.get("payload") or row.get("switch_name") or "")),
+        }
+    out["summary"] = {
+        "total_realized_pnl": round(sum(_float(_details(row).get("realized_pnl")) for row in position_rows), 2),
+        "conflicts": 0,
+        "total_kill_switch_trips": sum(1 for row in kill_rows if row.get("event_type") == "tripped"),
+    }
+    return out
+
+
 def _score_bands(open_rows: list[dict[str, Any]]) -> dict[str, int]:
     bands = {"0.65-0.75": 0, "0.75-0.85": 0, "0.85+": 0}
     for row in open_rows:
@@ -275,6 +312,7 @@ def build_daily_report(session_date: date | str | None = None, *, engine: Engine
     account = _account_section(position_rows)
     activity = _activity_section(position_rows, open_rows)
     autopilot = _autopilot_section(position_rows, open_rows, rotation_rows, kill_rows, eod_rows)
+    stream_attribution = _stream_attribution_section(position_rows, open_rows, kill_rows)
     candidates = _candidate_section(promotion_rows)
     best_worst = _best_worst_section(position_rows)
     missed = _missed_opportunities(promotion_rows, open_rows)
@@ -293,6 +331,7 @@ def build_daily_report(session_date: date | str | None = None, *, engine: Engine
             "account_state": account,
             "trading_activity": activity,
             "autopilot_actions": autopilot,
+            "stream_attribution": stream_attribution,
             "candidate_flow": candidates,
             "best_worst_trades": best_worst,
             "missed_opportunities": missed,
@@ -347,6 +386,7 @@ def get_or_build_report(session_date: date | str, *, engine: Engine | None = Non
                 "account_state": _account_section([]),
                 "trading_activity": _activity_section([], []),
                 "autopilot_actions": _autopilot_section([], [], [], [], []),
+                "stream_attribution": _stream_attribution_section([], [], []),
                 "candidate_flow": _candidate_section([]),
                 "best_worst_trades": _best_worst_section([]),
                 "missed_opportunities": [],

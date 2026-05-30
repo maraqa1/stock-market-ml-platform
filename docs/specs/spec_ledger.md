@@ -70,8 +70,8 @@ Execution gate: SPEC 72 must produce a report, operator must read it, and operat
 | 75 | Per-position EOD flatten extension | implemented | `83295c0` | `39 passed` on VM |
 | 76 | Same-day gates and arbitration | implemented-pending-vm | `52c1cd2` | Awaiting VM result |
 | 77 | Same-day model scoring and candidate generation | implemented | `0af7713`, `c4ce576` | `38 passed` on VM |
-| 78 | Same-day operator UI and missed-opportunity report | implemented-pending-vm | local commit pending | Requires VM verification |
-| 79 | Same-day stream attribution and position sizing | planned | Not started | Must follow SPEC 78 |
+| 78 | Same-day operator UI and missed-opportunity report | implemented | `14de50e` | `66 passed` on VM |
+| 79 | Same-day stream attribution and position sizing | implemented-pending-vm | local commit pending | Requires VM verification |
 | 80 | Same-day Autopilot promotion contract | planned | Not started | Must follow SPEC 79 and Paper Assist data accumulation |
 
 ## Same-Day Pack Acceptance State
@@ -172,6 +172,20 @@ Focused tests:
 - `tests/test_portal_routes.py`
 - `tests/test_pipeline_event_schema.py`
 
+### SPEC 79
+
+Core files:
+- `config/same_day.yaml`
+- `src/stockml/trading/position_sizing.py`
+- `src/stockml/trading/order_planner.py`
+- `src/stockml/autopilot/policy.py`
+- `src/stockml/reports/daily.py`
+
+Focused tests:
+- `tests/order_planner/test_same_day_sizing.py`
+- `tests/autopilot/test_same_day_policy.py`
+- `tests/test_daily_reports.py`
+
 ## Required Update Before SPEC 77
 
 Record the VM result for SPEC 76:
@@ -189,16 +203,18 @@ PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
 
 If green, update SPEC 76 status from `implemented-pending-vm` to `implemented` and record the pass count.
 
-## Required Update Before SPEC 79
+## Required Update Before SPEC 80
 
-Record the VM result for SPEC 78:
+Record the VM result for SPEC 79:
 
 ```bash
 cd /home/massa/stock-market-ml-platform
 git pull --ff-only origin dev
 
 PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
-  tests/same_day/test_missed_ops.py \
-  tests/test_portal_routes.py \
-  tests/test_pipeline_event_schema.py
+  tests/order_planner/test_same_day_sizing.py \
+  tests/autopilot/test_same_day_policy.py \
+  tests/test_daily_reports.py \
+  tests/test_position_sizing.py \
+  tests/test_alpaca_order_planner.py
 ```

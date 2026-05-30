@@ -359,7 +359,7 @@ Focused tests:
 
 ## SPEC 79 - Stream Attribution And Position Sizing
 
-Status: planned.
+Status: implemented-pending-vm.
 
 Goal: stream-specific sizing, stream attribution in daily reports, and same-day daily loss caps.
 
@@ -377,6 +377,20 @@ Same-day stops:
 - per-trade stop loss: -2% or 1.5 x ATR_5m, whichever is tighter
 - trailing activates at +1.5%, gives back 0.7%
 - time stop exits by T-30 before close
+
+Core files:
+
+- `config/same_day.yaml`
+- `src/stockml/trading/position_sizing.py`
+- `src/stockml/trading/order_planner.py`
+- `src/stockml/autopilot/policy.py`
+- `src/stockml/reports/daily.py`
+
+Focused tests:
+
+- `tests/order_planner/test_same_day_sizing.py`
+- `tests/autopilot/test_same_day_policy.py`
+- `tests/test_daily_reports.py`
 
 ## SPEC 80 - Same-Day Autopilot Promotion Contract
 

@@ -14,3 +14,15 @@ same_day:
     max_symbol_attempts_today: 2
     max_daily_candidates: 20
     sector_alignment_tolerance_pct: 0.5
+  sizing:
+    max_single_position_pct_of_equity: 0.05
+    default_position_pct_of_equity: 0.03
+    default_position_value_cap_usd: 100
+    max_concurrent_positions: 3
+    max_total_exposure_pct: 0.15
+    min_account_equity: 250
+    max_loss_per_day_usd: -50
+    stop_loss_pct: 0.02
+    atr_stop_multiple: 1.5
+    trailing_activation_pct: 0.015
+    trailing_giveback_pct: 0.007

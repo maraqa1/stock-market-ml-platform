@@ -35,6 +35,26 @@
     <div class="zone__body">{{ table([sections.autopilot_actions]) }}</div>
   </section>
 
+  <section class="zone trading-zone" data-zone="report-stream-attribution">
+    <div class="zone__header"><span>Stream Attribution</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
+    <div class="zone__body">
+      {% set stream_rows = [] %}
+      {% set attribution = sections.stream_attribution or {"summary": {}} %}
+      {% for stream, payload in attribution.items() %}
+        {% if stream != "summary" %}
+          {% set row = {"stream": stream} %}
+          {% for key, value in payload.items() %}
+            {% set _ = row.update({key: value}) %}
+          {% endfor %}
+          {% set _ = stream_rows.append(row) %}
+        {% endif %}
+      {% endfor %}
+      {{ table(stream_rows) }}
+      <h3>Cross-stream summary</h3>
+      {{ table([attribution.summary or {}]) }}
+    </div>
+  </section>
+
   <section class="zone trading-zone" data-zone="report-candidates">
     <div class="zone__header"><span>Candidate Flow</span><span class="zone__header-meta">{{ report.computed_at }}</span></div>
     <div class="zone__body">{{ table([sections.candidate_flow]) }}</div>
