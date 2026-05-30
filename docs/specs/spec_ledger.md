@@ -68,11 +68,11 @@ Execution gate: SPEC 72 must produce a report, operator must read it, and operat
 | 73 | Strategy stream column and per-position EOD policy | implemented | `def2713` | `64 passed` on VM |
 | 74 | Intraday feature panel | implemented | `499debe` | `17 passed` on VM |
 | 75 | Per-position EOD flatten extension | implemented | `83295c0` | `39 passed` on VM |
-| 76 | Same-day gates and arbitration | implemented-pending-vm | `52c1cd2` | Awaiting VM result |
+| 76 | Same-day gates and arbitration | implemented | `52c1cd2` | Covered by SPEC 77 VM run, `38 passed` |
 | 77 | Same-day model scoring and candidate generation | implemented | `0af7713`, `c4ce576` | `38 passed` on VM |
 | 78 | Same-day operator UI and missed-opportunity report | implemented | `14de50e` | `66 passed` on VM |
-| 79 | Same-day stream attribution and position sizing | implemented-pending-vm | local commit pending | Requires VM verification |
-| 80 | Same-day Autopilot promotion contract | planned | Not started | Must follow SPEC 79 and Paper Assist data accumulation |
+| 79 | Same-day stream attribution and position sizing | implemented | `5eb0aea` | `34 passed` on VM |
+| 80 | Same-day Autopilot promotion contract | implemented-pending-vm | local commit pending | Requires VM verification |
 
 ## Same-Day Pack Acceptance State
 
@@ -186,35 +186,26 @@ Focused tests:
 - `tests/autopilot/test_same_day_policy.py`
 - `tests/test_daily_reports.py`
 
-## Required Update Before SPEC 77
+### SPEC 80
 
-Record the VM result for SPEC 76:
+Core files:
 
-```bash
-cd /home/massa/stock-market-ml-platform
-git pull --ff-only origin dev
+- `config/autopilot.yaml`
+- `migrations/021_same_day_promotion_evaluations_up.sql`
+- `src/stockml/autopilot/same_day_promotion.py`
+- `src/stockml/autopilot/same_day_auto.py`
+- `portal/templates/autopilot/same_day_promotion.html`
+
+Focused tests:
+
+- `tests/autopilot/test_same_day_promotion.py`
+- `tests/test_portal_routes.py`
+- `tests/test_pipeline_event_schema.py`
+
+Required VM verification:
 
 PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
-  tests/same_day/test_gates.py \
-  tests/arbitration/test_arbitrator.py \
-  tests/test_alpaca_order_planner.py \
+  tests/autopilot/test_same_day_promotion.py \
+  tests/test_portal_routes.py \
   tests/test_pipeline_event_schema.py
-```
-
-If green, update SPEC 76 status from `implemented-pending-vm` to `implemented` and record the pass count.
-
-## Required Update Before SPEC 80
-
-Record the VM result for SPEC 79:
-
-```bash
-cd /home/massa/stock-market-ml-platform
-git pull --ff-only origin dev
-
-PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
-  tests/order_planner/test_same_day_sizing.py \
-  tests/autopilot/test_same_day_policy.py \
-  tests/test_daily_reports.py \
-  tests/test_position_sizing.py \
-  tests/test_alpaca_order_planner.py
 ```

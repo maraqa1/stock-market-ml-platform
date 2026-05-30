@@ -41,6 +41,7 @@ from portal.services.trading_service import lifecycle_context, position_action, 
 from portal.services.universe_service import universe_context
 from portal.services.validation import table_csv as validation_table_csv, validation_context
 from stockml.intraday.promotion import latest_evaluation
+from stockml.autopilot.same_day_promotion import latest_evaluation as latest_same_day_promotion_evaluation
 from stockml.safety.live_disabled import assert_live_disabled
 from stockml.services.events import record_event_safely
 from stockml.autopilot.rotate import confirm_rotation, override_rotation
@@ -579,6 +580,14 @@ def create_app(root: Path | None = None) -> Flask:
     def intraday_promotion():
         evaluation = latest_evaluation()
         return render_template("intraday/promotion.html", title="Intraday Promotion", evaluation=evaluation)
+
+    @app.route("/autopilot/same_day_promotion")
+    def same_day_promotion():
+        return render_template(
+            "autopilot/same_day_promotion.html",
+            title="Same-Day Autopilot Promotion",
+            evaluation=latest_same_day_promotion_evaluation(),
+        )
 
     @app.route("/api/intraday/kill-switches")
     def api_intraday_kill_switches():

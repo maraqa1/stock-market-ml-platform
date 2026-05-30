@@ -523,6 +523,15 @@ same_day_missed_opportunities = Table(
     Index("ix_sdmo_symbol_session", "symbol", "session_date"),
 )
 
+same_day_promotion_evaluations = Table(
+    "same_day_promotion_evaluations",
+    metadata,
+    Column("evaluated_at", DateTime(timezone=True), primary_key=True),
+    Column("criteria_met", Boolean, nullable=False),
+    Column("criteria_results", JSON, nullable=False),
+    Column("activated", Boolean, nullable=False, default=False),
+)
+
 intraday_promotion_log = Table(
     "intraday_promotion_log",
     metadata,

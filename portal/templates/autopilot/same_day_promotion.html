@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_macros/pill.html" import pill %}
+{% block content %}
+<section class="trading-console">
+  <section class="zone trading-zone" data-zone="same-day-promotion" id="same-day-promotion">
+    <div class="zone__header">
+      <span>Same-Day Autopilot Promotion</span>
+      <span class="zone__header-meta">evaluated {{ evaluation.evaluated_at or "not yet" }}</span>
+    </div>
+    <div class="zone__body">
+      {% if evaluation.criteria_met %}
+        <div class="stale-banner">PROMOTION CRITERIA MET as of {{ evaluation.evaluated_at[:10] }} - same-day auto-execution available only after PR-only flag flip and operator confirmation. Paper only.</div>
+      {% else %}
+        <div class="stale-banner">PROMOTION CRITERIA NOT MET - same-day auto-execution disabled.</div>
+      {% endif %}
+      <div class="table-scroll">
+        <table class="data dense" data-table="same-day-promotion-criteria">
+          <thead>
+            <tr>
+              <th>Criterion</th>
+              <th>Status</th>
+              <th>Observed</th>
+              <th>Threshold</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in evaluation.criteria_results %}
+              <tr>
+                <td>{{ row.name }}</td>
+                <td>{{ pill("safe" if row.met else "failed", "Met" if row.met else "Unmet") }}</td>
+                <td>{{ row.observed }}</td>
+                <td>{{ row.threshold }}</td>
+                <td>{{ row.note }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="empty small">Read-only. There is no in-app enable button; activation requires code review and remains paper-only.</div>
+    </div>
+  </section>
+</section>
+{% endblock %}

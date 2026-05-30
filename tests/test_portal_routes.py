@@ -188,6 +188,15 @@ def test_intraday_promotion_page_is_read_only_and_live_disabled(client):
     assert b"enable live" not in response.data.lower()
 
 
+def test_same_day_promotion_page_is_read_only_and_auto_disabled(client):
+    response = client.get("/autopilot/same_day_promotion")
+    assert response.status_code == 200
+    assert b"Same-Day Autopilot Promotion" in response.data
+    assert b"PROMOTION CRITERIA NOT MET" in response.data
+    assert b"same-day auto-execution disabled" in response.data
+    assert b"no in-app enable button" in response.data.lower()
+
+
 def test_reports_page_and_daily_exports_render(client):
     index = client.get("/reports")
     assert index.status_code == 200

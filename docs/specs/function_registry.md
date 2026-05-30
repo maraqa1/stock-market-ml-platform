@@ -41,6 +41,7 @@ This registry maps platform functions to the modules, scripts, migrations, confi
 | Same-day scoring | `src/stockml/same_day/scoring.py`, `score_worker.py` | `migrations/019_same_day_scoring_up.sql` | SPEC 77 |
 | Same-day operator view and missed opportunities | `portal/services/same_day_view.py`, `src/stockml/same_day/missed_ops.py`, `scripts/generate_missed_ops_report.py` | `migrations/020_same_day_missed_opportunities_up.sql` | SPEC 78 |
 | Same-day sizing and stream attribution | `src/stockml/trading/position_sizing.py`, `src/stockml/trading/order_planner.py`, `src/stockml/reports/daily.py` | `config/same_day.yaml` | SPEC 79 |
+| Same-day Autopilot promotion contract | `src/stockml/autopilot/same_day_promotion.py`, `src/stockml/autopilot/same_day_auto.py` | `migrations/021_same_day_promotion_evaluations_up.sql`, `config/autopilot.yaml` | SPEC 80 |
 
 ## Risk, Safety, And EOD
 
@@ -74,11 +75,4 @@ This registry maps platform functions to the modules, scripts, migrations, confi
 
 ## Upcoming Same-Day Functions
 
-These are planned by SPEC 77-80 and intentionally not implemented yet.
-
-| Spec | Planned Function | Expected Location |
-| --- | --- | --- |
-| 77 | Same-day production training, scoring, candidates, signal log | `src/stockml/same_day/training.py`, `scoring.py`, `score_worker.py`; `migrations/019_same_day_scoring_up.sql` |
-| 78 | Same-day operator UI and missed-opportunity report | `portal/services/same_day_view.py`; `src/stockml/same_day/missed_ops.py`; `scripts/generate_missed_ops_report.py` |
-| 79 | Stream attribution and same-day sizing | `src/stockml/trading/position_sizing.py`; `src/stockml/trading/order_planner.py`; `src/stockml/reports/daily.py`; `config/same_day.yaml` |
-| 80 | Same-day Autopilot promotion contract | `src/stockml/autopilot/same_day_promotion.py`, `same_day_auto.py`; promotion UI; migration `same_day_promotion_evaluations` |
+The SPEC 72-80 same-day pack is implemented through the promotion-contract framework. Future work is operational: accumulating Paper Assist evidence, reviewing promotion evaluations, and only then considering a PR-reviewed flag flip for paper Autopilot.

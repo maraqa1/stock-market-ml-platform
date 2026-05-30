@@ -229,7 +229,7 @@ VM verification:
 
 Goal: build same-day signal gates and arbitration between same-day and multi-day streams.
 
-Implemented status: implemented-pending-vm.
+Implemented status: implemented.
 
 Commit:
 
@@ -279,22 +279,11 @@ Focused tests:
 - `tests/test_alpaca_order_planner.py`
 - `tests/test_pipeline_event_schema.py`
 
-Required VM verification:
-
-```bash
-cd /home/massa/stock-market-ml-platform
-git pull --ff-only origin dev
-
-PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
-  tests/same_day/test_gates.py \
-  tests/arbitration/test_arbitrator.py \
-  tests/test_alpaca_order_planner.py \
-  tests/test_pipeline_event_schema.py
-```
+VM verification: covered by SPEC 77 VM run, `38 passed`.
 
 ## SPEC 77 - Same-Day Model Scoring And Candidate Generation
 
-Status: implemented-pending-vm.
+Status: implemented.
 
 Goal: score the same-day model every 5 minutes using SPEC 74 features, apply SPEC 76 gates, and produce same-day candidate artifacts.
 
@@ -324,11 +313,11 @@ Focused tests:
 - `tests/same_day/test_scoring.py`
 - `tests/test_pipeline_event_schema.py`
 
-SPEC 77 must not begin until SPEC 76 VM result is recorded as green.
+VM verification: `38 passed`.
 
 ## SPEC 78 - Same-Day Operator UI And Missed Opportunity Report
 
-Status: implemented-pending-vm.
+Status: implemented.
 
 Goal: make same-day candidates visible in Trading Console and enable Paper Assist. Generate a nightly missed-opportunity report.
 
@@ -357,9 +346,11 @@ Focused tests:
 - `tests/test_portal_routes.py`
 - `tests/test_pipeline_event_schema.py`
 
+VM verification: `66 passed`.
+
 ## SPEC 79 - Stream Attribution And Position Sizing
 
-Status: implemented-pending-vm.
+Status: implemented.
 
 Goal: stream-specific sizing, stream attribution in daily reports, and same-day daily loss caps.
 
@@ -392,9 +383,11 @@ Focused tests:
 - `tests/autopilot/test_same_day_policy.py`
 - `tests/test_daily_reports.py`
 
+VM verification: `34 passed`.
+
 ## SPEC 80 - Same-Day Autopilot Promotion Contract
 
-Status: planned.
+Status: implemented-pending-vm.
 
 Goal: define promotion from Paper Assist to Paper Autopilot. Code paths are behind a false-by-default flag.
 
@@ -417,3 +410,18 @@ Auto-execution remains disabled unless:
 - operator confirmation exists in code review
 
 Even then, execution remains paper-only.
+
+Core files:
+
+- `config/autopilot.yaml`
+- `migrations/021_same_day_promotion_evaluations_up.sql`
+- `migrations/021_same_day_promotion_evaluations_down.sql`
+- `src/stockml/autopilot/same_day_promotion.py`
+- `src/stockml/autopilot/same_day_auto.py`
+- `portal/templates/autopilot/same_day_promotion.html`
+
+Focused tests:
+
+- `tests/autopilot/test_same_day_promotion.py`
+- `tests/test_portal_routes.py`
+- `tests/test_pipeline_event_schema.py`
