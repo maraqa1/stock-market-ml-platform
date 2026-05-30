@@ -58,7 +58,6 @@ PROTECTED_NAMES = {
 }
 
 STAMP_PATTERN = re.compile(r"(20\d{6}_\d{6})")
-SHARD_PATTERN = re.compile(r"_shard\d+")
 
 
 def _artifact_sort_key(path: Path) -> tuple[str, float, str]:
@@ -84,7 +83,6 @@ def _files_for(pattern: RetentionPattern, root: Path) -> list[Path]:
 
 def _family_key(path: Path) -> str:
     stem = STAMP_PATTERN.sub("{stamp}", path.stem)
-    stem = SHARD_PATTERN.sub("_shard{n}", stem)
     return f"{path.parent}:{stem}{path.suffix}"
 
 
