@@ -328,17 +328,19 @@ SPEC 77 must not begin until SPEC 76 VM result is recorded as green.
 
 ## SPEC 78 - Same-Day Operator UI And Missed Opportunity Report
 
-Status: planned.
+Status: implemented-pending-vm.
 
 Goal: make same-day candidates visible in Trading Console and enable Paper Assist. Generate a nightly missed-opportunity report.
 
-Expected files:
+Core files:
 
-- portal same-day panel/template/service
+- `portal/services/same_day_view.py`
+- `portal/templates/trading/_zones/_same_day_panel.html`
+- `portal/templates/reports/missed_opportunities.html`
 - `src/stockml/same_day/missed_ops.py`
 - `scripts/generate_missed_ops_report.py`
 
-Expected table:
+Table:
 
 - `same_day_missed_opportunities`
 
@@ -348,6 +350,12 @@ Paper Assist:
 - Confirmed positions use `strategy_stream='same_day_momentum'`.
 - Confirmed positions use `must_flatten_at_eod=True`.
 - Override Skip logs operator decision.
+
+Focused tests:
+
+- `tests/same_day/test_missed_ops.py`
+- `tests/test_portal_routes.py`
+- `tests/test_pipeline_event_schema.py`
 
 ## SPEC 79 - Stream Attribution And Position Sizing
 

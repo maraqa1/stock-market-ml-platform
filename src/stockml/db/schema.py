@@ -504,6 +504,25 @@ same_day_signal_log = Table(
     Index("ix_sdsl_symbol", "symbol", "decision_time"),
 )
 
+same_day_missed_opportunities = Table(
+    "same_day_missed_opportunities",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("session_date", Date, nullable=False),
+    Column("symbol", String(50), nullable=False),
+    Column("intraday_move_pct", Float, nullable=False),
+    Column("in_universe", Boolean, nullable=False),
+    Column("exclusion_reason", Text),
+    Column("signal_log_count", Integer, nullable=False),
+    Column("max_continuation_probability", Float),
+    Column("first_blocking_gate", String(100)),
+    Column("hypothetical_pnl_bps", Float),
+    Column("details", JSON, nullable=False),
+    UniqueConstraint("session_date", "symbol", name="uq_same_day_missed_opportunities_session_symbol"),
+    Index("ix_sdmo_session_date", "session_date"),
+    Index("ix_sdmo_symbol_session", "symbol", "session_date"),
+)
+
 intraday_promotion_log = Table(
     "intraday_promotion_log",
     metadata,

@@ -14,6 +14,7 @@ from portal.services.gold_service import gold_context
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
 from portal.services.near_miss_service import near_miss_context
 from portal.services.per_symbol_forecast_service import per_symbol_forecast_context
+from portal.services.same_day_view import missed_opportunities_context, record_same_day_operator_decision, same_day_panel_context
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
 from portal.services.intraday import decisions_csv as intraday_decisions_csv
@@ -246,6 +247,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "action_queue": action_queue,
                 "positions_api": positions_api,
                 "intraday_promotion": intraday_promotion_context(root),
+                "same_day_panel": same_day_panel_context(root),
                 "near_miss": near_miss_context(root),
                 "per_symbol_forecast": per_symbol_forecast_context(root),
                 "timer_settings": timer_settings_context(root),
@@ -447,6 +449,15 @@ def create_app(root: Path | None = None) -> Flask:
         else:
             result = {"status": "rejected", "message": "unsupported_queue_action", "order_id": ""}
         return jsonify({"status": result.get("status", ""), "event_id": event_id, "symbol": symbol, "broker_order_id": result.get("order_id", ""), "message": result.get("message", ""), "result": result})
+
+    @app.route("/trading/same-day/<int:candidate_id>/<action>", methods=["POST"])
+    def trading_same_day_action(candidate_id: int, action: str):
+        if action not in {"confirm", "skip"}:
+            abort(404)
+        result = record_same_day_operator_decision(candidate_id, action)
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(result)
+        return redirect(url_for("trading", _anchor="same-day-momentum"))
 
     @app.route("/trading/refresh", methods=["POST"])
     def trading_refresh():
@@ -683,6 +694,14 @@ def create_app(root: Path | None = None) -> Flask:
             csv_text,
             mimetype="text/csv",
             headers={"Content-Disposition": f"attachment; filename=validation_{section}.csv"},
+        )
+
+    @app.route("/reports/missed_opportunities/<report_date>")
+    def reports_missed_opportunities(report_date: str):
+        return render_template(
+            "reports/missed_opportunities.html",
+            title=f"Missed Opportunities {report_date}",
+            missed=missed_opportunities_context(report_date),
         )
 
     @app.route("/no-decision")

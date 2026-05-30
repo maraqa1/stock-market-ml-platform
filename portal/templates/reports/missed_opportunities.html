@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="trading-console">
+  <section class="zone trading-zone" data-zone="same-day-missed-opportunities">
+    <div class="zone__header">
+      <span>Same-Day Missed Opportunities - {{ missed.session_date }}</span>
+      <span class="zone__header-meta">{{ missed.counts.total or 0 }} movers</span>
+    </div>
+    <div class="zone__body">
+      <div class="table-scroll">
+        <table class="data dense" data-table="same-day-missed-opportunities">
+          <thead>
+            <tr>
+              <th class="col-pinned">Symbol</th>
+              <th class="num">Move %</th>
+              <th>In Universe</th>
+              <th>Exclusion</th>
+              <th class="num">Signal Logs</th>
+              <th class="num">Max Continuation P</th>
+              <th>First Blocking Gate</th>
+              <th class="num">Hypothetical P&amp;L bps</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if not missed.rows %}
+              <tr><td colspan="8" class="empty small">No missed-opportunity rows for this session.</td></tr>
+            {% else %}
+              {% for row in missed.rows %}
+                <tr>
+                  <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                  <td class="num">{{ row.intraday_move_pct|fmt }}</td>
+                  <td>{{ "Yes" if row.in_universe else "No" }}</td>
+                  <td>{{ row.exclusion_reason or "none" }}</td>
+                  <td class="num">{{ row.signal_log_count }}</td>
+                  <td class="num">{{ row.max_continuation_probability|fmt }}</td>
+                  <td>{{ row.first_blocking_gate or "none" }}</td>
+                  <td class="num">{{ row.hypothetical_pnl_bps|fmt }}</td>
+                </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</section>
+{% endblock %}

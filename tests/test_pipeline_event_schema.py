@@ -30,6 +30,7 @@ from stockml.db.schema import (
     intraday_features,
     intraday_promotion_log,
     same_day_candidates,
+    same_day_missed_opportunities,
     same_day_signal_log,
     rotation_recommendation_log,
     autopilot_open_log,
@@ -62,6 +63,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert "intraday_features" in metadata.tables
     assert "intraday_promotion_log" in metadata.tables
     assert "same_day_candidates" in metadata.tables
+    assert "same_day_missed_opportunities" in metadata.tables
     assert "same_day_signal_log" in metadata.tables
     assert "rotation_recommendation_log" in metadata.tables
     assert "autopilot_open_log" in metadata.tables
@@ -86,6 +88,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert intraday_features.primary_key.columns.keys() == ["id"]
     assert intraday_promotion_log.primary_key.columns.keys() == ["id"]
     assert same_day_candidates.primary_key.columns.keys() == ["id"]
+    assert same_day_missed_opportunities.primary_key.columns.keys() == ["id"]
     assert same_day_signal_log.primary_key.columns.keys() == ["id"]
     assert rotation_recommendation_log.primary_key.columns.keys() == ["id"]
     assert autopilot_open_log.primary_key.columns.keys() == ["id"]

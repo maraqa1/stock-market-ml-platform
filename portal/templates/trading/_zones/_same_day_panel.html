@@ -1,0 +1,52 @@
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import number, time_utc %}
+{% from "_macros/table.html" import table_toolbar %}
+<section class="zone trading-zone" data-zone="same-day-momentum" id="same-day-momentum">
+  <div class="zone__header">
+    <span>Same-Day Momentum - Paper Assist</span>
+    <span class="zone__header-meta">{{ same_day_panel.counts.emit or 0 }} emit candidates</span>
+  </div>
+  <div class="zone__body">
+    <p class="zone__description">Same-day positions auto-flatten at T-5 before market close. This stream is in Paper Assist mode - operator confirms each open.</p>
+    {{ table_toolbar("Filter same-day candidates") }}
+    <div class="table-scroll">
+      <table class="data" data-table="same-day-momentum">
+        <thead>
+          <tr>
+            <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
+            <th>Direction</th>
+            <th class="num" data-sortable data-sort-key="continuation" data-sort-type="number">Continuation P</th>
+            <th class="num" data-sortable data-sort-key="confidence" data-sort-type="number">Confidence</th>
+            <th>Reason</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not same_day_panel.rows %}
+            <tr>
+              <td colspan="6" class="empty small">No same-day emit candidates. Scoring is visible here after SPEC 77 rows pass gates and arbitration.</td>
+            </tr>
+          {% else %}
+            {% for row in same_day_panel.rows %}
+              <tr>
+                <td class="col-pinned"><a class="ticker-link" href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                <td>{{ pill("submitted", row.direction|title) }}</td>
+                <td class="num" data-sort-value="{{ row.continuation_probability or 0 }}">{{ number(row.continuation_probability, 4) }}</td>
+                <td class="num" data-sort-value="{{ row.same_day_confidence or 0 }}">{{ number(row.same_day_confidence, 4) }}</td>
+                <td>{{ row.same_day_reason or "Same-day momentum candidate" }}</td>
+                <td>
+                  <form method="post" action="/trading/same-day/{{ row.id }}/confirm" class="inline-form">
+                    <button class="btn btn-primary" type="submit">Confirm Open</button>
+                  </form>
+                  <form method="post" action="/trading/same-day/{{ row.id }}/skip" class="inline-form">
+                    <button class="btn btn-ghost" type="submit">Override Skip</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>

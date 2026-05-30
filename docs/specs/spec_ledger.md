@@ -69,8 +69,8 @@ Execution gate: SPEC 72 must produce a report, operator must read it, and operat
 | 74 | Intraday feature panel | implemented | `499debe` | `17 passed` on VM |
 | 75 | Per-position EOD flatten extension | implemented | `83295c0` | `39 passed` on VM |
 | 76 | Same-day gates and arbitration | implemented-pending-vm | `52c1cd2` | Awaiting VM result |
-| 77 | Same-day model scoring and candidate generation | implemented-pending-vm | local commit pending | Requires VM verification |
-| 78 | Same-day operator UI and missed-opportunity report | planned | Not started | Must follow SPEC 77 |
+| 77 | Same-day model scoring and candidate generation | implemented | `0af7713`, `c4ce576` | `38 passed` on VM |
+| 78 | Same-day operator UI and missed-opportunity report | implemented-pending-vm | local commit pending | Requires VM verification |
 | 79 | Same-day stream attribution and position sizing | planned | Not started | Must follow SPEC 78 |
 | 80 | Same-day Autopilot promotion contract | planned | Not started | Must follow SPEC 79 and Paper Assist data accumulation |
 
@@ -157,6 +157,21 @@ Focused tests:
 - `tests/same_day/test_scoring.py`
 - `tests/test_pipeline_event_schema.py`
 
+### SPEC 78
+
+Core files:
+- `migrations/020_same_day_missed_opportunities_up.sql`
+- `src/stockml/same_day/missed_ops.py`
+- `portal/services/same_day_view.py`
+- `portal/templates/trading/_zones/_same_day_panel.html`
+- `portal/templates/reports/missed_opportunities.html`
+- `scripts/generate_missed_ops_report.py`
+
+Focused tests:
+- `tests/same_day/test_missed_ops.py`
+- `tests/test_portal_routes.py`
+- `tests/test_pipeline_event_schema.py`
+
 ## Required Update Before SPEC 77
 
 Record the VM result for SPEC 76:
@@ -174,17 +189,16 @@ PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
 
 If green, update SPEC 76 status from `implemented-pending-vm` to `implemented` and record the pass count.
 
-## Required Update Before SPEC 78
+## Required Update Before SPEC 79
 
-Record the VM result for SPEC 77:
+Record the VM result for SPEC 78:
 
 ```bash
 cd /home/massa/stock-market-ml-platform
 git pull --ff-only origin dev
 
 PYTHONPATH=src /opt/jupyter-env/bin/python3 -m pytest \
-  tests/same_day/test_scoring.py \
-  tests/same_day/test_gates.py \
-  tests/arbitration/test_arbitrator.py \
+  tests/same_day/test_missed_ops.py \
+  tests/test_portal_routes.py \
   tests/test_pipeline_event_schema.py
 ```

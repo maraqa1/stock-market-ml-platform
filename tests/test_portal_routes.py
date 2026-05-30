@@ -618,6 +618,21 @@ def test_trading_page_renders_intraday_promotion_zone(client):
     assert b'data-table="intraday-promotion"' in response.data
 
 
+def test_trading_page_renders_same_day_panel(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Same-Day Momentum - Paper Assist" in response.data
+    assert b'data-zone="same-day-momentum"' in response.data
+    assert b"Same-day positions auto-flatten at T-5" in response.data
+
+
+def test_missed_opportunity_report_route_renders(client):
+    response = client.get("/reports/missed_opportunities/2026-05-12")
+    assert response.status_code == 200
+    assert b"Same-Day Missed Opportunities" in response.data
+    assert b'data-table="same-day-missed-opportunities"' in response.data
+
+
 def test_trading_page_renders_spec08_09_10_top_of_page(client):
     response = client.get("/trading")
     assert response.status_code == 200
