@@ -19,6 +19,7 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "kill_switches.yaml"
 EVENT_TRIPPED = "tripped"
 EVENT_RESUMED = "resumed"
 ACTION_ORDER = {"evaluate": 0, "decide": 1, "would_trade": 2, "submit_order": 3}
+OVERNIGHT_POSITIONS = "OVERNIGHT_POSITIONS"
 
 
 class KillSwitchVerdict(NamedTuple):
@@ -105,6 +106,10 @@ def _active_switches(engine: Engine | None = None) -> dict[str, dict[str, Any]]:
     return active
 
 
+def _globally_blocking_active_switches(engine: Engine | None = None) -> dict[str, dict[str, Any]]:
+    return {name: row for name, row in _active_switches(engine).items() if name != OVERNIGHT_POSITIONS}
+
+
 def _already_active(switch_name: str, engine: Engine | None = None) -> bool:
     return switch_name in _active_switches(engine)
 
@@ -148,6 +153,29 @@ def trip(switch_name: str, payload: dict[str, Any] | None = None, *, engine: Eng
     if _already_active(switch_name, engine):
         return
     _insert_event(switch_name, EVENT_TRIPPED, dict(payload or {}), engine=engine, now=now)
+
+
+def record_overnight_positions(
+    payload: dict[str, Any],
+    *,
+    engine: Engine | None = None,
+    now: datetime | None = None,
+) -> None:
+    _insert_event(OVERNIGHT_POSITIONS, EVENT_TRIPPED, dict(payload or {}), engine=engine, now=now)
+
+
+def same_day_overnight_block(*, engine: Engine | None = None) -> dict[str, Any] | None:
+    row = _active_switches(engine).get(OVERNIGHT_POSITIONS)
+    if not row:
+        return None
+    payload = dict(row.get("payload") or {})
+    try:
+        same_day_count = int(payload.get("same_day_count") or 0)
+    except Exception:
+        same_day_count = 0
+    if same_day_count <= 0:
+        return None
+    return payload
 
 
 def resume(
@@ -223,7 +251,7 @@ def gate(
 ) -> KillSwitchVerdict:
     stamp = _aware(now)
     cfg = config or load_config()
-    active = _active_switches(engine)
+    active = _globally_blocking_active_switches(engine)
     for evaluation in evaluate_switches(metrics, cfg):
         if evaluation.tripped and _action_allows_switch(action, evaluation.name):
             trip(evaluation.name, evaluation.payload, engine=engine, now=stamp)

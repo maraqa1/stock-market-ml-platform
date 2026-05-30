@@ -11,6 +11,7 @@ import yaml
 
 from stockml.common.paths import PROJECT_ROOT
 from stockml.autopilot.policy import guarded_paper_close
+from stockml.intraday import kill_switch
 
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "eod.yaml"
@@ -234,6 +235,65 @@ def _should_flatten_position(row: dict[str, Any], config: EODConfig) -> bool:
     return True
 
 
+def select_trim_targets(
+    positions: pd.DataFrame,
+    *,
+    monitor_decisions: pd.DataFrame | None = None,
+    shortlist_symbols: set[str] | None = None,
+    config: EODConfig | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    cfg = config or load_config()
+    dispositions = tag_dispositions(
+        positions,
+        monitor_decisions=monitor_decisions,
+        shortlist_symbols=shortlist_symbols,
+        config=cfg,
+        now=now,
+    )
+    return [row for row in dispositions if row["disposition"] in {"weak", "stale"}]
+
+
+def select_flatten_targets(
+    positions: pd.DataFrame,
+    *,
+    monitor_decisions: pd.DataFrame | None = None,
+    shortlist_symbols: set[str] | None = None,
+    config: EODConfig | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    cfg = config or load_config()
+    dispositions = tag_dispositions(
+        positions,
+        monitor_decisions=monitor_decisions,
+        shortlist_symbols=shortlist_symbols,
+        config=cfg,
+        now=now,
+    )
+    return [row for row in dispositions if _should_flatten_position(row, cfg)]
+
+
+def verify_overnight_state(
+    positions: pd.DataFrame,
+    *,
+    now: datetime | None = None,
+    engine: Any | None = None,
+    recorder: Callable[..., None] = kill_switch.record_overnight_positions,
+) -> dict[str, Any]:
+    stamp = now or datetime.now(tz=MARKET_TZ)
+    rows = tag_dispositions(positions, config=load_config(), now=stamp) if not positions.empty else []
+    same_day = [row["symbol"] for row in rows if row["strategy_stream"] == "same_day_momentum"]
+    multi_day = [row["symbol"] for row in rows if row["strategy_stream"] == "multi_day_forecast"]
+    payload = {
+        "same_day_count": len(same_day),
+        "multi_day_count": len(multi_day),
+        "symbols": sorted(same_day + multi_day),
+    }
+    if payload["symbols"]:
+        recorder(payload, engine=engine, now=stamp)
+    return payload
+
+
 def banner_for_state(state: str, *, trim_count: int = 0, flatten_count: int = 0, remaining_count: int = 0, flattened_count: int = 0) -> str:
     if state == "review":
         return "EOD review running."
@@ -275,11 +335,38 @@ def run_eod_tick(
     disposition_by_symbol = {row["symbol"]: row for row in dispositions}
     symbols_to_close: list[str] = []
     if stage == "trim" and cfg.trim_weak_at_t_minus_15:
-        symbols_to_close = [row["symbol"] for row in dispositions if row["disposition"] in {"weak", "stale"}]
+        symbols_to_close = [
+            row["symbol"]
+            for row in select_trim_targets(
+                positions,
+                monitor_decisions=monitor_decisions,
+                shortlist_symbols=shortlist_symbols,
+                config=cfg,
+                now=now,
+            )
+        ]
     elif stage in {"flatten", "verify"} and cfg.flatten_all_at_t_minus_5:
-        symbols_to_close = [row["symbol"] for row in dispositions if _should_flatten_position(row, cfg)]
+        symbols_to_close = [
+            row["symbol"]
+            for row in select_flatten_targets(
+                positions,
+                monitor_decisions=monitor_decisions,
+                shortlist_symbols=shortlist_symbols,
+                config=cfg,
+                now=now,
+            )
+        ]
     elif stage == "postclose" and cfg.flatten_all_at_t_minus_5 and cfg.submit_postclose_rescue_orders:
-        symbols_to_close = [row["symbol"] for row in dispositions if _should_flatten_position(row, cfg)]
+        symbols_to_close = [
+            row["symbol"]
+            for row in select_flatten_targets(
+                positions,
+                monitor_decisions=monitor_decisions,
+                shortlist_symbols=shortlist_symbols,
+                config=cfg,
+                now=now,
+            )
+        ]
 
     submitted = 0
     notes: list[str] = []

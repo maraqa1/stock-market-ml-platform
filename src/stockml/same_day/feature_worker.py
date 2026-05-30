@@ -89,6 +89,15 @@ def feature_tick(
     if not in_active_hours(stamp):
         return {"status": "skipped", "reason": "outside_same_day_hours", "features_written": 0}
 
+    overnight_block = kill_switch.same_day_overnight_block(engine=engine)
+    if overnight_block:
+        return {
+            "status": "skipped",
+            "reason": "OVERNIGHT_POSITIONS_SAME_DAY",
+            "features_written": 0,
+            "overnight_positions": overnight_block,
+        }
+
     verdict = kill_switch_gate(action="evaluate", engine=engine, now=stamp)
     if not verdict.allow:
         return {"status": "skipped", "reason": "kill_switch_active", "features_written": 0, "tripped": verdict.tripped}
