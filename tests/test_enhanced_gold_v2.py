@@ -45,7 +45,8 @@ def test_enhanced_gold_v2_writes_separate_training_and_candidate_outputs(tmp_pat
     quality = pd.read_csv(outputs.data_quality_report)
     catalog = pd.read_csv(outputs.feature_catalog)
     assert len(decision) == len(_gold_frame())
-    assert len(candidates) == 5
+    assert len(candidates) == 3
+    assert candidates["date"].nunique() == 1
     assert outputs.decision_daily.name.startswith("gold_stock_decision_daily_")
     assert outputs.candidates_latest.name.startswith("gold_stock_candidates_latest_")
     assert "row_count" in set(quality["check"])
