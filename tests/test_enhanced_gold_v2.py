@@ -31,14 +31,14 @@ def _gold_frame() -> pd.DataFrame:
                     "target_sector_relative_return_5d": offset,
                 }
             )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows).sort_values(["date", "ticker"]).reset_index(drop=True)
 
 
 def test_enhanced_gold_v2_writes_separate_training_and_candidate_outputs(tmp_path: Path):
     source = tmp_path / "06_us_gold_ml_dataset_20240101_000000.csv"
     _gold_frame().to_csv(source, index=False)
 
-    outputs = build_enhanced_gold_v2(source, stamp="20240102_000000", output_dir=tmp_path, candidate_limit=5)
+    outputs = build_enhanced_gold_v2(source, stamp="20240102_000000", output_dir=tmp_path, candidate_limit=5, chunk_size=4)
 
     decision = pd.read_csv(outputs.decision_daily)
     candidates = pd.read_csv(outputs.candidates_latest)

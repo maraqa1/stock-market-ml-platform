@@ -102,6 +102,61 @@ class EnhancedGoldOutputs:
     data_quality_report: Path
 
 
+@dataclass
+class _QualityStats:
+    rows: int = 0
+    duplicate_ticker_date_count: int = 0
+    last_key: tuple[str, str] | None = None
+
+    def __post_init__(self) -> None:
+        self.tickers: set[str] = set()
+        self.dates: set[str] = set()
+        self.label_counts: dict[str, int] = {}
+        self.family_missing: dict[str, int] = {family: 0 for family in FEATURE_FAMILIES}
+        self.family_cells: dict[str, int] = {family: 0 for family in FEATURE_FAMILIES}
+        self.score_min: dict[str, float] = {}
+        self.score_max: dict[str, float] = {}
+
+    def update(self, frame: pd.DataFrame) -> None:
+        if frame.empty:
+            return
+        self.rows += len(frame)
+        if "ticker" in frame.columns:
+            self.tickers.update(frame["ticker"].dropna().astype(str).str.upper())
+        if "date" in frame.columns:
+            self.dates.update(frame["date"].dropna().astype(str))
+        if {"ticker", "date"}.issubset(frame.columns):
+            keys = frame[["ticker", "date"]].astype(str).itertuples(index=False, name=None)
+            previous = self.last_key
+            for key in keys:
+                if key == previous:
+                    self.duplicate_ticker_date_count += 1
+                previous = key
+            self.last_key = previous
+        if "target_trade_label_5d" in frame.columns:
+            counts = frame["target_trade_label_5d"].astype("string").value_counts(dropna=False)
+            for label, count in counts.items():
+                key = str(label)
+                self.label_counts[key] = self.label_counts.get(key, 0) + int(count)
+        for family, columns in FEATURE_FAMILIES.items():
+            present = [column for column in columns if column in frame.columns]
+            if not present:
+                continue
+            family_frame = frame[present]
+            self.family_missing[family] += int(family_frame.isna().sum().sum())
+            self.family_cells[family] += int(family_frame.size)
+        for column in ["momentum_score", "relative_strength_score", "technical_entry_score", "final_trade_score", "trade_confidence"]:
+            if column not in frame.columns:
+                continue
+            values = pd.to_numeric(frame[column], errors="coerce")
+            min_value = values.min(skipna=True)
+            max_value = values.max(skipna=True)
+            if pd.notna(min_value):
+                self.score_min[column] = min(float(min_value), self.score_min.get(column, float(min_value)))
+            if pd.notna(max_value):
+                self.score_max[column] = max(float(max_value), self.score_max.get(column, float(max_value)))
+
+
 def latest_gold_file() -> Path:
     path = latest_file(GOLD_DIR, "06_us_gold_ml_dataset_*.csv")
     if path is None:
@@ -214,22 +269,29 @@ def build_feature_catalog(columns: list[str]) -> pd.DataFrame:
 
 
 def build_quality_report(frame: pd.DataFrame, *, min_rows: int = 10, min_dates: int = 5) -> pd.DataFrame:
-    duplicate_rate = frame.duplicated(["ticker", "date"]).mean() if {"ticker", "date"}.issubset(frame.columns) and len(frame) else 0.0
-    label_counts = frame["target_trade_label_5d"].astype("string").value_counts(dropna=False).to_dict() if "target_trade_label_5d" in frame.columns else {}
+    stats = _QualityStats()
+    stats.update(frame)
+    return _quality_report_from_stats(stats, list(frame.columns), min_rows=min_rows, min_dates=min_dates)
+
+
+def _quality_report_from_stats(stats: _QualityStats, columns: list[str], *, min_rows: int = 10, min_dates: int = 5) -> pd.DataFrame:
+    label_counts = stats.label_counts
     non_na_labels = {str(k): int(v) for k, v in label_counts.items() if str(k) not in {"<NA>", "nan", "None"}}
     all_neutral = bool(non_na_labels) and set(non_na_labels) == {"Neutral"}
     rows = [
-        {"check": "row_count", "observed": len(frame), "status": "pass" if len(frame) >= min_rows else "fail", "message": f">={min_rows}"},
-        {"check": "ticker_count", "observed": frame["ticker"].nunique() if "ticker" in frame else 0, "status": "info", "message": ""},
-        {"check": "date_count", "observed": frame["date"].nunique() if "date" in frame else 0, "status": "pass" if frame.get("date", pd.Series(dtype=object)).nunique() >= min_dates else "fail", "message": f">={min_dates}"},
-        {"check": "duplicate_ticker_date_count", "observed": int(frame.duplicated(["ticker", "date"]).sum()) if {"ticker", "date"}.issubset(frame.columns) else 0, "status": "pass" if duplicate_rate == 0 else "fail", "message": ""},
+        {"check": "row_count", "observed": stats.rows, "status": "pass" if stats.rows >= min_rows else "fail", "message": f">={min_rows}"},
+        {"check": "ticker_count", "observed": len(stats.tickers), "status": "info", "message": ""},
+        {"check": "date_count", "observed": len(stats.dates), "status": "pass" if len(stats.dates) >= min_dates else "fail", "message": f">={min_dates}"},
+        {"check": "duplicate_ticker_date_count", "observed": stats.duplicate_ticker_date_count, "status": "pass" if stats.duplicate_ticker_date_count == 0 else "fail", "message": ""},
         {"check": "target_label_distribution", "observed": label_counts, "status": "fail" if all_neutral else "pass", "message": "non-NA labels must not be all Neutral"},
-        {"check": "leakage_check", "observed": leakage_columns(list(frame.columns)), "status": "pass", "message": "target/forward columns excluded by catalog"},
-        {"check": "score_range_check", "observed": _score_range(frame), "status": "pass" if _score_range_ok(frame) else "fail", "message": "scores must be in [0,1]"},
+        {"check": "leakage_check", "observed": leakage_columns(columns), "status": "pass", "message": "target/forward columns excluded by catalog"},
+        {"check": "score_range_check", "observed": _score_range_from_stats(stats), "status": "pass" if _score_range_stats_ok(stats) else "fail", "message": "scores must be in [0,1]"},
     ]
-    for family, columns in FEATURE_FAMILIES.items():
-        present = [col for col in columns if col in frame.columns]
-        missing_rate = float(frame[present].isna().mean().mean()) if present and len(frame) else 1.0
+    available_columns = set(columns)
+    for family, family_columns in FEATURE_FAMILIES.items():
+        cells = stats.family_cells.get(family, 0)
+        missing_rate = float(stats.family_missing.get(family, 0) / cells) if cells else 1.0
+        present = [column for column in family_columns if column in available_columns]
         rows.append({"check": f"missing_rate_{family}", "observed": round(missing_rate, 6), "status": "info", "message": ",".join(present)})
     return pd.DataFrame(rows)
 
@@ -252,31 +314,92 @@ def _score_range_ok(frame: pd.DataFrame) -> bool:
     return True
 
 
+def _score_range_from_stats(stats: _QualityStats) -> dict[str, Any]:
+    return {
+        column: {"min": stats.score_min.get(column), "max": stats.score_max.get(column)}
+        for column in sorted(set(stats.score_min) | set(stats.score_max))
+    }
+
+
+def _score_range_stats_ok(stats: _QualityStats) -> bool:
+    for column in set(stats.score_min) | set(stats.score_max):
+        if stats.score_min.get(column) is not None and stats.score_min[column] < 0:
+            return False
+        if stats.score_max.get(column) is not None and stats.score_max[column] > 1:
+            return False
+    return True
+
+
+def _iter_complete_date_chunks(source: Path, *, chunk_size: int) -> Any:
+    carry = pd.DataFrame()
+    for chunk in pd.read_csv(source, chunksize=chunk_size, low_memory=False):
+        combined = pd.concat([carry, chunk], ignore_index=True) if not carry.empty else chunk
+        if combined.empty:
+            carry = combined
+            continue
+        combined["date"] = pd.to_datetime(combined["date"], errors="coerce")
+        last_date = combined["date"].iloc[-1]
+        if pd.isna(last_date):
+            yield combined
+            carry = pd.DataFrame()
+            continue
+        complete = combined[~combined["date"].eq(last_date)]
+        carry = combined[combined["date"].eq(last_date)].copy()
+        if not complete.empty:
+            yield complete
+    if not carry.empty:
+        yield carry
+
+
 def build_enhanced_gold_v2(
     gold_file: Path | None = None,
     *,
     stamp: str | None = None,
     output_dir: Path = GOLD_DIR,
     candidate_limit: int = 250,
+    chunk_size: int = 200_000,
 ) -> EnhancedGoldOutputs:
     source = gold_file or latest_gold_file()
     run_stamp = stamp or timestamp()
     output_dir.mkdir(parents=True, exist_ok=True)
-    frame = pd.read_csv(source, low_memory=False)
-    enhanced = _ensure_enhanced_columns(frame)
     decision_path = output_dir / f"gold_stock_decision_daily_{run_stamp}.csv"
     candidate_path = output_dir / f"gold_stock_candidates_latest_{run_stamp}.csv"
     catalog_path = output_dir / f"gold_stock_feature_catalog_{run_stamp}.csv"
     quality_path = output_dir / f"gold_stock_data_quality_report_{run_stamp}.csv"
 
-    enhanced.to_csv(decision_path, index=False)
-    latest_date = enhanced["date"].max()
-    candidates = (
-        enhanced[enhanced["date"].eq(latest_date)]
-        .sort_values(["final_trade_score", "trade_confidence"], ascending=False)
-        .head(candidate_limit)
-    )
+    if decision_path.exists():
+        decision_path.unlink()
+    source_columns = pd.read_csv(source, nrows=0).columns.tolist()
+    enhanced_columns = list(dict.fromkeys(source_columns + DECISION_COLUMNS))
+    stats = _QualityStats()
+    latest_date = pd.NaT
+    latest_candidates = pd.DataFrame()
+    wrote_header = False
+
+    for chunk in _iter_complete_date_chunks(source, chunk_size=chunk_size):
+        enhanced = _ensure_enhanced_columns(chunk)
+        enhanced.to_csv(decision_path, mode="a", header=not wrote_header, index=False)
+        wrote_header = True
+        stats.update(enhanced)
+
+        chunk_latest = enhanced["date"].max()
+        if pd.isna(chunk_latest):
+            continue
+        chunk_latest_rows = enhanced[enhanced["date"].eq(chunk_latest)]
+        if pd.isna(latest_date) or chunk_latest > latest_date:
+            latest_date = chunk_latest
+            latest_candidates = chunk_latest_rows.copy()
+        elif chunk_latest == latest_date:
+            latest_candidates = pd.concat([latest_candidates, chunk_latest_rows], ignore_index=True)
+
+    if not wrote_header:
+        pd.DataFrame(columns=enhanced_columns).to_csv(decision_path, index=False)
+
+    if latest_candidates.empty:
+        candidates = pd.DataFrame(columns=enhanced_columns)
+    else:
+        candidates = latest_candidates.sort_values(["final_trade_score", "trade_confidence"], ascending=False).head(candidate_limit)
     candidates.to_csv(candidate_path, index=False)
-    build_feature_catalog(list(enhanced.columns)).to_csv(catalog_path, index=False)
-    build_quality_report(enhanced).to_csv(quality_path, index=False)
+    build_feature_catalog(enhanced_columns).to_csv(catalog_path, index=False)
+    _quality_report_from_stats(stats, enhanced_columns).to_csv(quality_path, index=False)
     return EnhancedGoldOutputs(decision_path, candidate_path, catalog_path, quality_path)
