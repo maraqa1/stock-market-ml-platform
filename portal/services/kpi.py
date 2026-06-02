@@ -40,6 +40,11 @@ def _signed_class(value: float) -> str:
     return ""
 
 
+def _money(value: float) -> str:
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.0f}"
+
+
 def trading_header_context(root: Path) -> dict[str, Any]:
     config = alpaca_config()
     return {
@@ -85,7 +90,8 @@ def trading_kpi_context(
     queue = queue if queue is not None else action_queue_context(root)
     summary = positions["summary"]
     position_count = int(summary.get("position_count") or 0)
-    market_value = float(summary.get("position_market_value") or 0.0)
+    gross_market_value = float(summary.get("position_market_value") or 0.0)
+    net_market_value = float(summary.get("position_net_market_value") or 0.0)
     unrealized_pl = float(summary.get("position_unrealized_pl") or 0.0)
     unrealized_plpc = float(summary.get("position_unrealized_plpc") or 0.0)
     pending = int(queue["counts"].get("total") or 0)
@@ -119,9 +125,13 @@ def trading_kpi_context(
                 "class": _signed_class(unrealized_pl),
             },
             {
-                "label": "Net Exposure",
-                "value": f"${market_value:,.0f}",
-                "detail": f"{(market_value / account_equity):.2%} of equity" if account_equity else "equity unavailable",
+                "label": "Gross Exposure",
+                "value": _money(gross_market_value),
+                "detail": (
+                    f"Net {_money(net_market_value)} - {(gross_market_value / account_equity):.2%} gross of equity"
+                    if account_equity
+                    else f"Net {_money(net_market_value)} - equity unavailable"
+                ),
             },
             {
                 "label": "Pending Decisions",

@@ -4,6 +4,7 @@ import time
 import pandas as pd
 
 from portal.services.latest_file_reader import latest_file, readable_reason
+from portal.services.kpi import trading_kpi_context
 from portal.services.trading_api_service import action_queue_context, positions_context
 from portal.services.universe_service import universe_context
 from portal.services.signal_service import signal_context
@@ -119,6 +120,47 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert ctx["rejected_trimmed_rows"][0]["source"] == "Guardrail"
     assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Rejected / Error"] == 0
     assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Fill ratio"] == "Not available"
+
+
+def test_trading_kpi_labels_gross_and_net_exposure(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "portal.services.kpi.alpaca_config",
+        lambda: type(
+            "Config",
+            (),
+            {
+                "account_equity": 1000,
+                "max_orders": 10,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "submit_orders": False,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "portal.services.kpi.account_snapshot",
+        lambda config: {"equity": 1000, "source": "fixture"},
+    )
+
+    ctx = trading_kpi_context(
+        tmp_path,
+        positions={
+            "summary": {
+                "position_count": 2,
+                "position_market_value": 285,
+                "position_net_market_value": 0.39,
+                "position_unrealized_pl": 1.72,
+                "position_unrealized_plpc": 0.0061,
+            }
+        },
+        basket={"counts": {"submitted": 0, "filled": 0}},
+        queue={"counts": {"total": 3}},
+    )
+
+    cards = {card["label"]: card for card in ctx["cards"]}
+    assert cards["Gross Exposure"]["value"] == "$285"
+    assert cards["Gross Exposure"]["detail"] == "Net $0 - 28.50% gross of equity"
+    assert "Net Exposure" not in cards
 
 
 def test_trading_context_exposes_expanded_candidate_shortlist(tmp_path):
