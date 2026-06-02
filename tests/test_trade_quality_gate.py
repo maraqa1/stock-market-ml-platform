@@ -90,6 +90,24 @@ def test_speculative_stock_gets_reduced_notional():
     assert 0 < row["approved_notional"] < 1000
 
 
+def test_higher_risk_profile_sizes_larger_paper_orders():
+    cfg = config(account_equity=100_000, max_orders=20, max_total_notional=50_000, max_position_pct=0.05)
+    rows = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(ticker="HQ", side_probability=0.80),
+                signal(ticker="MED", side_probability=0.80, market_cap=2_000_000_000, avg_dollar_volume_20d=25_000_000),
+                signal(ticker="SPEC", side_probability=0.80, market_cap=600_000_000, avg_dollar_volume_20d=6_000_000, volume=120_000, volatility_20d=0.06),
+            ]
+        ),
+        cfg,
+    ).set_index("ticker")
+
+    assert rows.loc["HQ", "approved_notional"] == 2500
+    assert rows.loc["MED", "approved_notional"] == 1250
+    assert rows.loc["SPEC", "approved_notional"] == 625
+
+
 def test_strong_directional_candidate_rounds_up_to_one_share_when_safe():
     row = apply_trade_quality_gate(
         pd.DataFrame(

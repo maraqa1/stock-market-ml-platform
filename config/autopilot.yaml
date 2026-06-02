@@ -3,15 +3,15 @@ autopilot:
   open_enabled: true
   rotate_enabled: true
   max_auto_opens_per_day: 20
-  max_positions: 10
+  max_positions: 20
   min_account_equity_usd: 250
   min_position_value_usd: 50
   max_single_position_pct_of_equity: 0.20
   default_position_pct_of_equity: 0.10
-  default_position_value_cap_usd: 200
+  default_position_value_cap_usd: 2500
   flat_account_fallback_enabled: true
   flat_account_fallback_min_score: 0.40
-  flat_account_fallback_max_per_day: 1
+  flat_account_fallback_max_per_day: 3
   flat_account_fallback_size_multiplier: 0.50
   near_miss_fallback_enabled: true
   near_miss_fallback_requires_flat_account: false
@@ -45,7 +45,7 @@ autopilot:
   plan_fallback_max_file_age_minutes: 720
   same_day_momentum_enabled: true
   same_day_momentum_max_per_day: 8
-  same_day_momentum_size_multiplier: 0.50
+  same_day_momentum_size_multiplier: 0.75
   same_day_momentum_min_score: 0.55
   same_day_momentum_max_spread_bps: 35
   same_day_momentum_min_dollar_volume: 500000
@@ -60,9 +60,9 @@ autopilot:
   trailing_profit_arm_pct: 2.0
   trailing_profit_giveback_pct: 1.0
   basket_drawdown_pause_pct: 1.5
-  max_long_positions: 0
-  max_short_positions: 0
-  near_miss_entries_with_open_positions: false
+  max_long_positions: 15
+  max_short_positions: 15
+  near_miss_entries_with_open_positions: true
   close_automation_mode: automatic
 basket_risk:
   pause_new_entries_if_red_position_pct_above: 0.70

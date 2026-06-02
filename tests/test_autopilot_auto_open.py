@@ -120,7 +120,17 @@ def test_position_size_respects_account_floor_and_caps():
 
     assert position_size_usd(200, config) == 0
     assert position_size_usd(1000, config) == 100
-    assert position_size_usd(5000, config) == 200
+    assert position_size_usd(5000, config) == 500
+
+
+def test_auto_open_higher_risk_defaults(tmp_path):
+    config = load_auto_open_config(root=tmp_path)
+
+    assert config.max_positions == 20
+    assert config.default_position_value_cap_usd == 2500
+    assert config.max_long_positions == 15
+    assert config.max_short_positions == 15
+    assert config.near_miss_entries_with_open_positions is True
 
 
 def test_auto_open_feature_toggle_persists_to_root_config(tmp_path):

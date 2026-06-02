@@ -34,12 +34,12 @@ class AutoOpenConfig:
     open_enabled: bool = False
     rotate_enabled: bool = False
     max_auto_opens_per_day: int = 3
-    max_positions: int = 5
+    max_positions: int = 20
     min_account_equity_usd: float = 250.0
     min_position_value_usd: float = 50.0
     max_single_position_pct_of_equity: float = 0.20
     default_position_pct_of_equity: float = 0.10
-    default_position_value_cap_usd: float = 200.0
+    default_position_value_cap_usd: float = 2500.0
     flat_account_fallback_enabled: bool = True
     flat_account_fallback_min_score: float = 0.40
     flat_account_fallback_max_per_day: int = 1
@@ -87,8 +87,8 @@ class AutoOpenConfig:
     trailing_profit_arm_pct: float = 2.0
     trailing_profit_giveback_pct: float = 1.0
     basket_drawdown_pause_pct: float = 1.5
-    max_long_positions: int = 0
-    max_short_positions: int = 0
+    max_long_positions: int = 15
+    max_short_positions: int = 15
     near_miss_entries_with_open_positions: bool = False
     close_automation_mode: str = "automatic"
 
@@ -274,12 +274,12 @@ def _default_payload() -> dict[str, Any]:
             "open_enabled": False,
             "rotate_enabled": False,
             "max_auto_opens_per_day": 3,
-            "max_positions": 5,
+            "max_positions": 20,
             "min_account_equity_usd": 250,
             "min_position_value_usd": 50,
             "max_single_position_pct_of_equity": 0.20,
             "default_position_pct_of_equity": 0.10,
-            "default_position_value_cap_usd": 200,
+            "default_position_value_cap_usd": 2500,
             "flat_account_fallback_enabled": True,
             "flat_account_fallback_min_score": 0.40,
             "flat_account_fallback_max_per_day": 1,
@@ -327,9 +327,9 @@ def _default_payload() -> dict[str, Any]:
             "trailing_profit_arm_pct": 2.0,
             "trailing_profit_giveback_pct": 1.0,
             "basket_drawdown_pause_pct": 1.5,
-            "max_long_positions": 0,
-            "max_short_positions": 0,
-            "near_miss_entries_with_open_positions": False,
+            "max_long_positions": 15,
+            "max_short_positions": 15,
+            "near_miss_entries_with_open_positions": True,
             "close_automation_mode": "automatic",
         },
     }
@@ -387,7 +387,7 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         min_position_value_usd=float(section.get("min_position_value_usd", 50)),
         max_single_position_pct_of_equity=float(section.get("max_single_position_pct_of_equity", 0.20)),
         default_position_pct_of_equity=float(section.get("default_position_pct_of_equity", 0.10)),
-        default_position_value_cap_usd=float(section.get("default_position_value_cap_usd", 200)),
+        default_position_value_cap_usd=float(section.get("default_position_value_cap_usd", 2500)),
         flat_account_fallback_enabled=bool(section.get("flat_account_fallback_enabled", True)),
         flat_account_fallback_min_score=float(section.get("flat_account_fallback_min_score", 0.40)),
         flat_account_fallback_max_per_day=int(section.get("flat_account_fallback_max_per_day", 1)),
@@ -426,9 +426,9 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         trailing_profit_arm_pct=float(section.get("trailing_profit_arm_pct", 2.0)),
         trailing_profit_giveback_pct=float(section.get("trailing_profit_giveback_pct", 1.0)),
         basket_drawdown_pause_pct=float(section.get("basket_drawdown_pause_pct", 1.5)),
-        max_long_positions=int(section.get("max_long_positions", 0)),
-        max_short_positions=int(section.get("max_short_positions", 0)),
-        near_miss_entries_with_open_positions=bool(section.get("near_miss_entries_with_open_positions", False)),
+        max_long_positions=int(section.get("max_long_positions", 15)),
+        max_short_positions=int(section.get("max_short_positions", 15)),
+        near_miss_entries_with_open_positions=bool(section.get("near_miss_entries_with_open_positions", True)),
         close_automation_mode=str(section.get("close_automation_mode", "automatic") or "automatic"),
     )
 
