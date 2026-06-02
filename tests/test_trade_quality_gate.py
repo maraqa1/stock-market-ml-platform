@@ -108,6 +108,14 @@ def test_higher_risk_profile_sizes_larger_paper_orders():
     assert rows.loc["SPEC", "approved_notional"] == 625
 
 
+def test_missing_side_probability_does_not_crush_ranked_candidate_size():
+    cfg = config(account_equity=100_000, max_orders=20, max_total_notional=50_000, max_position_pct=0.05)
+    row = apply_trade_quality_gate(pd.DataFrame([signal(side_probability=0.0)]), cfg).iloc[0]
+
+    assert row["risk_tier"] == "high_quality"
+    assert row["approved_notional"] == 2500
+
+
 def test_strong_directional_candidate_rounds_up_to_one_share_when_safe():
     row = apply_trade_quality_gate(
         pd.DataFrame(

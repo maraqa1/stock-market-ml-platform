@@ -24,13 +24,15 @@ def risk_tier_multiplier(risk_tier: str) -> float:
 
 def confidence_multiplier(side_probability: float) -> float:
     probability = float(side_probability or 0)
+    if probability <= 0:
+        return 1.0
     if probability >= 0.75:
         return 1.0
     if probability >= 0.60:
-        return 0.75
+        return 0.90
     if probability >= 0.50:
-        return 0.50
-    return 0.25
+        return 0.75
+    return 0.60
 
 
 def base_notional(account_equity: float, max_position_pct: float, max_basket_notional: float, max_daily_orders: int) -> float:
