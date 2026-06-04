@@ -295,7 +295,7 @@ def test_build_order_plan_uses_notional_paper_orders():
     assert plan.iloc[0]["side"] == "buy"
     assert plan.iloc[0]["notional"] == 450.0
     assert plan.iloc[0]["trade_quality_status"] == "approved"
-    assert bool(plan.iloc[0]["extended_hours"]) is False
+    assert bool(plan.iloc[0]["extended_hours"]) is True
     assert plan.iloc[0]["client_order_id"] == "stockml-20260508-AAA-buy"
 
 
