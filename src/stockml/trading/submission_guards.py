@@ -42,6 +42,17 @@ def _boolish(value: Any, default: bool = False) -> bool:
     return default
 
 
+def asset_is_overnight_tradable(asset: dict[str, Any] | None) -> bool:
+    if not asset:
+        return False
+    if _boolish(asset.get("overnight_tradable"), False):
+        return True
+    attributes = asset.get("attributes") or []
+    if isinstance(attributes, str):
+        attributes = [part.strip() for part in attributes.replace(",", " ").split()]
+    return "overnight_tradable" in {str(value).strip().lower() for value in attributes}
+
+
 def validate_order(order: dict, client: AlpacaPaperClient, context: SubmissionContext, seen_client_ids: set[str]) -> tuple[bool, str]:
     if not context.healthy:
         return False, context.message
@@ -79,7 +90,7 @@ def validate_order(order: dict, client: AlpacaPaperClient, context: SubmissionCo
         return False, "asset_not_tradable"
     if str(asset.get("status") or "").lower() not in {"active", ""}:
         return False, f"asset_status_{asset.get('status')}"
-    if order.get("extended_hours") and not _boolish(asset.get("overnight_tradable"), False):
+    if order.get("extended_hours") and not asset_is_overnight_tradable(asset):
         return False, "asset_not_overnight_tradable"
     if order.get("side") == "sell" and not _boolish(asset.get("shortable"), True):
         return False, "asset_not_shortable"

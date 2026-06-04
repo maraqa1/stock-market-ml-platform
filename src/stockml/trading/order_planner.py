@@ -317,6 +317,10 @@ def build_order_plan(
         open_positions=open_positions,
         same_day_realized_pnl_today=same_day_realized_pnl_today,
     )
+    return build_order_plan_from_candidate_pool(candidate_pool, config)
+
+
+def build_order_plan_from_candidate_pool(candidate_pool: pd.DataFrame, config: AlpacaConfig) -> pd.DataFrame:
     if candidate_pool.empty:
         return pd.DataFrame()
     gated = _select_final_orders(candidate_pool, config)

@@ -93,6 +93,25 @@ def test_validate_order_treats_string_false_overnight_flag_as_false():
     assert reason == "asset_not_overnight_tradable"
 
 
+def test_validate_order_accepts_overnight_attribute_marker():
+    allowed, reason = validate_order(
+        {
+            "symbol": "VSTM",
+            "client_order_id": "id-1",
+            "notional": 100,
+            "suggested_quantity": 1,
+            "side": "buy",
+            "extended_hours": True,
+        },
+        FakeClient(asset={"tradable": True, "status": "active", "shortable": True, "attributes": ["overnight_tradable"]}),
+        SubmissionContext(healthy=True, buying_power=1000),
+        set(),
+    )
+
+    assert allowed is True
+    assert reason == "submission_preflight_passed"
+
+
 def test_validate_order_rejects_zero_quantity():
     allowed, reason = validate_order(
         {"symbol": "AAA", "client_order_id": "id-1", "notional": 100, "suggested_quantity": 0, "side": "buy"},

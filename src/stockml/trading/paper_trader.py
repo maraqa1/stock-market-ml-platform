@@ -15,9 +15,9 @@ from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
-from stockml.trading.order_planner import build_candidate_pool, build_order_plan, latest_signal_table
+from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, latest_signal_table
 from stockml.trading.shortlist_snapshots import write_shortlist_snapshot
-from stockml.trading.submission_guards import load_submission_context, validate_order
+from stockml.trading.submission_guards import asset_is_overnight_tradable, load_submission_context, validate_order
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -81,6 +81,68 @@ def _stamp_client_order_ids(plan: pd.DataFrame, stamp: str) -> pd.DataFrame:
         return f"{base[:keep]}{suffix}"
 
     out["client_order_id"] = out["client_order_id"].apply(stamped)
+    return out
+
+
+def _boolish(value: object, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n"}:
+        return False
+    return default
+
+
+def _append_reason(existing: object, reason: str) -> str:
+    text = _clean_text(existing)
+    if not text:
+        return reason
+    parts = [part for part in text.split("|") if part]
+    return text if reason in parts else "|".join([*parts, reason])
+
+
+def _mark_overnight_asset_eligibility(candidate_pool: pd.DataFrame, client: AlpacaPaperClient) -> pd.DataFrame:
+    if candidate_pool.empty or "extended_hours" not in candidate_pool.columns:
+        return candidate_pool
+    out = candidate_pool.copy()
+    if "overnight_tradable" not in out.columns:
+        out["overnight_tradable"] = ""
+    if "overnight_eligibility_reason" not in out.columns:
+        out["overnight_eligibility_reason"] = ""
+
+    for idx, row in out.iterrows():
+        if not _boolish(row.get("extended_hours"), False):
+            continue
+        symbol = _clean_text(row.get("symbol"))
+        if not symbol:
+            reason = "missing_symbol"
+            overnight_tradable = False
+        else:
+            try:
+                asset = client.get_asset(symbol.upper())
+                overnight_tradable = asset_is_overnight_tradable(asset)
+                reason = "overnight_tradable" if overnight_tradable else "asset_not_overnight_tradable"
+            except Exception as exc:
+                overnight_tradable = False
+                reason = f"overnight_asset_check_failed: {exc}"
+
+        out.at[idx, "overnight_tradable"] = overnight_tradable
+        out.at[idx, "overnight_eligibility_reason"] = reason
+        if not overnight_tradable:
+            out.at[idx, "trade_quality_status"] = "rejected"
+            out.at[idx, "trade_quality_reason"] = _append_reason(row.get("trade_quality_reason", ""), reason)
+            out.at[idx, "approved_notional"] = 0.0
+            out.at[idx, "suggested_quantity"] = 0
+            out.at[idx, "order_eligible"] = False
     return out
 
 
@@ -152,7 +214,14 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
         raise RuntimeError(model_fresh_reason)
     signals = latest_signal_table(signal_file)
     candidate_pool = build_candidate_pool(signals, config)
-    plan = build_order_plan(signals, config)
+    asset_client = AlpacaPaperClient(config) if config.api_key and config.secret_key and (config.extended_hours or config.overnight_trading_enabled) else None
+    if asset_client is not None:
+        candidate_pool = _mark_overnight_asset_eligibility(candidate_pool, asset_client)
+    pool_plan_columns = {"trade_quality_status", "order_eligible", "suggested_quantity", "trade_action"}
+    if pool_plan_columns.issubset(candidate_pool.columns):
+        plan = build_order_plan_from_candidate_pool(candidate_pool, config)
+    else:
+        plan = build_order_plan(signals, config)
     stamp = timestamp()
     plan = _stamp_client_order_ids(plan, stamp)
     candidate_pool_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_candidate_pool_{stamp}.csv"
@@ -184,7 +253,7 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
     if config.submit_orders and config.live_trading_enabled:
         raise RuntimeError("Live trading is disabled by policy for this platform")
     if can_submit and not plan.empty:
-        client = AlpacaPaperClient(config)
+        client = asset_client or AlpacaPaperClient(config)
         context = load_submission_context(client)
         seen_client_ids: set[str] = set()
         for order in plan.to_dict("records"):
@@ -300,6 +369,10 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
         "orders_approved": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower().isin(["approved", "reduced"])).sum()) if not plan.empty else 0,
         "orders_rejected": int((plan.get("trade_quality_status", pd.Series(dtype=str)).astype(str).str.lower() == "rejected").sum()) if not plan.empty else 0,
         "orders_submitted": sum(1 for row in result_rows if row["status"] == "submitted"),
+        "result_submitted": sum(1 for row in result_rows if row["status"] == "submitted"),
+        "result_rejected": sum(1 for row in result_rows if row["status"] == "rejected"),
+        "result_error": sum(1 for row in result_rows if row["status"] == "error"),
+        "result_dry_run": sum(1 for row in result_rows if row["status"] == "dry_run"),
         "dry_run": plan_only or not config.submit_orders,
         "plan_only": plan_only,
         "shorting_enabled": config.allow_short_selling,

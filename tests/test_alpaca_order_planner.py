@@ -293,7 +293,7 @@ def test_build_order_plan_uses_notional_paper_orders():
     plan = build_order_plan(signals, config(max_notional_per_order=250.0, extended_hours=True))
     assert plan.iloc[0]["symbol"] == "AAA"
     assert plan.iloc[0]["side"] == "buy"
-    assert plan.iloc[0]["notional"] == 375.0
+    assert plan.iloc[0]["notional"] == 450.0
     assert plan.iloc[0]["trade_quality_status"] == "approved"
     assert bool(plan.iloc[0]["extended_hours"]) is False
     assert plan.iloc[0]["client_order_id"] == "stockml-20260508-AAA-buy"

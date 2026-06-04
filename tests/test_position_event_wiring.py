@@ -10,7 +10,7 @@ from stockml.trading.config import AlpacaConfig
 TEST_OUTPUT_DIR = Path("_tmp_position_event_wiring")
 
 
-def config(submit_orders: bool = True) -> AlpacaConfig:
+def config(submit_orders: bool = True, overnight_trading_enabled: bool = False) -> AlpacaConfig:
     return AlpacaConfig(
         api_key="key",
         secret_key="secret",
@@ -30,6 +30,7 @@ def config(submit_orders: bool = True) -> AlpacaConfig:
         transaction_cost_bps=10,
         live_trading_enabled=False,
         paper_trading_enabled=True,
+        overnight_trading_enabled=overnight_trading_enabled,
     )
 
 
@@ -88,6 +89,20 @@ class FakeClient:
 
     def list_positions(self):
         return []
+
+
+class OvernightMapClient(FakeClient):
+    def __init__(self, overnight_symbols: set[str]):
+        self.overnight_symbols = overnight_symbols
+
+    def get_asset(self, symbol):
+        attributes = ["overnight_tradable"] if str(symbol).upper() in self.overnight_symbols else []
+        return {
+            "tradable": True,
+            "status": "active",
+            "shortable": True,
+            "attributes": attributes,
+        }
 
 
 def test_paper_trader_records_submitted_and_guardrail_events(monkeypatch):
@@ -219,6 +234,78 @@ def test_paper_trader_submits_extended_hours_limit_payload(monkeypatch):
     assert request["time_in_force"] == "day"
     assert request["extended_hours"] is True
     assert request["limit_price"] == 20.1
+
+
+def test_paper_trader_filters_non_overnight_assets_before_final_selection(monkeypatch):
+    client_calls = []
+    candidate_pool = pd.DataFrame(
+        [
+            {
+                "symbol": "BNY",
+                "client_order_id": "stockml-BNY-buy",
+                "side": "buy",
+                "type": "limit",
+                "time_in_force": "day",
+                "extended_hours": True,
+                "limit_price": 100.5,
+                "trade_action": "Long",
+                "trade_quality_status": "approved",
+                "trade_quality_reason": "",
+                "order_eligible": True,
+                "suggested_quantity": 2,
+                "notional": 200,
+                "approved_notional": 200,
+                "risk_adjusted_score": 2.0,
+                "directional_strength": 1.0,
+                "risk_tier": "high_quality",
+            },
+            {
+                "symbol": "VSTM",
+                "client_order_id": "stockml-VSTM-buy",
+                "side": "buy",
+                "type": "limit",
+                "time_in_force": "day",
+                "extended_hours": True,
+                "limit_price": 20.1,
+                "trade_action": "Long",
+                "trade_quality_status": "approved",
+                "trade_quality_reason": "",
+                "order_eligible": True,
+                "suggested_quantity": 2,
+                "notional": 40.2,
+                "approved_notional": 40.2,
+                "risk_adjusted_score": 1.0,
+                "directional_strength": 0.9,
+                "risk_tier": "medium",
+            },
+        ]
+    )
+
+    class TrackingClient(OvernightMapClient):
+        def submit_order(self, request):
+            client_calls.append(request)
+            return super().submit_order(request)
+
+    TEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(paper_trader, "PORTAL_OUTPUTS_DIR", TEST_OUTPUT_DIR)
+    monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True, overnight_trading_enabled=True))
+    monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (False, ""))
+    monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "VSTM"}]))
+    monkeypatch.setattr(paper_trader, "latest_model_freshness", lambda signal_file=None: (True, "model_signal_table_fresh", "signals.csv"))
+    monkeypatch.setattr(paper_trader, "build_candidate_pool", lambda signals, cfg: candidate_pool)
+    monkeypatch.setattr(paper_trader, "AlpacaPaperClient", lambda cfg: TrackingClient({"VSTM"}))
+    monkeypatch.setattr(paper_trader, "record_event_safely", lambda *args, **kwargs: True)
+
+    result = paper_trader.run_paper_trading()
+
+    assert result["orders_submitted"] == 1
+    assert result["result_rejected"] == 0
+    assert client_calls[0]["symbol"] == "VSTM"
+    written_pool = pd.read_csv(result["candidate_pool_path"])
+    blocked = written_pool[written_pool["symbol"].eq("BNY")].iloc[0]
+    assert blocked["trade_quality_status"] == "rejected"
+    assert blocked["overnight_tradable"] is False or str(blocked["overnight_tradable"]).lower() == "false"
+    assert "asset_not_overnight_tradable" in blocked["trade_quality_reason"]
 
 
 def test_paper_trader_blocks_submission_when_model_is_stale(monkeypatch):
