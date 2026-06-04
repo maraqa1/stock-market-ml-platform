@@ -52,6 +52,33 @@ def text_value(value: Any, default: str = "") -> str:
     return text or default
 
 
+def float_value(value: Any, default: float = 0.0) -> float:
+    if value in [None, ""]:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def extended_limit_price(row: pd.Series, side: str, buffer_bps: float) -> float | None:
+    price = 0.0
+    for column in ["current_price", "close", "open_price"]:
+        price = float_value(row.get(column), 0.0)
+        if price > 0:
+            break
+    if price <= 0:
+        return None
+    buffer = max(0.0, float(buffer_bps or 0.0)) / 10000.0
+    if side == "buy":
+        adjusted = price * (1.0 + buffer)
+    else:
+        adjusted = price * max(0.0, 1.0 - buffer)
+    return round(max(0.01, adjusted), 2)
+
+
 def validate_order_payload(order: dict[str, Any], max_order_notional: float | None = None) -> OrderValidationResult:
     symbol = str(order.get("symbol") or "").strip().upper()
     side = str(order.get("side") or "").strip().lower()
@@ -89,6 +116,8 @@ def validate_order_payload(order: dict[str, Any], max_order_notional: float | No
         return OrderValidationResult(False, "missing_stop_limit_price")
     if order.get("extended_hours") and order_type != "limit":
         return OrderValidationResult(False, "extended_hours_requires_limit")
+    if order.get("extended_hours") and tif not in {"day", "gtc"}:
+        return OrderValidationResult(False, "extended_hours_requires_day_or_gtc")
     if has_qty and float(qty) % 1 != 0 and tif != "day":
         return OrderValidationResult(False, "fractional_requires_day")
     return OrderValidationResult(True)
@@ -128,15 +157,26 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
     status = str(row.get("trade_quality_status", "")).lower()
     approved = status in {"approved", "reduced"}
     notional = float(row.get("approved_notional", 0) or 0)
+    extended = bool(config.extended_hours or config.overnight_trading_enabled)
+    entry_type = "limit" if extended else "market"
+    limit_price = extended_limit_price(row, side, config.overnight_limit_buffer_bps) if extended else None
+    order_eligible = bool(row.get("order_eligible", approved and notional > 0))
+    quality_reason = text_value(row.get("trade_quality_reason"), "")
+    if extended and limit_price is None:
+        order_eligible = False
+        quality_reason = "|".join(part for part in [quality_reason, "extended_hours_limit_price_missing"] if part)
+        if approved:
+            status = "rejected"
     return {
         "symbol": symbol,
         "company": row.get("company", ""),
         "sector": row.get("sector", ""),
         "notional": round(notional, 2),
         "side": side,
-        "type": "market",
+        "type": entry_type,
         "time_in_force": "day",
-        "extended_hours": bool(config.extended_hours) and False,
+        "extended_hours": extended,
+        "limit_price": limit_price if limit_price is not None else "",
         "client_order_id": f"stockml-{date_part}-{symbol}-{side}",
         "trade_action": row.get("trade_action"),
         "confidence_score": row.get("confidence_score", ""),
@@ -178,6 +218,6 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
         "must_flatten_at_eod": bool_value(row.get("must_flatten_at_eod", False)),
         "max_hold_until": text_value(row.get("max_hold_until"), ""),
         "trade_quality_status": status if approved else "rejected",
-        "trade_quality_reason": row.get("trade_quality_reason", ""),
-        "order_eligible": bool(row.get("order_eligible", approved and notional > 0)),
+        "trade_quality_reason": quality_reason,
+        "order_eligible": order_eligible,
     }

@@ -84,7 +84,7 @@ class FakeClient:
         return []
 
     def get_asset(self, symbol):
-        return {"tradable": True, "status": "active", "shortable": True}
+        return {"tradable": True, "status": "active", "shortable": True, "overnight_tradable": True}
 
     def list_positions(self):
         return []
@@ -168,6 +168,57 @@ def test_paper_trader_blocks_basket_submission_when_paper_autopilot_running(monk
         raise AssertionError("expected basket submission to be blocked")
 
     assert client_calls == []
+
+
+def test_paper_trader_submits_extended_hours_limit_payload(monkeypatch):
+    client_calls = []
+    plan = pd.DataFrame(
+        [
+            {
+                "symbol": "VSTM",
+                "client_order_id": "stockml-VSTM-buy",
+                "side": "buy",
+                "type": "limit",
+                "time_in_force": "day",
+                "extended_hours": True,
+                "limit_price": 20.1,
+                "trade_action": "Long",
+                "trade_quality_status": "approved",
+                "trade_quality_reason": "",
+                "order_eligible": True,
+                "suggested_quantity": 2,
+                "notional": 40.2,
+            }
+        ]
+    )
+
+    class TrackingClient(FakeClient):
+        def submit_order(self, request):
+            client_calls.append(request)
+            return super().submit_order(request)
+
+    TEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(paper_trader, "PORTAL_OUTPUTS_DIR", TEST_OUTPUT_DIR)
+    monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
+    monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (False, ""))
+    monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "VSTM"}]))
+    monkeypatch.setattr(paper_trader, "latest_model_freshness", lambda signal_file=None: (True, "model_signal_table_fresh", "signals.csv"))
+    monkeypatch.setattr(paper_trader, "build_candidate_pool", lambda signals, cfg: pd.DataFrame([{"symbol": "VSTM"}]))
+    monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: plan)
+    monkeypatch.setattr(paper_trader, "AlpacaPaperClient", lambda cfg: TrackingClient())
+    monkeypatch.setattr(paper_trader, "record_event_safely", lambda *args, **kwargs: True)
+
+    result = paper_trader.run_paper_trading()
+
+    assert result["orders_submitted"] == 1
+    assert len(client_calls) == 1
+    request = client_calls[0]
+    assert request["symbol"] == "VSTM"
+    assert request["qty"] == "2"
+    assert request["type"] == "limit"
+    assert request["time_in_force"] == "day"
+    assert request["extended_hours"] is True
+    assert request["limit_price"] == 20.1
 
 
 def test_paper_trader_blocks_submission_when_model_is_stale(monkeypatch):

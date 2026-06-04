@@ -36,6 +36,8 @@ class AlpacaConfig:
     directional_round_up_enabled: bool = True
     directional_round_up_min_strength: float = 0.97
     directional_round_up_max_equity_pct: float = 0.05
+    overnight_trading_enabled: bool = False
+    overnight_limit_buffer_bps: float = 50.0
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -98,4 +100,6 @@ def alpaca_config() -> AlpacaConfig:
         directional_round_up_enabled=_bool_env("STOCKML_DIRECTIONAL_ROUND_UP_ENABLED", default=True),
         directional_round_up_min_strength=_float_env("STOCKML_DIRECTIONAL_ROUND_UP_MIN_STRENGTH", 0.97, minimum=0.0, maximum=1.0),
         directional_round_up_max_equity_pct=_float_env("STOCKML_DIRECTIONAL_ROUND_UP_MAX_EQUITY_PCT", 0.05, minimum=0.0, maximum=1.0),
+        overnight_trading_enabled=_bool_env("STOCKML_ALPACA_OVERNIGHT_TRADING_ENABLED", default=False),
+        overnight_limit_buffer_bps=_float_env("STOCKML_ALPACA_OVERNIGHT_LIMIT_BUFFER_BPS", 50.0, minimum=0.0, maximum=500.0),
     )

@@ -208,6 +208,8 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
                 "extended_hours": bool(order.get("extended_hours", False)) and str(order.get("type", "")).lower() == "limit",
                 "client_order_id": order["client_order_id"],
             }
+            if str(order.get("type", "")).lower() == "limit":
+                request["limit_price"] = order.get("limit_price")
             try:
                 payload_check = validate_order_payload(request, max_order_notional=config.max_notional_per_order)
                 if not payload_check.valid:

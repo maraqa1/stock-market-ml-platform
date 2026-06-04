@@ -3,7 +3,7 @@ from stockml.trading.submission_guards import SubmissionContext, validate_order
 
 class FakeClient:
     def __init__(self, asset=None):
-        self.asset = asset or {"tradable": True, "status": "active", "shortable": True}
+        self.asset = asset or {"tradable": True, "status": "active", "shortable": True, "overnight_tradable": True}
 
     def get_asset(self, symbol):
         return self.asset
@@ -53,6 +53,44 @@ def test_validate_order_passes_and_tracks_client_id():
     assert allowed is True
     assert reason == "submission_preflight_passed"
     assert seen == {"id-1"}
+
+
+def test_validate_order_rejects_extended_hours_when_asset_not_overnight_tradable():
+    allowed, reason = validate_order(
+        {
+            "symbol": "AAA",
+            "client_order_id": "id-1",
+            "notional": 100,
+            "suggested_quantity": 1,
+            "side": "buy",
+            "extended_hours": True,
+        },
+        FakeClient(asset={"tradable": True, "status": "active", "shortable": True, "overnight_tradable": False}),
+        SubmissionContext(healthy=True, buying_power=1000),
+        set(),
+    )
+
+    assert allowed is False
+    assert reason == "asset_not_overnight_tradable"
+
+
+def test_validate_order_treats_string_false_overnight_flag_as_false():
+    allowed, reason = validate_order(
+        {
+            "symbol": "AAA",
+            "client_order_id": "id-1",
+            "notional": 100,
+            "suggested_quantity": 1,
+            "side": "buy",
+            "extended_hours": True,
+        },
+        FakeClient(asset={"tradable": "true", "status": "active", "shortable": "true", "overnight_tradable": "false"}),
+        SubmissionContext(healthy=True, buying_power=1000),
+        set(),
+    )
+
+    assert allowed is False
+    assert reason == "asset_not_overnight_tradable"
 
 
 def test_validate_order_rejects_zero_quantity():

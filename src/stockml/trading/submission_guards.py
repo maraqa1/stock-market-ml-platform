@@ -29,6 +29,19 @@ def load_submission_context(client: AlpacaPaperClient) -> SubmissionContext:
         return SubmissionContext(healthy=False, message=f"account_check_failed: {exc}")
 
 
+def _boolish(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n"}:
+        return False
+    return default
+
+
 def validate_order(order: dict, client: AlpacaPaperClient, context: SubmissionContext, seen_client_ids: set[str]) -> tuple[bool, str]:
     if not context.healthy:
         return False, context.message
@@ -62,11 +75,13 @@ def validate_order(order: dict, client: AlpacaPaperClient, context: SubmissionCo
         return False, f"asset_check_failed: {exc}"
     if not asset:
         return False, "asset_not_found"
-    if not bool(asset.get("tradable")):
+    if not _boolish(asset.get("tradable")):
         return False, "asset_not_tradable"
     if str(asset.get("status") or "").lower() not in {"active", ""}:
         return False, f"asset_status_{asset.get('status')}"
-    if order.get("side") == "sell" and not bool(asset.get("shortable", True)):
+    if order.get("extended_hours") and not _boolish(asset.get("overnight_tradable"), False):
+        return False, "asset_not_overnight_tradable"
+    if order.get("side") == "sell" and not _boolish(asset.get("shortable"), True):
         return False, "asset_not_shortable"
 
     seen_client_ids.add(client_order_id)

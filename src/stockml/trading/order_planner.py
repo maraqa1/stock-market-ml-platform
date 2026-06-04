@@ -9,7 +9,7 @@ from stockml.decisions.meta_label_gate import MetaLabelGateConfig, apply_meta_la
 from stockml.models.meta_labeling import load_meta_label_config
 from stockml.common.paths import MODEL_OUTPUTS_DIR, latest_file
 from stockml.trading.config import AlpacaConfig
-from stockml.trading.order_builder import order_row
+from stockml.trading.order_builder import extended_limit_price, order_row
 from stockml.trading.position_sizing import apply_same_day_sizing
 from stockml.trading.trade_quality_gate import apply_trade_quality_gate
 
@@ -37,14 +37,19 @@ def _side(action: str) -> str:
 
 def _notional_order(row: pd.Series, config: AlpacaConfig) -> dict:
     action = str(row["trade_action"])
+    side = _side(action)
+    extended = bool(config.extended_hours or config.overnight_trading_enabled)
+    entry_type = "limit" if extended else "market"
+    limit_price = extended_limit_price(row, side, config.overnight_limit_buffer_bps) if extended else None
     return {
         "symbol": str(row["ticker"]).upper(),
         "notional": round(float(config.max_notional_per_order), 2),
-        "side": _side(action),
-        "type": "market",
+        "side": side,
+        "type": entry_type,
         "time_in_force": "day",
-        "extended_hours": bool(config.extended_hours),
-        "client_order_id": f"stockml-{str(row.get('date', 'latest')).replace('-', '')}-{str(row['ticker']).upper()}-{_side(action)}",
+        "extended_hours": extended,
+        "limit_price": limit_price if limit_price is not None else "",
+        "client_order_id": f"stockml-{str(row.get('date', 'latest')).replace('-', '')}-{str(row['ticker']).upper()}-{side}",
     }
 
 

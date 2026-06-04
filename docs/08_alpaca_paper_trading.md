@@ -27,6 +27,8 @@ ALPACA_BASE_URL=https://paper-api.alpaca.markets
 
 STOCKML_ALPACA_SUBMIT_ORDERS=false
 STOCKML_ALPACA_EXTENDED_HOURS=false
+STOCKML_ALPACA_OVERNIGHT_TRADING_ENABLED=false
+STOCKML_ALPACA_OVERNIGHT_LIMIT_BUFFER_BPS=50
 STOCKML_ALPACA_AUTOTRADE_ENABLED=false
 STOCKML_ALPACA_AUTOTRADE_START_UTC=14:45
 STOCKML_ALPACA_AUTOTRADE_END_UTC=20:30
@@ -131,6 +133,19 @@ To allow automated paper-order submission, both flags must be explicitly enabled
 STOCKML_ALPACA_AUTOTRADE_ENABLED=true
 STOCKML_ALPACA_SUBMIT_ORDERS=true
 ```
+
+## 24/5 Paper Trading
+
+Alpaca 24/5 and extended-hours equity orders require limit orders with `time_in_force=day` or `gtc`, `extended_hours=true`, and an asset that Alpaca marks as `overnight_tradable`. StockML keeps this disabled by default.
+
+To allow paper 24/5 basket submissions, set:
+
+```bash
+STOCKML_ALPACA_OVERNIGHT_TRADING_ENABLED=true
+STOCKML_ALPACA_OVERNIGHT_LIMIT_BUFFER_BPS=50
+```
+
+When enabled, the paper order builder converts basket entries to limit orders and applies a small limit buffer from the latest available price. Buy limits are placed above the latest price; sell limits are placed below it. The submission guard rejects any extended-hours order whose Alpaca asset record is not `overnight_tradable=true`.
 
 Recommended first step:
 
