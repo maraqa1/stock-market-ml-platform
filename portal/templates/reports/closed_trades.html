@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+{% set report = closed_trades %}
+<section class="trading-console">
+  <section class="zone trading-zone" data-zone="closed-trades-header">
+    <div class="zone__header">
+      <span>Closed Trades Attribution</span>
+      <span class="zone__header-meta">{{ report.verdict }}</span>
+    </div>
+    <div class="zone__body">
+      <div class="table-toolbar">
+        <a class="btn btn-ghost" href="/reports">Reports</a>
+        <a class="btn btn-ghost" href="{{ report.csv_url }}">CSV</a>
+      </div>
+      {% if report.missing %}
+        <div class="empty small">{{ report.missing_message }}</div>
+      {% else %}
+        <p class="small muted">Source: {{ report.source }}</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="closed-trades-summary">
+    <div class="zone__header">
+      <span>Summary</span>
+      <span class="zone__header-meta">last {{ report.days }} days</span>
+    </div>
+    <div class="zone__body kpi-grid">
+      <div class="kpi-card"><span>Trades</span><strong class="num-l">{{ report.summary.trade_count }}</strong></div>
+      <div class="kpi-card"><span>Win Rate</span><strong class="num-l">{{ "%.1f%%"|format((report.summary.win_rate or 0) * 100) }}</strong></div>
+      <div class="kpi-card"><span>Mean Net Bps</span><strong class="num-l">{{ "%+.1f"|format(report.summary.mean_realized_net_bps or 0) }}</strong></div>
+      <div class="kpi-card"><span>MFE Capture</span><strong class="num-l">{{ "%.2f"|format(report.summary.mean_mfe_capture_ratio or 0) }}</strong></div>
+      <div class="kpi-card"><span>Stop Losses</span><strong class="num-l">{{ report.summary.stop_loss_count }}</strong></div>
+      <div class="kpi-card"><span>Gave Back Winners</span><strong class="num-l">{{ report.summary.negative_but_mfe_positive_count }}</strong></div>
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="closed-trades-by-reason">
+    <div class="zone__header"><span>By Close Reason</span><span class="zone__header-meta">process health</span></div>
+    <div class="zone__body">{{ table(report.by_reason) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="closed-trades-by-stream">
+    <div class="zone__header"><span>By Stream</span><span class="zone__header-meta">multi-day vs same-day</span></div>
+    <div class="zone__body">{{ table(report.by_stream) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="closed-trades-by-direction">
+    <div class="zone__header"><span>By Direction</span><span class="zone__header-meta">long vs short</span></div>
+    <div class="zone__body">{{ table(report.by_direction) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="closed-trades-rows">
+    <div class="zone__header"><span>Recent Closed Trades</span><span class="zone__header-meta">latest 200</span></div>
+    <div class="zone__body">{{ table(report.rows) }}</div>
+  </section>
+</section>
+{% endblock %}

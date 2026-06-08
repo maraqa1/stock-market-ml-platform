@@ -618,6 +618,46 @@ daily_report_runs = Table(
     Column("details", JSON, nullable=False, default=dict),
 )
 
+closed_trades_attribution = Table(
+    "closed_trades_attribution",
+    metadata,
+    Column("position_id", BigInteger, primary_key=True),
+    Column("symbol", String(50), nullable=False),
+    Column("strategy_stream", String(50), nullable=False),
+    Column("direction", String(10), nullable=False),
+    Column("opened_at", DateTime(timezone=True), nullable=False),
+    Column("closed_at", DateTime(timezone=True), nullable=False),
+    Column("opened_by_signal_id", String(200)),
+    Column("signal_price", Float),
+    Column("entry_target", Float),
+    Column("entry_fill", Float),
+    Column("exit_target", Float),
+    Column("exit_fill", Float),
+    Column("signal_to_entry_bps", Float),
+    Column("entry_to_exit_bps", Float),
+    Column("exit_slippage_bps", Float),
+    Column("modeled_costs_bps", Float),
+    Column("realized_net_bps", Float),
+    Column("realized_pnl_usd", Float),
+    Column("max_favourable_bps", Float),
+    Column("max_adverse_bps", Float),
+    Column("minutes_to_first_positive", Integer),
+    Column("minutes_to_max_adverse", Integer),
+    Column("close_reason", String(50), nullable=False),
+    Column("trigger_source", String(100)),
+    Column("signal_state_at_close", String(100)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(_in_values("strategy_stream", STRATEGY_STREAMS), name="ck_closed_trades_strategy_stream"),
+    CheckConstraint(_in_values("direction", ("long", "short")), name="ck_closed_trades_direction"),
+    CheckConstraint(
+        _in_values("close_reason", ("STOP_LOSS", "TIME_STOP", "SIGNAL_FLIP", "TAKE_PROFIT", "ROTATION_OUT", "EOD_FLATTEN", "MANUAL", "OTHER")),
+        name="ck_closed_trades_close_reason",
+    ),
+    Index("ix_closed_trades_symbol_closed_at", "symbol", "closed_at"),
+    Index("ix_closed_trades_closed_at", "closed_at"),
+    Index("ix_closed_trades_stream_reason", "strategy_stream", "close_reason"),
+)
+
 
 def create_all(engine) -> None:
     metadata.create_all(engine)

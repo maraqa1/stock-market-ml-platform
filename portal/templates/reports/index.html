@@ -1,6 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="trading-console">
+  <section class="zone trading-zone" data-zone="reports-tools">
+    <div class="zone__header">
+      <span>Diagnostic Reports</span>
+      <span class="zone__header-meta">read-only</span>
+    </div>
+    <div class="zone__body">
+      <div class="table-toolbar">
+        <a class="btn btn-ghost" href="/reports/closed_trades">Closed Trades Attribution</a>
+        <a class="btn btn-ghost" href="/reports/closed_trades.csv">Closed Trades CSV</a>
+      </div>
+    </div>
+  </section>
+
   <section class="zone trading-zone" data-zone="reports-index">
     <div class="zone__header">
       <span>Daily Reports</span>

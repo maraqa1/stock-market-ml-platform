@@ -15,6 +15,7 @@ from portal.services.latest_file_reader import count_rows, file_status, latest_f
 from portal.services.near_miss_service import near_miss_context
 from portal.services.per_symbol_forecast_service import per_symbol_forecast_context
 from portal.services.same_day_view import missed_opportunities_context, record_same_day_operator_decision, same_day_panel_context
+from portal.services.reports_view import closed_trades_context, closed_trades_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
 from portal.services.intraday import decisions_csv as intraday_decisions_csv
@@ -680,6 +681,32 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/reports")
     def reports_index():
         return render_template("reports/index.html", title="Reports", reports=report_index())
+
+    @app.route("/reports/closed_trades.csv")
+    def reports_closed_trades_csv():
+        try:
+            days = int(request.args.get("days", "30"))
+        except ValueError:
+            days = 30
+        stream = request.args.get("stream") or None
+        return Response(
+            closed_trades_csv(root_path(), days=days, stream=stream),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=closed_trades_attribution.csv"},
+        )
+
+    @app.route("/reports/closed_trades")
+    def reports_closed_trades():
+        try:
+            days = int(request.args.get("days", "30"))
+        except ValueError:
+            days = 30
+        stream = request.args.get("stream") or None
+        return render_template(
+            "reports/closed_trades.html",
+            title="Closed Trades Attribution",
+            closed_trades=closed_trades_context(root_path(), days=days, stream=stream),
+        )
 
     @app.route("/reports/daily/<report_date>.json")
     def reports_daily_json(report_date: str):

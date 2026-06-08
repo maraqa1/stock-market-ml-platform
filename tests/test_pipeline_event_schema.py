@@ -33,6 +33,7 @@ from stockml.db.schema import (
     same_day_missed_opportunities,
     same_day_promotion_evaluations,
     same_day_signal_log,
+    closed_trades_attribution,
     rotation_recommendation_log,
     autopilot_open_log,
     daily_report_runs,
@@ -67,6 +68,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert "same_day_missed_opportunities" in metadata.tables
     assert "same_day_promotion_evaluations" in metadata.tables
     assert "same_day_signal_log" in metadata.tables
+    assert "closed_trades_attribution" in metadata.tables
     assert "rotation_recommendation_log" in metadata.tables
     assert "autopilot_open_log" in metadata.tables
     assert "arbitration_conflicts" in metadata.tables
@@ -93,6 +95,7 @@ def test_pipeline_and_position_event_tables_are_registered():
     assert same_day_missed_opportunities.primary_key.columns.keys() == ["id"]
     assert same_day_promotion_evaluations.primary_key.columns.keys() == ["evaluated_at"]
     assert same_day_signal_log.primary_key.columns.keys() == ["id"]
+    assert closed_trades_attribution.primary_key.columns.keys() == ["position_id"]
     assert rotation_recommendation_log.primary_key.columns.keys() == ["id"]
     assert autopilot_open_log.primary_key.columns.keys() == ["id"]
     assert arbitration_conflicts.primary_key.columns.keys() == ["id"]
