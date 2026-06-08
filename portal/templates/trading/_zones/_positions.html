@@ -40,6 +40,9 @@
       </article>
     </div>
     <div class="stale-banner" data-position-stale-banner hidden>Position prices may be stale.</div>
+    <div class="stale-banner" data-basket-pause-banner {% if not positions_api.new_entries_paused or not positions_api.basket_risk_reason_text %}hidden{% endif %}>
+      {{ positions_api.basket_risk_reason_text or "" }}
+    </div>
     {% if positions_api.eod_banner %}
       <div class="stale-banner" data-eod-banner>
         {{ positions_api.eod_banner }}

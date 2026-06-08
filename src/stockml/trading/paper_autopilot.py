@@ -836,6 +836,7 @@ def tick(
             "basket_return": 0.0,
             "new_entries_paused": False,
             "basket_risk_reason": "",
+            "basket_risk_reason_text": "",
         }
         auto_rotation_result = {
             "auto_rotations_attempted": 0,
@@ -854,6 +855,7 @@ def tick(
                 "basket_return": basket.basket_return,
                 "new_entries_paused": basket.new_entries_paused,
                 "basket_risk_reason": basket.reason,
+                "basket_risk_reason_text": basket.reason_text,
             }
         )
         eod_state = str(eod_result.get("eod_state") or "inactive")

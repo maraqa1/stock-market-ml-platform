@@ -11,7 +11,7 @@ def _position(symbol: str, plpc: float, cost_basis: float = 100.0) -> dict:
 
 
 def test_10_red_out_of_11_positions_pauses_new_entries():
-    rows = [_position(f"R{i}", -0.001) for i in range(10)] + [_position("GREEN", 0.01)]
+    rows = [_position(f"R{i}", -0.01) for i in range(10)] + [_position("GREEN", 0.01)]
 
     state = evaluate_basket_risk(rows)
 
@@ -22,14 +22,14 @@ def test_10_red_out_of_11_positions_pauses_new_entries():
 
 
 def test_basket_return_below_threshold_pauses_new_entries():
-    rows = [_position("AAA", -0.01), _position("BBB", -0.006)]
+    rows = [_position("AAA", -0.016)]
 
     state = evaluate_basket_risk(rows)
 
     assert state.new_entries_paused is True
     assert state.basket_state == "new_entries_paused"
-    assert state.basket_return < -0.0075
-    assert state.reason == "basket_drawdown_pause"
+    assert state.basket_return < -0.015
+    assert state.reason == "small_book_basket_return_pause"
 
 
 def test_basket_return_uses_gross_basis_for_short_positions():

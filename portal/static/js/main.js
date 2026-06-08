@@ -300,6 +300,7 @@ if (positionsBody) {
     const newEntriesElement = document.querySelector('[data-position-summary="new_entries_paused"]');
     const redPositionElement = document.querySelector('[data-position-summary="red_position_pct"]');
     const basketReturnElement = document.querySelector('[data-position-summary="basket_return"]');
+    const basketPauseBanner = document.querySelector("[data-basket-pause-banner]");
     const staleness = document.querySelector("[data-position-staleness]");
     if (marketElement) marketElement.textContent = moneyFormatter.format(marketValue);
     if (countElement) countElement.textContent = `${count} open position${count === 1 ? "" : "s"}`;
@@ -311,6 +312,11 @@ if (positionsBody) {
     if (newEntriesElement) newEntriesElement.textContent = `New entries paused: ${state.new_entries_paused ? "yes" : "no"}`;
     if (redPositionElement) redPositionElement.textContent = signedPct(Number(state.red_position_pct || 0));
     if (basketReturnElement) basketReturnElement.textContent = `Basket return ${signedPct(Number(state.basket_return || unrealizedPct))}`;
+    if (basketPauseBanner) {
+      const reasonText = state.new_entries_paused ? String(state.basket_risk_reason_text || "") : "";
+      basketPauseBanner.textContent = reasonText;
+      basketPauseBanner.hidden = !reasonText;
+    }
     updateSignedClass(unrealizedElement, unrealized);
     updateSignedClass(unrealizedPctElement, unrealizedPct);
     updateSignedClass(basketReturnElement, Number(state.basket_return || unrealizedPct));

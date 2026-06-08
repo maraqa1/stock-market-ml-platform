@@ -548,6 +548,7 @@ def positions_context(root: Path) -> dict[str, Any]:
         "basket_return": summary.get("position_unrealized_plpc", basket.basket_return),
         "new_entries_paused": basket.new_entries_paused,
         "basket_risk_reason": basket.reason,
+        "basket_risk_reason_text": basket.reason_text,
         "pending_close_order_count": len(pending_close_orders),
         "eod_state": autopilot_state.get("eod_state") or "inactive",
         "eod_banner": autopilot_state.get("eod_banner") or "",

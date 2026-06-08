@@ -410,6 +410,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "red_position_pct": positions_api.get("red_position_pct") or 0,
                 "basket_state": positions_api.get("basket_state") or "normal",
                 "new_entries_paused": bool(positions_api.get("new_entries_paused")),
+                "basket_risk_reason_text": positions_api.get("basket_risk_reason_text") or "",
                 "pending_close_order_count": positions_api.get("pending_close_order_count") or 0,
             }
         )

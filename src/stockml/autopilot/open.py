@@ -1118,6 +1118,7 @@ def apply_auto_open(
             "basket_return": basket.basket_return,
             "new_entries_paused": basket.new_entries_paused,
             "basket_risk_reason": basket.reason,
+            "basket_risk_reason_text": basket.reason_text,
         }
 
     equity = _float(getattr(trade_cfg, "account_equity", 0), 0)

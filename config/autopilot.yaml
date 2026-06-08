@@ -68,3 +68,6 @@ basket_risk:
   pause_new_entries_if_red_position_pct_above: 0.70
   pause_new_entries_if_basket_return_below: -0.0075
   resume_new_entries_if_basket_return_above: -0.0025
+  min_positions_for_percentage_rule: 5
+  small_book_basket_return_floor_pct: -0.015
+  small_book_loss_floor_pct: -0.020
