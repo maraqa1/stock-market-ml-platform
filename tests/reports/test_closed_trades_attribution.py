@@ -25,7 +25,7 @@ def test_closed_trades_table_registered_and_migration_exists():
     assert closed_trades_attribution.primary_key.columns.keys() == ["position_id"]
     up = Path("migrations/022_closed_trades_attribution_up.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS closed_trades_attribution" in up
-    assert "REFERENCES positions(id)" in up
+    assert "position_id BIGINT PRIMARY KEY" in up
     assert "max_favourable_bps" in up
 
     engine = create_engine("sqlite:///:memory:", future=True)

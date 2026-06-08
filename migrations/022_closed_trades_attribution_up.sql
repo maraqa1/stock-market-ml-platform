@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS closed_trades_attribution (
-    position_id BIGINT PRIMARY KEY REFERENCES positions(id),
+    position_id BIGINT PRIMARY KEY,
     symbol TEXT NOT NULL,
     strategy_stream TEXT NOT NULL CHECK (strategy_stream IN ('multi_day_forecast', 'same_day_momentum')),
     direction TEXT NOT NULL CHECK (direction IN ('long', 'short')),
