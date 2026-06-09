@@ -1,0 +1,10 @@
+[Unit]
+Description=Run StockML post-nightly strategy diagnostics
+After=stockml-full-nightly.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/massa/stock-market-ml-platform
+Environment=PYTHONPATH=/home/massa/stock-market-ml-platform/src
+EnvironmentFile=-/etc/stockml/stockml.env
+ExecStart=/opt/jupyter-env/bin/python3 /home/massa/stock-market-ml-platform/scripts/run_post_nightly_diagnostics.py --stale-after-minutes 420 --max-wait-minutes 240 --poll-seconds 300
