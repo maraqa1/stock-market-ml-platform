@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.common.paths import MODEL_OUTPUTS_DIR
-from stockml.diagnostics.common import add_gain_columns, aggregate_edge, attach_forward_returns, gold_outcome_slice, latest_gold, latest_model, missing_frame, safe_read_csv, write_report
+from stockml.diagnostics.common import add_gain_columns, aggregate_edge, attach_forward_returns, gold_outcome_slice, has_forward_outcomes, latest_gold, latest_model, missing_frame, safe_read_csv, write_report
 
 
 def build_intraday_promotion_ablation_report(stamp: str, *, signal_file: Path | None = None, gold_file: Path | None = None) -> object:
@@ -16,8 +16,8 @@ def build_intraday_promotion_ablation_report(stamp: str, *, signal_file: Path | 
     gold = gold_outcome_slice(gold_path, signals)
     if signals.empty:
         missing.append("advanced_model_signal_table")
-    if gold.empty:
-        missing.append("gold_training_panel")
+    if not has_forward_outcomes(signals) and gold.empty:
+        missing.append("gold_forward_outcomes")
     if not signals.empty and not {"directional_action", "directional_strength"}.intersection(signals.columns):
         missing.append("directional_or_intraday_adjustment_fields")
     output = MODEL_OUTPUTS_DIR / f"diagnostics_intraday_promotion_ablation_{stamp}.csv"

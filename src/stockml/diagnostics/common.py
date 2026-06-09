@@ -134,6 +134,17 @@ def normalize_outcome_columns(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def has_forward_outcomes(frame: pd.DataFrame) -> bool:
+    if frame.empty:
+        return False
+    normalized = normalize_outcome_columns(frame)
+    return "forward_5d_return" in normalized.columns and pd.to_numeric(normalized["forward_5d_return"], errors="coerce").notna().any()
+
+
+def latest_signal_history() -> Path | None:
+    return latest_model("walk_forward_predictions_*.csv") or latest_model("advanced_model_signal_table_*.csv")
+
+
 def gold_outcome_slice(gold_path: Path | None, signals: pd.DataFrame, *, chunksize: int = 250_000) -> pd.DataFrame:
     if gold_path is None or not gold_path.exists() or gold_path.stat().st_size == 0 or signals.empty:
         return pd.DataFrame()
@@ -167,7 +178,7 @@ def gold_outcome_slice(gold_path: Path | None, signals: pd.DataFrame, *, chunksi
 
 
 def attach_forward_returns(signals: pd.DataFrame, gold: pd.DataFrame) -> pd.DataFrame:
-    out = norm_symbol_column(signals)
+    out = normalize_outcome_columns(signals)
     if out.empty:
         return out
     for column in ["forward_5d_return", "forward_5d_alpha_vs_spy", "forward_5d_alpha_vs_sector", "sector"]:

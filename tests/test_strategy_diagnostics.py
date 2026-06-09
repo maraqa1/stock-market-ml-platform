@@ -159,3 +159,18 @@ def test_strategy_diagnostics_accept_legacy_gold_target_columns(tmp_path, monkey
     frame = pd.read_csv(output.path)
     assert output.status == "ok"
     assert frame["observed_rows"].sum() == 2
+
+
+def test_strategy_diagnostics_use_signal_embedded_target_columns(tmp_path, monkeypatch):
+    stamp = "20260605_120003"
+    signals = _signals()
+    signals["target_return_5d"] = [0.02, -0.03]
+    signals["target_sector_relative_return_5d"] = [0.01, -0.02]
+    signal_file = _write(tmp_path / "walk_forward_predictions.csv", signals)
+    monkeypatch.setattr(score_bucket_edge, "MODEL_OUTPUTS_DIR", tmp_path)
+
+    output = score_bucket_edge.build_score_bucket_edge_report(stamp, signal_file=signal_file, gold_file=tmp_path / "missing_gold.csv")
+
+    frame = pd.read_csv(output.path)
+    assert output.status == "ok"
+    assert frame["observed_rows"].sum() == 2
