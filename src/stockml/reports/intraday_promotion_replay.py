@@ -12,7 +12,7 @@ from sqlalchemy.engine import Engine
 from stockml.common.paths import MODEL_OUTPUTS_DIR, timestamp
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_candidate_snapshots, intraday_promotion_log
-from stockml.diagnostics.common import latest_gold, norm_symbol_column, safe_read_csv
+from stockml.diagnostics.common import latest_gold, norm_symbol_column
 
 
 PROMOTION_VERDICTS = {"promote_to_selection", "promote_to_selection_strong"}
@@ -47,7 +47,7 @@ def build_intraday_promotion_replay(
     if rows.empty:
         missing.append("intraday_promotion_log")
     gold_path = gold_file or latest_gold()
-    gold = safe_read_csv(gold_path)
+    gold = outcome_slice(gold_path, rows)
     if gold.empty:
         missing.append("gold_forward_outcomes")
 
@@ -106,6 +106,36 @@ def promotion_rows(*, engine: Engine | None = None) -> pd.DataFrame:
             ).select_from(joined)
         ).mappings().all()
     return pd.DataFrame([dict(row) for row in rows])
+
+
+def outcome_slice(gold_path: Path | None, replay: pd.DataFrame, *, chunksize: int = 250_000) -> pd.DataFrame:
+    if gold_path is None or not gold_path.exists() or gold_path.stat().st_size == 0 or replay.empty:
+        return pd.DataFrame()
+    needed = replay.copy()
+    needed["symbol"] = needed["symbol"].astype(str).str.upper().str.strip()
+    needed["date"] = pd.to_datetime(needed["bar_close_at"], errors="coerce", utc=True).dt.date.astype(str)
+    symbols = {symbol for symbol in needed["symbol"].dropna().astype(str) if symbol}
+    dates = {date for date in needed["date"].dropna().astype(str) if date and date != "NaT"}
+    if not symbols or not dates:
+        return pd.DataFrame()
+    columns = {"ticker", "symbol", "date", "forward_5d_return", "forward_5d_alpha_vs_spy", "forward_5d_alpha_vs_sector", "sector"}
+    chunks: list[pd.DataFrame] = []
+    try:
+        iterator = pd.read_csv(gold_path, usecols=lambda col: col in columns, chunksize=chunksize, low_memory=False)
+        for chunk in iterator:
+            chunk = norm_symbol_column(chunk)
+            if not {"ticker", "date"}.issubset(chunk.columns):
+                continue
+            chunk["ticker"] = chunk["ticker"].astype(str).str.upper().str.strip()
+            chunk["date"] = pd.to_datetime(chunk["date"], errors="coerce").dt.date.astype(str)
+            selected = chunk[chunk["ticker"].isin(symbols) & chunk["date"].isin(dates)].copy()
+            if not selected.empty:
+                chunks.append(selected)
+    except (pd.errors.EmptyDataError, ValueError):
+        return pd.DataFrame()
+    if not chunks:
+        return pd.DataFrame()
+    return pd.concat(chunks, ignore_index=True).drop_duplicates(["ticker", "date"], keep="last")
 
 
 def attach_outcomes(replay: pd.DataFrame, gold: pd.DataFrame) -> pd.DataFrame:

@@ -7,7 +7,7 @@ import pandas as pd
 from sqlalchemy import create_engine, insert
 
 from stockml.db.schema import create_all, intraday_candidate_snapshots, intraday_promotion_log
-from stockml.reports.intraday_promotion_replay import build_intraday_promotion_replay
+from stockml.reports.intraday_promotion_replay import build_intraday_promotion_replay, outcome_slice
 
 
 NOW = datetime(2026, 6, 8, 15, 0, tzinfo=timezone.utc)
@@ -111,3 +111,21 @@ def test_replay_writes_missing_data_section_when_no_logs(tmp_path: Path):
     replay = pd.read_csv(outputs.replay_path)
     assert outputs.missing_inputs == ("intraday_promotion_log", "gold_forward_outcomes")
     assert replay["status"].iloc[0] == "missing_data"
+
+
+def test_outcome_slice_reads_only_needed_symbol_dates(tmp_path: Path):
+    gold = tmp_path / "gold.csv"
+    pd.DataFrame(
+        [
+            {"date": "2026-06-07", "ticker": "AAA", "forward_5d_return": 0.50},
+            {"date": "2026-06-08", "ticker": "AAA", "forward_5d_return": 0.02},
+            {"date": "2026-06-08", "ticker": "ZZZ", "forward_5d_return": -0.99},
+        ]
+    ).to_csv(gold, index=False)
+    replay = pd.DataFrame([{"symbol": "AAA", "bar_close_at": "2026-06-08T15:00:00Z"}])
+
+    sliced = outcome_slice(gold, replay, chunksize=1)
+
+    assert len(sliced) == 1
+    assert sliced.iloc[0]["ticker"] == "AAA"
+    assert sliced.iloc[0]["date"] == "2026-06-08"
