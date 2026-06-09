@@ -40,9 +40,9 @@ DEFAULT_PATTERNS = [
     RetentionPattern("data/interim", "00_candidate_funnel_artifacts_*.csv", 10),
     RetentionPattern("data/processed", "*.csv", 3),
     RetentionPattern("data/gold", "06_us_gold_ml_dataset_*.csv", 2),
-    RetentionPattern("data/model_outputs", "*.csv", 5, family_retention=True),
-    RetentionPattern("data/model_outputs", "*.json", 5, family_retention=True),
-    RetentionPattern("data/portal_outputs", "*.csv", 5, family_retention=True),
+    RetentionPattern("data/model_outputs", "*.csv", 20, family_retention=True),
+    RetentionPattern("data/model_outputs", "*.json", 20, family_retention=True),
+    RetentionPattern("data/portal_outputs", "*.csv", 20, family_retention=True),
     RetentionPattern("data/trading", "*.csv", 10, recursive=True),
     RetentionPattern("reports", "*.csv", 10, recursive=True),
 ]
@@ -121,8 +121,8 @@ def main() -> int:
     parser.add_argument("--keep-interim", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_INTERIM", "5")))
     parser.add_argument("--keep-processed", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_PROCESSED", "3")))
     parser.add_argument("--keep-gold", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_GOLD", "2")))
-    parser.add_argument("--keep-model", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_MODEL", "5")))
-    parser.add_argument("--keep-portal", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_PORTAL", "5")))
+    parser.add_argument("--keep-model", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_MODEL", "20")))
+    parser.add_argument("--keep-portal", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_PORTAL", "20")))
     parser.add_argument("--keep-trading", type=int, default=int(os.getenv("STOCKML_CLEANUP_KEEP_TRADING", "10")))
     args = parser.parse_args()
 

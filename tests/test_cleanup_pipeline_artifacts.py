@@ -48,6 +48,24 @@ def test_cleanup_retains_model_outputs_by_artifact_family(tmp_path):
         }
 
 
+def test_cleanup_default_model_retention_preserves_matured_signal_window(tmp_path):
+    from scripts.cleanup_pipeline_artifacts import DEFAULT_PATTERNS
+
+    for index in range(25):
+        stamp = f"202605{index + 1:02d}_000000"
+        _write(tmp_path / "data" / "model_outputs" / f"advanced_model_signal_table_{stamp}.csv", "signal")
+
+    model_pattern = next(
+        pattern
+        for pattern in DEFAULT_PATTERNS
+        if pattern.directory == "data/model_outputs" and pattern.pattern == "*.csv"
+    )
+    selected = stale_files([model_pattern], root=tmp_path)
+
+    assert model_pattern.keep >= 20
+    assert len(selected) == 5
+
+
 def test_cleanup_protects_canonical_sentiment_store(tmp_path):
     processed = tmp_path / "data" / "processed"
     _write(processed / "05_news_sentiment_store.csv", "canonical")
