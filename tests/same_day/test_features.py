@@ -77,6 +77,18 @@ def test_universe_membership():
     assert build_same_day_universe(date(2026, 5, 11), validated=validated, metadata=pd.DataFrame(), halted_symbols={"NONE"}) == ["GOOD"]
 
 
+def test_universe_membership_accepts_latest_close_from_validated_price_universe():
+    validated = pd.DataFrame(
+        [
+            {"symbol": "GOOD", "latest_close": 20, "avg_dollar_volume_20d": 30_000_000, "market_cap": 800_000_000},
+            {"symbol": "BEST", "latest_close": 20, "avg_dollar_volume_20d": 90_000_000, "market_cap": 800_000_000},
+            {"symbol": "CHEAP", "latest_close": 2, "avg_dollar_volume_20d": 30_000_000, "market_cap": 800_000_000},
+        ]
+    )
+
+    assert build_same_day_universe(date(2026, 5, 11), validated=validated, metadata=pd.DataFrame()) == ["BEST", "GOOD"]
+
+
 def test_uniqueness_constraint():
     engine = create_engine("sqlite:///:memory:", future=True)
     create_all(engine)
@@ -136,6 +148,27 @@ def test_feature_worker_writes_one_row_per_symbol():
 
     assert result["status"] == "ok"
     assert result["features_written"] == 2
+
+
+def test_feature_worker_caps_symbols_per_tick(monkeypatch):
+    monkeypatch.setenv("STOCKML_SAME_DAY_FEATURE_MAX_SYMBOLS", "1")
+    engine = create_engine("sqlite:///:memory:", future=True)
+    create_all(engine)
+
+    result = feature_tick(
+        now=NOW,
+        selected_date=NOW.date(),
+        provider=FakeProvider(),
+        engine=engine,
+        universe_loader=lambda selected: ["AAA", "BBB"],
+        market_context_loader=lambda stamp: _context(),
+        symbol_context_loader=lambda symbol: {"avg_dollar_volume_20d": 50_000_000},
+        kill_switch_gate=allow_gate,
+    )
+
+    assert result["status"] == "ok"
+    assert result["symbols"] == ["AAA"]
+    assert result["features_written"] == 1
 
 
 def test_write_feature_row_handles_duplicate_as_false():

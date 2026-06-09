@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timedelta, timezone
+import os
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -20,6 +21,7 @@ from stockml.same_day.universe import build_same_day_universe
 
 
 MARKET_TZ = ZoneInfo("America/New_York")
+DEFAULT_MAX_SYMBOLS_PER_TICK = 300
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,17 @@ def current_5min_boundary(now: datetime | None = None) -> datetime:
 def in_active_hours(now: datetime | None = None) -> bool:
     local = _aware(now).astimezone(MARKET_TZ)
     return time(10, 0) <= local.time() <= time(15, 0)
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def feature_symbol_limit() -> int:
+    return max(0, _env_int("STOCKML_SAME_DAY_FEATURE_MAX_SYMBOLS", DEFAULT_MAX_SYMBOLS_PER_TICK))
 
 
 def write_feature_row(row: FeatureRow, *, engine: Engine | None = None) -> bool:
@@ -104,6 +117,9 @@ def feature_tick(
 
     decision_time = current_5min_boundary(stamp)
     symbols = universe_loader(selected_date or stamp.date()) if universe_loader else build_same_day_universe(selected_date or stamp.date())
+    max_symbols = feature_symbol_limit()
+    if max_symbols:
+        symbols = symbols[:max_symbols]
     market_context = market_context_loader(decision_time) if market_context_loader else {"open_at": calendar.open_at, "close_at": calendar.close_at}
     written = 0
     rows: list[FeatureRow] = []

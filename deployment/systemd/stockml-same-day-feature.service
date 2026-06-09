@@ -1,0 +1,11 @@
+[Unit]
+Description=StockML same-day feature tick
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/massa/stock-market-ml-platform
+Environment=PYTHONPATH=src
+Environment=STOCKML_SAME_DAY_FEATURE_MAX_SYMBOLS=300
+ExecStart=/usr/bin/flock -n /run/stockml-same-day-feature.lock /opt/jupyter-env/bin/python3 scripts/run_same_day_feature_tick.py

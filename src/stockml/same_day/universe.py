@@ -59,12 +59,12 @@ def build_same_day_universe(
                 frame["market_cap"] = frame["market_cap"].fillna(frame["market_cap_meta"])
 
     halted = {symbol.upper() for symbol in (halted_symbols or set())}
-    out = []
+    out: list[tuple[str, float]] = []
     for row in frame.fillna("").to_dict("records"):
         symbol = str(row.get("symbol") or "").upper()
         if not symbol or symbol in halted:
             continue
-        price = _num(row.get("close") or row.get("last_price") or row.get("price"))
+        price = _num(row.get("close") or row.get("latest_close") or row.get("last_price") or row.get("price"))
         avg_dollar_volume = _num(row.get("avg_dollar_volume_20d") or row.get("average_dollar_volume_20d"))
         market_cap = _num(row.get("market_cap"))
         is_halted = str(row.get("is_halted") or "").strip().lower() in {"true", "1", "yes"}
@@ -76,5 +76,13 @@ def build_same_day_universe(
             continue
         if market_cap < 500_000_000:
             continue
-        out.append(symbol)
-    return sorted(set(out))
+        out.append((symbol, avg_dollar_volume))
+
+    ranked = sorted(out, key=lambda item: (-item[1], item[0]))
+    seen: set[str] = set()
+    symbols: list[str] = []
+    for symbol, _volume in ranked:
+        if symbol not in seen:
+            symbols.append(symbol)
+            seen.add(symbol)
+    return symbols

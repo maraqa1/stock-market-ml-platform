@@ -1,0 +1,11 @@
+[Unit]
+Description=Run StockML same-day feature tick every 5 minutes
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* *:00/5:00
+AccuracySec=30s
+Persistent=false
+Unit=stockml-same-day-feature.service
+
+[Install]
+WantedBy=timers.target
