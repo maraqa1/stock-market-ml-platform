@@ -12,7 +12,7 @@ from sqlalchemy.engine import Engine
 from stockml.common.paths import MODEL_OUTPUTS_DIR, timestamp
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_candidate_snapshots, intraday_promotion_log
-from stockml.diagnostics.common import latest_gold, norm_symbol_column
+from stockml.diagnostics.common import OUTCOME_COLUMNS, latest_gold, normalize_outcome_columns, norm_symbol_column
 
 
 PROMOTION_VERDICTS = {"promote_to_selection", "promote_to_selection_strong"}
@@ -118,12 +118,11 @@ def outcome_slice(gold_path: Path | None, replay: pd.DataFrame, *, chunksize: in
     dates = {date for date in needed["date"].dropna().astype(str) if date and date != "NaT"}
     if not symbols or not dates:
         return pd.DataFrame()
-    columns = {"ticker", "symbol", "date", "forward_5d_return", "forward_5d_alpha_vs_spy", "forward_5d_alpha_vs_sector", "sector"}
     chunks: list[pd.DataFrame] = []
     try:
-        iterator = pd.read_csv(gold_path, usecols=lambda col: col in columns, chunksize=chunksize, low_memory=False)
+        iterator = pd.read_csv(gold_path, usecols=lambda col: col in OUTCOME_COLUMNS, chunksize=chunksize, low_memory=False)
         for chunk in iterator:
-            chunk = norm_symbol_column(chunk)
+            chunk = normalize_outcome_columns(chunk)
             if not {"ticker", "date"}.issubset(chunk.columns):
                 continue
             chunk["ticker"] = chunk["ticker"].astype(str).str.upper().str.strip()

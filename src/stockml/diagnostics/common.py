@@ -109,6 +109,63 @@ def latest_gold() -> Path | None:
     return latest_file(GOLD_DIR, "gold_stock_decision_daily_*.csv") or latest_file(GOLD_DIR, "06_us_gold_ml_dataset_*.csv")
 
 
+OUTCOME_COLUMNS = [
+    "ticker",
+    "symbol",
+    "date",
+    "sector",
+    "forward_5d_return",
+    "forward_5d_alpha_vs_spy",
+    "forward_5d_alpha_vs_sector",
+    "target_return_5d",
+    "target_sector_relative_return_5d",
+]
+
+
+def normalize_outcome_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    out = norm_symbol_column(frame)
+    if "forward_5d_return" not in out.columns and "target_return_5d" in out.columns:
+        out["forward_5d_return"] = out["target_return_5d"]
+    if "forward_5d_alpha_vs_sector" not in out.columns and "target_sector_relative_return_5d" in out.columns:
+        out["forward_5d_alpha_vs_sector"] = out["target_sector_relative_return_5d"]
+    for column in ["forward_5d_return", "forward_5d_alpha_vs_spy", "forward_5d_alpha_vs_sector", "sector"]:
+        if column not in out.columns:
+            out[column] = pd.NA
+    return out
+
+
+def gold_outcome_slice(gold_path: Path | None, signals: pd.DataFrame, *, chunksize: int = 250_000) -> pd.DataFrame:
+    if gold_path is None or not gold_path.exists() or gold_path.stat().st_size == 0 or signals.empty:
+        return pd.DataFrame()
+    keys = norm_symbol_column(signals)
+    if not {"ticker", "date"}.issubset(keys.columns):
+        return pd.DataFrame()
+    keys["ticker"] = keys["ticker"].astype(str).str.upper().str.strip()
+    keys["date"] = pd.to_datetime(keys["date"], errors="coerce").dt.date.astype(str)
+    symbols = {symbol for symbol in keys["ticker"].dropna().astype(str) if symbol}
+    dates = {date for date in keys["date"].dropna().astype(str) if date and date != "NaT"}
+    if not symbols or not dates:
+        return pd.DataFrame()
+    chunks: list[pd.DataFrame] = []
+    try:
+        iterator = pd.read_csv(gold_path, usecols=lambda col: col in OUTCOME_COLUMNS, chunksize=chunksize, low_memory=False)
+        for chunk in iterator:
+            chunk = normalize_outcome_columns(chunk)
+            if not {"ticker", "date"}.issubset(chunk.columns):
+                continue
+            chunk["ticker"] = chunk["ticker"].astype(str).str.upper().str.strip()
+            chunk["date"] = pd.to_datetime(chunk["date"], errors="coerce").dt.date.astype(str)
+            selected = chunk[chunk["ticker"].isin(symbols) & chunk["date"].isin(dates)].copy()
+            if not selected.empty:
+                keep = [col for col in ["ticker", "date", "sector", "forward_5d_return", "forward_5d_alpha_vs_spy", "forward_5d_alpha_vs_sector"] if col in selected.columns]
+                chunks.append(selected[keep])
+    except (pd.errors.EmptyDataError, ValueError):
+        return pd.DataFrame()
+    if not chunks:
+        return pd.DataFrame()
+    return pd.concat(chunks, ignore_index=True).drop_duplicates(["ticker", "date"], keep="last")
+
+
 def attach_forward_returns(signals: pd.DataFrame, gold: pd.DataFrame) -> pd.DataFrame:
     out = norm_symbol_column(signals)
     if out.empty:
@@ -118,7 +175,7 @@ def attach_forward_returns(signals: pd.DataFrame, gold: pd.DataFrame) -> pd.Data
             out[column] = pd.NA
     if gold.empty or "ticker" not in out.columns or "date" not in out.columns:
         return out
-    gold = norm_symbol_column(gold)
+    gold = normalize_outcome_columns(gold)
     keep = [col for col in ["ticker", "date", "forward_5d_return", "forward_5d_alpha_vs_spy", "forward_5d_alpha_vs_sector", "sector"] if col in gold.columns]
     if {"ticker", "date"}.issubset(keep):
         merge = gold[keep].drop_duplicates(["ticker", "date"], keep="last")

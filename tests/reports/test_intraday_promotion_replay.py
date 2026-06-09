@@ -129,3 +129,18 @@ def test_outcome_slice_reads_only_needed_symbol_dates(tmp_path: Path):
     assert len(sliced) == 1
     assert sliced.iloc[0]["ticker"] == "AAA"
     assert sliced.iloc[0]["date"] == "2026-06-08"
+
+
+def test_outcome_slice_accepts_legacy_target_columns(tmp_path: Path):
+    gold = tmp_path / "gold.csv"
+    pd.DataFrame(
+        [
+            {"date": "2026-06-08", "ticker": "AAA", "target_return_5d": 0.02, "target_sector_relative_return_5d": 0.01},
+        ]
+    ).to_csv(gold, index=False)
+    replay = pd.DataFrame([{"symbol": "AAA", "bar_close_at": "2026-06-08T15:00:00Z"}])
+
+    sliced = outcome_slice(gold, replay, chunksize=1)
+
+    assert sliced.iloc[0]["forward_5d_return"] == 0.02
+    assert sliced.iloc[0]["forward_5d_alpha_vs_sector"] == 0.01

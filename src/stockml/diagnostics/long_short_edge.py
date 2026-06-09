@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.common.paths import MODEL_OUTPUTS_DIR
-from stockml.diagnostics.common import add_gain_columns, aggregate_edge, attach_forward_returns, latest_gold, latest_model, missing_frame, safe_read_csv, write_report
+from stockml.diagnostics.common import add_gain_columns, aggregate_edge, attach_forward_returns, gold_outcome_slice, latest_gold, latest_model, missing_frame, safe_read_csv, write_report
 
 
 def _drawdown_estimate_bps(group: pd.DataFrame) -> float:
@@ -19,7 +19,7 @@ def build_long_short_edge_report(stamp: str, *, signal_file: Path | None = None,
     gold_path = gold_file or latest_gold()
     missing = []
     signals = safe_read_csv(signal_path)
-    gold = safe_read_csv(gold_path)
+    gold = gold_outcome_slice(gold_path, signals)
     if signals.empty:
         missing.append("advanced_model_signal_table")
     if gold.empty:
@@ -35,4 +35,3 @@ def build_long_short_edge_report(stamp: str, *, signal_file: Path | None = None,
         report["worst_drawdown_estimate_bps"] = report["diagnostic_side"].map(drawdown)
         report["top_sector_concentration"] = report["diagnostic_side"].map(sectors).astype(str)
     return write_report("long_short_edge", report, output)
-

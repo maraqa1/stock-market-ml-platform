@@ -138,3 +138,24 @@ def test_strategy_diagnostics_write_missing_data_rows(tmp_path, monkeypatch):
     assert output.status == "missing_data"
     assert frame.iloc[0]["status"] == "missing_data"
     assert "advanced_model_signal_table" in frame.iloc[0]["missing_inputs"]
+
+
+def test_strategy_diagnostics_accept_legacy_gold_target_columns(tmp_path, monkeypatch):
+    stamp = "20260605_120002"
+    signal_file = _write(tmp_path / "signals.csv", _signals())
+    gold_file = _write(
+        tmp_path / "gold.csv",
+        pd.DataFrame(
+            [
+                {"date": "2026-06-01", "ticker": "AAA", "sector": "Technology", "target_return_5d": 0.02, "target_sector_relative_return_5d": 0.01},
+                {"date": "2026-06-01", "ticker": "BBB", "sector": "Financials", "target_return_5d": -0.03, "target_sector_relative_return_5d": -0.02},
+            ]
+        ),
+    )
+    monkeypatch.setattr(score_bucket_edge, "MODEL_OUTPUTS_DIR", tmp_path)
+
+    output = score_bucket_edge.build_score_bucket_edge_report(stamp, signal_file=signal_file, gold_file=gold_file)
+
+    frame = pd.read_csv(output.path)
+    assert output.status == "ok"
+    assert frame["observed_rows"].sum() == 2

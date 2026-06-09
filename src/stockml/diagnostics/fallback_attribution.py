@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.common.paths import TRADING_DIR
-from stockml.diagnostics.common import add_gain_columns, aggregate_edge, attach_forward_returns, latest_gold, latest_model, missing_frame, safe_read_csv, write_report
+from stockml.diagnostics.common import add_gain_columns, aggregate_edge, attach_forward_returns, gold_outcome_slice, latest_gold, latest_model, missing_frame, safe_read_csv, write_report
 
 
 FALLBACK_PATTERNS = {
@@ -20,7 +20,7 @@ def build_fallback_attribution_report(stamp: str, *, signal_file: Path | None = 
     signal_path = signal_file or latest_model("advanced_model_signal_table_*.csv")
     gold_path = gold_file or latest_gold()
     signals = safe_read_csv(signal_path)
-    gold = safe_read_csv(gold_path)
+    gold = gold_outcome_slice(gold_path, signals)
     missing = []
     if signals.empty:
         missing.append("advanced_model_signal_table")
