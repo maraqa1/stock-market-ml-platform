@@ -16,6 +16,7 @@ from stockml.db.connection import get_engine
 from stockml.db.schema import rotation_recommendation_log
 from stockml.intraday import kill_switch
 from stockml.autopilot.open import apply_auto_open, latest_strong_candidates, load_auto_open_config
+from stockml.autopilot.rotation_selector import select_rotation_replacements
 from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.manual_position_actions import apply_manual_position_action
 
@@ -217,26 +218,28 @@ def evaluate_rotations(
         return []
     if _daily_rotation_count(engine, stamp) >= cfg.max_rotations_per_day:
         return []
-    held = _held_symbols(open_positions)
     out: list[Rotation] = []
-    for candidate in promoted:
+    selections = select_rotation_replacements(
+        open_positions,
+        promoted,
+        open_positions=open_positions,
+        min_score_delta=cfg.min_score_delta,
+        min_hold_minutes=cfg.min_hold_minutes,
+        now=stamp,
+    )
+    for selection in selections:
+        weaker = selection.held
+        candidate = selection.candidate
         symbol = _text(candidate.get("symbol")).upper()
-        if not symbol or symbol in held:
-            continue
-        weaker = find_weaker_held(candidate, open_positions, cfg, stamp)
-        if weaker is None:
-            continue
         replace = _text(weaker.get("symbol")).upper()
-        promotion_score = _float(candidate.get("promotion_score"))
-        held_score = _position_score(weaker)
         out.append(
             Rotation(
                 replace_symbol=replace,
                 with_symbol=symbol,
                 replace_position_id=str(weaker.get("position_id") or position_id_for_symbol(replace)),
-                promotion_score=promotion_score,
-                held_score=held_score,
-                score_delta=promotion_score - held_score,
+                promotion_score=selection.promotion_score,
+                held_score=selection.held_score,
+                score_delta=selection.score_delta,
                 reason=_derive_reason(candidate, weaker),
                 details={"require_operator_confirm": cfg.require_operator_confirm},
             )
