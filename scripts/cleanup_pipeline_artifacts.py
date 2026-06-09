@@ -50,6 +50,7 @@ DEFAULT_PATTERNS = [
 PROTECTED_NAMES = {
     ".gitkeep",
     "03_us_price_history_store.csv",
+    "05_news_sentiment_store.csv",
     "model_predictions_latest.csv",
     "validation_leaderboard.csv",
     "feature_audit.csv",

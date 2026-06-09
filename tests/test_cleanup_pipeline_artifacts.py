@@ -45,7 +45,19 @@ def test_cleanup_retains_model_outputs_by_artifact_family(tmp_path):
         "advanced_model_signal_table_20260501_000000.csv",
         "meta_label_predictions_20260501_000000_shard1.csv",
         "meta_label_predictions_20260501_000000_shard2.csv",
-    }
+        }
+
+
+def test_cleanup_protects_canonical_sentiment_store(tmp_path):
+    processed = tmp_path / "data" / "processed"
+    _write(processed / "05_news_sentiment_store.csv", "canonical")
+    for stamp in ["20260501_000000", "20260502_000000", "20260503_000000"]:
+        _write(processed / f"05_news_sentiment_full_{stamp}.csv", "snapshot")
+
+    selected = stale_files([RetentionPattern("data/processed", "*.csv", keep=1)], root=tmp_path)
+    names = {path.name for path in selected}
+
+    assert "05_news_sentiment_store.csv" not in names
 
 
 def test_cleanup_retains_portal_outputs_by_artifact_family(tmp_path):
