@@ -5,18 +5,19 @@ import pandas as pd
 from stockml.trading.monitor_auto_close import execute_monitor_auto_closes, monitor_close_candidates
 
 
-def test_monitor_close_candidates_are_close_only():
+def test_monitor_close_candidates_include_stop_loss_replacements():
     decisions = pd.DataFrame(
         [
             {"symbol": "AAA", "decision": "close", "recommended_action": "close_position", "decision_reason": "stop_loss_triggered"},
-            {"symbol": "BBB", "decision": "replace", "recommended_action": "close_then_open_replacement", "decision_reason": "replacement_available"},
+            {"symbol": "BBB", "decision": "replace", "recommended_action": "close_then_open_replacement", "decision_reason": "stop_loss_triggered|replacement_available"},
+            {"symbol": "DDD", "decision": "replace", "recommended_action": "close_then_open_replacement", "decision_reason": "replacement_rank_improvement"},
             {"symbol": "CCC", "decision": "watch", "recommended_action": "manual_review", "decision_reason": "signal_stale"},
         ]
     )
 
     candidates = monitor_close_candidates(decisions)
 
-    assert candidates["symbol"].tolist() == ["AAA"]
+    assert candidates["symbol"].tolist() == ["AAA", "BBB"]
 
 
 def test_execute_monitor_auto_closes_skips_when_not_automatic():
@@ -35,11 +36,12 @@ def test_execute_monitor_auto_closes_skips_when_not_automatic():
     assert calls == []
 
 
-def test_execute_monitor_auto_closes_submits_only_close_positions():
+def test_execute_monitor_auto_closes_submits_explicit_and_stop_loss_replacement_closes():
     decisions = pd.DataFrame(
         [
             {"symbol": "AAA", "decision": "close", "recommended_action": "close_position"},
-            {"symbol": "BBB", "decision": "replace", "recommended_action": "close_then_open_replacement"},
+            {"symbol": "BBB", "decision": "replace", "recommended_action": "close_then_open_replacement", "decision_reason": "stop_loss_triggered|replacement_available"},
+            {"symbol": "CCC", "decision": "replace", "recommended_action": "close_then_open_replacement", "decision_reason": "replacement_rank_improvement"},
             {"symbol": "AAA", "decision": "close", "recommended_action": "close_position"},
         ]
     )
@@ -52,10 +54,10 @@ def test_execute_monitor_auto_closes_submits_only_close_positions():
     )
 
     assert result["auto_close_status"] == "ok"
-    assert result["auto_close_candidates"] == 1
-    assert result["auto_close_attempted"] == 1
-    assert result["auto_close_submitted"] == 1
-    assert calls == [("AAA", "close")]
+    assert result["auto_close_candidates"] == 2
+    assert result["auto_close_attempted"] == 2
+    assert result["auto_close_submitted"] == 2
+    assert calls == [("BBB", "close"), ("AAA", "close")]
 
 
 def test_execute_monitor_auto_closes_counts_dry_run_and_errors():

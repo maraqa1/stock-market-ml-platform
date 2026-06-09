@@ -28,10 +28,13 @@ def monitor_close_candidates(decisions: pd.DataFrame) -> pd.DataFrame:
         frame["symbol"] = ""
     decision = frame.get("decision", pd.Series("", index=frame.index)).map(_text).str.lower()
     recommended = frame.get("recommended_action", pd.Series("", index=frame.index)).map(_text).str.lower()
+    reason = frame.get("decision_reason", pd.Series("", index=frame.index)).map(_text).str.lower()
     symbols = frame["symbol"].map(_text).str.upper()
     close_only = decision.eq("close") & recommended.eq("close_position") & symbols.ne("")
-    out = frame[close_only].copy()
-    out["symbol"] = symbols[close_only]
+    stop_loss_replace = decision.eq("replace") & recommended.eq("close_then_open_replacement") & reason.str.contains("stop_loss_triggered", regex=False) & symbols.ne("")
+    selected = close_only | stop_loss_replace
+    out = frame[selected].copy()
+    out["symbol"] = symbols.loc[out.index]
     return out.drop_duplicates("symbol", keep="last")
 
 
@@ -61,11 +64,11 @@ def execute_monitor_auto_closes(
     action_func: Callable[[str, str], dict[str, Any]] | None = None,
     previous_actions: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
-    """Submit paper close orders for explicit monitor close decisions only.
+    """Submit paper close orders for explicit monitor loss-control decisions.
 
-    This path intentionally ignores replace/rotate recommendations. It is a
-    loss-control bridge from the position monitor to the existing paper-only
-    manual close implementation, not an entry or rotation engine.
+    This path closes explicit monitor close decisions and replace decisions
+    whose current leg has already tripped the stop loss. It never opens the
+    suggested replacement; entry remains delegated to separate guarded paths.
     """
 
     candidates = monitor_close_candidates(decisions)
