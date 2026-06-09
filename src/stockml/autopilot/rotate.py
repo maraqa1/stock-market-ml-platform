@@ -16,7 +16,7 @@ from stockml.db.connection import get_engine
 from stockml.db.schema import rotation_recommendation_log
 from stockml.intraday import kill_switch
 from stockml.autopilot.open import apply_auto_open, latest_strong_candidates, load_auto_open_config
-from stockml.autopilot.rotation_selector import select_rotation_replacements
+from stockml.autopilot.rotation_selector import OVERRIDE_REASON_TEXT, select_rotation_replacements
 from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.manual_position_actions import apply_manual_position_action
 
@@ -38,6 +38,8 @@ class RotationConfig:
     min_hold_minutes: int = 60
     max_rotations_per_day: int = 3
     require_operator_confirm: bool = True
+    respect_monitor_verdict: bool = True
+    monitor_override_score_delta: float = 0.20
 
 
 @dataclass(frozen=True)
@@ -118,6 +120,8 @@ def load_rotation_config(path: Path | str = MONITOR_CONFIG_PATH) -> RotationConf
         min_hold_minutes=int(rotation.get("min_hold_minutes", 60)),
         max_rotations_per_day=int(rotation.get("max_rotations_per_day", 3)),
         require_operator_confirm=bool(rotation.get("require_operator_confirm", True)),
+        respect_monitor_verdict=bool(rotation.get("respect_monitor_verdict", True)),
+        monitor_override_score_delta=float(rotation.get("monitor_override_score_delta", 0.20)),
     )
 
 
@@ -225,6 +229,8 @@ def evaluate_rotations(
         open_positions=open_positions,
         min_score_delta=cfg.min_score_delta,
         min_hold_minutes=cfg.min_hold_minutes,
+        respect_monitor_verdict=cfg.respect_monitor_verdict,
+        monitor_override_score_delta=cfg.monitor_override_score_delta,
         now=stamp,
     )
     for selection in selections:
@@ -241,7 +247,12 @@ def evaluate_rotations(
                 held_score=selection.held_score,
                 score_delta=selection.score_delta,
                 reason=_derive_reason(candidate, weaker),
-                details={"require_operator_confirm": cfg.require_operator_confirm},
+                details={
+                    "require_operator_confirm": cfg.require_operator_confirm,
+                    "monitor_verdict": selection.monitor_verdict,
+                    "monitor_override": selection.monitor_override,
+                    "reason_text": OVERRIDE_REASON_TEXT if selection.monitor_override else "",
+                },
             )
         )
     return out[: max(0, cfg.max_rotations_per_day)]

@@ -873,6 +873,8 @@ def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None, 
     )
     items: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=offset + 1):
+        details = row.get("details") or {}
+        details = details if isinstance(details, dict) else {}
         replace_symbol = str(row.get("replace_symbol") or "").upper()
         with_symbol = str(row.get("with_symbol") or "").upper()
         if held_symbols is not None and replace_symbol not in held_symbols:
@@ -901,7 +903,7 @@ def _rotation_queue_items(offset: int, *, held_symbols: set[str] | None = None, 
                 "signal_age_minutes": "",
                 "decision": "rotate",
                 "recommended_action": "apply_rotation",
-                "decision_reason": row.get("reason") or "HIGHER_PROMOTION_SCORE",
+                "decision_reason": details.get("reason_text") or row.get("reason") or "HIGHER_PROMOTION_SCORE",
                 "replacement_symbol": with_symbol,
                 "position_id": row.get("replace_position_id") or position_id_for_symbol(replace_symbol),
                 "operator_call": operator_call,
