@@ -32,6 +32,14 @@ def latest_model(pattern: str) -> Path | None:
     return latest_file(MODEL_OUTPUTS_DIR, pattern)
 
 
+def latest_nonempty_model(pattern: str) -> Path | None:
+    candidates = sorted(MODEL_OUTPUTS_DIR.glob(pattern), key=lambda path: path.stat().st_mtime, reverse=True)
+    for path in candidates:
+        if not safe_read_csv(path).empty:
+            return path
+    return None
+
+
 def latest_portal(pattern: str) -> Path | None:
     return latest_file(PORTAL_OUTPUTS_DIR, pattern)
 
@@ -142,7 +150,7 @@ def has_forward_outcomes(frame: pd.DataFrame) -> bool:
 
 
 def latest_signal_history() -> Path | None:
-    return latest_model("walk_forward_predictions_*.csv") or latest_model("advanced_model_signal_table_*.csv")
+    return latest_nonempty_model("walk_forward_predictions_*.csv") or latest_nonempty_model("advanced_model_signal_table_*.csv")
 
 
 def gold_outcome_slice(gold_path: Path | None, signals: pd.DataFrame, *, chunksize: int = 250_000) -> pd.DataFrame:

@@ -174,3 +174,17 @@ def test_strategy_diagnostics_use_signal_embedded_target_columns(tmp_path, monke
     frame = pd.read_csv(output.path)
     assert output.status == "ok"
     assert frame["observed_rows"].sum() == 2
+
+
+def test_latest_signal_history_skips_empty_walk_forward_files(tmp_path, monkeypatch):
+    model_dir = tmp_path / "model_outputs"
+    model_dir.mkdir(parents=True)
+    (model_dir / "walk_forward_predictions_20260609_070000.csv").write_text("model_shard\n", encoding="utf-8")
+    signal = model_dir / "advanced_model_signal_table_20260609_070000.csv"
+    signal.write_text("date,ticker,model_score\n2026-06-01,AAA,0.8\n", encoding="utf-8")
+
+    monkeypatch.setattr("stockml.diagnostics.common.MODEL_OUTPUTS_DIR", model_dir)
+
+    from stockml.diagnostics.common import latest_signal_history
+
+    assert latest_signal_history() == signal
