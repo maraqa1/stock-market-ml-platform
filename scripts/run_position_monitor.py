@@ -14,6 +14,7 @@ if str(SRC) not in sys.path:
 
 from stockml.agents.position_decision_engine import build_position_decisions, write_position_decisions
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
+from stockml.trading.monitor_auto_close import execute_monitor_auto_closes
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
 from stockml.trading.timer_settings import monitor_should_run
@@ -68,6 +69,10 @@ def main() -> int:
     journal_path = write_trade_journal(journal, stamp)
     pnl_path = write_pnl_summary(pnl, stamp)
     decision_path = write_position_decisions(decisions, stamp)
+    auto_close = execute_monitor_auto_closes(decisions)
+    if int(auto_close.get("auto_close_attempted", 0) or 0):
+        refreshed = refresh_order_tracking()
+        positions_path = Path(refreshed["positions_path"])
 
     print(f"orders_tracked: {refreshed['orders_tracked']}")
     print(f"tracking_path: {refreshed['tracking_path']}")
@@ -81,6 +86,18 @@ def main() -> int:
     print(f"cadence_reason: {cadence_reason}")
     if not decisions.empty:
         print(f"decision_counts: {decisions['decision'].value_counts().to_dict()}")
+    print(f"auto_close_status: {auto_close.get('auto_close_status')}")
+    print(f"auto_close_candidates: {auto_close.get('auto_close_candidates', 0)}")
+    print(f"auto_close_attempted: {auto_close.get('auto_close_attempted', 0)}")
+    print(f"auto_close_skipped_existing: {auto_close.get('auto_close_skipped_existing', 0)}")
+    print(f"auto_close_submitted: {auto_close.get('auto_close_submitted', 0)}")
+    print(f"auto_close_dry_run: {auto_close.get('auto_close_dry_run', 0)}")
+    print(f"auto_close_rejected: {auto_close.get('auto_close_rejected', 0)}")
+    print(f"auto_close_error: {auto_close.get('auto_close_error', 0)}")
+    if auto_close.get("auto_close_reason"):
+        print(f"auto_close_reason: {auto_close.get('auto_close_reason')}")
+    if auto_close.get("auto_close_notes"):
+        print(f"auto_close_notes: {auto_close.get('auto_close_notes')}")
     return 0
 
 
