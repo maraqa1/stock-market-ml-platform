@@ -11,6 +11,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue) {
+    $global:PSNativeCommandUseErrorActionPreference = $false
+}
 
 if (-not (Test-Path $KeyPath)) {
     throw "SSH key not found: $KeyPath"
@@ -42,7 +45,7 @@ if ($Command.Trim()) {
     $steps.Add($Command)
 }
 
-$remoteScript = $steps -join "`n"
+$remoteScript = ($steps -join "`n") + "`n"
 $logDir = Join-Path (Get-Location) "data\local_vm_logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -51,7 +54,8 @@ $logPath = Join-Path $logDir "vm_run_$stamp.log"
 Write-Host "vm_run_log: $logPath"
 $previousPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$remoteScript | ssh -i $KeyPath -o BatchMode=yes -o ConnectTimeout=10 "$User@$HostName" "tr -d '\r' | bash -s" 2>&1 | Tee-Object -FilePath $logPath
+$encodedScript = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteScript))
+& ssh -i $KeyPath -o BatchMode=yes -o ConnectTimeout=10 "$User@$HostName" "printf '%s' '$encodedScript' | base64 -d | bash" 2>&1 | Tee-Object -FilePath $logPath
 $code = $LASTEXITCODE
 $ErrorActionPreference = $previousPreference
 exit $code
