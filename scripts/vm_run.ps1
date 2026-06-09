@@ -52,10 +52,43 @@ $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $logPath = Join-Path $logDir "vm_run_$stamp.log"
 
 Write-Host "vm_run_log: $logPath"
-$previousPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
 $encodedScript = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteScript))
-& ssh -i $KeyPath -o BatchMode=yes -o ConnectTimeout=10 "$User@$HostName" "printf '%s' '$encodedScript' | base64 -d | bash" 2>&1 | Tee-Object -FilePath $logPath
-$code = $LASTEXITCODE
-$ErrorActionPreference = $previousPreference
-exit $code
+
+function Quote-Arg([string]$Value) {
+    '"' + ($Value -replace '"', '\"') + '"'
+}
+
+$remoteCommand = "printf '%s' '$encodedScript' | base64 -d | bash"
+$arguments = @(
+    "-i", (Quote-Arg $KeyPath),
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=10",
+    "$User@$HostName",
+    (Quote-Arg $remoteCommand)
+) -join " "
+
+$psi = [System.Diagnostics.ProcessStartInfo]::new()
+$psi.FileName = "ssh.exe"
+$psi.Arguments = $arguments
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+
+$process = [System.Diagnostics.Process]::new()
+$process.StartInfo = $psi
+[void]$process.Start()
+$stdout = $process.StandardOutput.ReadToEnd()
+$stderr = $process.StandardError.ReadToEnd()
+$process.WaitForExit()
+
+$combined = @()
+if ($stdout) { $combined += $stdout.TrimEnd() }
+if ($stderr) { $combined += $stderr.TrimEnd() }
+$text = ($combined -join [Environment]::NewLine)
+if ($text) {
+    $text | Tee-Object -FilePath $logPath
+} else {
+    "" | Tee-Object -FilePath $logPath | Out-Null
+}
+exit $process.ExitCode
