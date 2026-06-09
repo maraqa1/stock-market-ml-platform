@@ -137,7 +137,7 @@ def test_strategy_diagnostics_write_missing_data_rows(tmp_path, monkeypatch):
     frame = pd.read_csv(output.path)
     assert output.status == "missing_data"
     assert frame.iloc[0]["status"] == "missing_data"
-    assert "advanced_model_signal_table" in frame.iloc[0]["missing_inputs"]
+    assert "walk_forward_predictions_or_signal_table" in frame.iloc[0]["missing_inputs"]
 
 
 def test_strategy_diagnostics_accept_legacy_gold_target_columns(tmp_path, monkeypatch):
