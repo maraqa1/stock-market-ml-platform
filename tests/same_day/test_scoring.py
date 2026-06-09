@@ -82,6 +82,45 @@ def test_score_worker_writes_signal_log_for_every_universe_symbol():
     assert [row[0] for row in rows] == ["AAA", "BBB"]
 
 
+def test_score_worker_uses_latest_completed_feature_bucket():
+    db = _engine()
+    prior_decision = NOW - timedelta(minutes=5)
+    with db.begin() as conn:
+        conn.execute(
+            insert(intraday_features).values(
+                computed_at=NOW,
+                decision_time=prior_decision,
+                bar_close_at=prior_decision - timedelta(minutes=5),
+                symbol="AAA",
+                status="ok",
+                features=_features(),
+            )
+        )
+
+    result = score_tick(decision_time=NOW, engine=db, model_loader=lambda: _bundle(), now=NOW)
+
+    with db.connect() as conn:
+        rows = conn.execute(select(same_day_signal_log.c.symbol, same_day_signal_log.c.decision_time)).all()
+    assert result["features_seen"] == 1
+    assert result["decision_time"] == prior_decision
+    assert rows[0][0] == "AAA"
+    assert rows[0][1].replace(tzinfo=timezone.utc) == prior_decision
+
+
+def test_score_worker_does_not_duplicate_signal_logs_for_same_bucket():
+    db = _engine()
+    _insert_feature(db, "AAA")
+
+    first = score_tick(decision_time=NOW, engine=db, model_loader=lambda: _bundle(), now=NOW)
+    second = score_tick(decision_time=NOW, engine=db, model_loader=lambda: _bundle(), now=NOW)
+
+    with db.connect() as conn:
+        rows = conn.execute(select(same_day_signal_log.c.symbol)).all()
+    assert first["signals_logged"] == 1
+    assert second["signals_logged"] == 0
+    assert rows == [("AAA",)]
+
+
 def test_candidates_emitted_only_when_gates_pass():
     db = _engine()
     _insert_feature(db, "PASS")

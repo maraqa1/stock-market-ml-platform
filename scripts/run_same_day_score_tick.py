@@ -24,6 +24,9 @@ def main(argv: list[str] | None = None) -> int:
     result = score_tick(decision_time=decision_time)
     print("same_day_score_status:", result.get("status"))
     print("decision_time:", decision_time.isoformat())
+    feature_decision_time = result.get("decision_time")
+    if feature_decision_time:
+        print("feature_decision_time:", feature_decision_time.isoformat())
     print("features_seen:", result.get("features_seen", 0))
     print("signals_logged:", result.get("signals_logged", 0))
     print("candidates_emitted:", result.get("candidates_emitted", 0))

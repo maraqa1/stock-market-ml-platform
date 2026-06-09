@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from sqlalchemy import func, insert, select
@@ -26,6 +26,24 @@ def load_features_for_tick(decision_time: datetime, *, engine: Engine | None = N
             select(intraday_features).where(intraday_features.c.decision_time == _aware(decision_time)).order_by(intraday_features.c.symbol.asc())
         ).mappings()
         return [dict(row) for row in rows]
+
+
+def latest_feature_decision_time(
+    decision_time: datetime,
+    *,
+    engine: Engine | None = None,
+    max_lag: timedelta = timedelta(minutes=10),
+) -> datetime | None:
+    db = engine or get_engine(required=True)
+    requested = _aware(decision_time)
+    cutoff = requested - max_lag
+    with db.connect() as conn:
+        row = conn.execute(
+            select(func.max(intraday_features.c.decision_time))
+            .where(intraday_features.c.decision_time <= requested)
+            .where(intraday_features.c.decision_time >= cutoff)
+        ).scalar_one()
+    return _aware(row) if row else None
 
 
 def _count_candidates_today(conn, stamp: datetime) -> int:
@@ -62,6 +80,17 @@ def _candidate_exists(conn, symbol: str, decision: datetime) -> bool:
     )
 
 
+def _signal_exists(conn, symbol: str, decision: datetime) -> bool:
+    return bool(
+        conn.execute(
+            select(func.count())
+            .select_from(same_day_signal_log)
+            .where(same_day_signal_log.c.symbol == symbol.upper())
+            .where(same_day_signal_log.c.decision_time == decision)
+        ).scalar_one()
+    )
+
+
 def score_tick(
     *,
     decision_time: datetime,
@@ -72,7 +101,8 @@ def score_tick(
 ) -> dict[str, Any]:
     db = engine or get_engine(required=True)
     stamp = _aware(now)
-    decision = _aware(decision_time)
+    requested_decision = _aware(decision_time)
+    decision = latest_feature_decision_time(requested_decision, engine=db) or requested_decision
     bundle = model_loader()
     feature_rows = load_features_for_tick(decision, engine=db)
     signal_rows = 0
@@ -82,6 +112,8 @@ def score_tick(
             if str(row.get("status") or "") != "ok":
                 continue
             symbol = str(row["symbol"]).upper()
+            if _signal_exists(conn, symbol, decision):
+                continue
             features = dict(row.get("features") or {})
             score = score_features(features, bundle)
             attempts = _count_symbol_attempts_today(conn, symbol, stamp)
@@ -141,4 +173,6 @@ def score_tick(
         "signals_logged": signal_rows,
         "candidates_emitted": candidate_rows,
         "model_id": bundle.model_id,
+        "decision_time": decision,
+        "requested_decision_time": requested_decision,
     }
