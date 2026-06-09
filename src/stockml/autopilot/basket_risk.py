@@ -94,6 +94,10 @@ def evaluate_basket_risk(
         paused = True
         reason = "hard_daily_loss_pause"
         reason_text = f"New entries paused - daily realized loss exceeds {cfg.small_book_loss_floor_pct:.1%} of equity"
+    elif previous_state == "new_entries_paused" and basket_return <= cfg.resume_new_entries_if_basket_return_above:
+        paused = True
+        reason = "basket_drawdown_pause_not_resumed"
+        reason_text = f"New entries paused - basket return {basket_return:.1%} has not recovered above {cfg.resume_new_entries_if_basket_return_above:.2%}"
     elif n_positions < cfg.min_positions_for_percentage_rule:
         if basket_return < cfg.small_book_basket_return_floor_pct:
             paused = True
@@ -109,10 +113,6 @@ def evaluate_basket_risk(
             f"New entries paused - {red_pct:.0%} of {n_positions} positions in the red and "
             f"basket return {basket_return:.1%} (below {cfg.pause_new_entries_if_basket_return_below:.2%} threshold)"
         )
-    elif previous_state == "new_entries_paused" and basket_return <= cfg.resume_new_entries_if_basket_return_above:
-        paused = True
-        reason = "basket_drawdown_pause_not_resumed"
-        reason_text = f"New entries paused - basket return {basket_return:.1%} has not recovered above {cfg.resume_new_entries_if_basket_return_above:.2%}"
 
     return BasketRiskState(
         basket_state="new_entries_paused" if paused else "normal",
