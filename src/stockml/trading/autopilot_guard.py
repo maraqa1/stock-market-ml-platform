@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+import csv
 
 from stockml.common.paths import PORTAL_OUTPUTS_DIR
 
 
 AUTOPILOT_BASKET_BLOCK_REASON = "paper_autopilot_running_blocks_basket_submission"
+AUTOPILOT_SYMBOL_CONFLICT_REASON = "paper_autopilot_symbol_conflict"
 
 
 def autopilot_state_path() -> Path:
@@ -30,3 +32,62 @@ def autopilot_blocks_basket_submission(path: Path | None = None) -> tuple[bool, 
     if str(state.get("status", "")).lower() == "running" and str(state.get("mode", "")).lower() == "paper_autopilot":
         return True, AUTOPILOT_BASKET_BLOCK_REASON
     return False, ""
+
+
+def _clean_symbol(value: object) -> str:
+    return str(value or "").strip().upper()
+
+
+def _symbols_from_csv(path_value: object, *, open_only: bool = False) -> set[str]:
+    path_text = str(path_value or "").strip()
+    if not path_text:
+        return set()
+    path = Path(path_text)
+    if not path.exists() or path.stat().st_size == 0:
+        return set()
+    symbols: set[str] = set()
+    try:
+        with path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                if open_only:
+                    status = str(row.get("alpaca_status") or row.get("status") or "").strip().lower()
+                    filled_qty = str(row.get("filled_qty") or "").strip()
+                    if status not in {"new", "accepted", "pending_new", "partially_filled"} and not filled_qty:
+                        continue
+                symbol = _clean_symbol(row.get("symbol") or row.get("ticker"))
+                if symbol:
+                    symbols.add(symbol)
+    except Exception:
+        return set()
+    return symbols
+
+
+def autopilot_managed_symbols(path: Path | None = None) -> set[str]:
+    state = load_autopilot_state(path)
+    if str(state.get("status", "")).lower() != "running" or str(state.get("mode", "")).lower() != "paper_autopilot":
+        return set()
+
+    symbols: set[str] = set()
+    for item in state.get("eod_dispositions") or []:
+        if isinstance(item, dict):
+            symbol = _clean_symbol(item.get("symbol") or item.get("ticker"))
+            if symbol:
+                symbols.add(symbol)
+    peak_map = state.get("position_peak_plpc")
+    if isinstance(peak_map, dict):
+        symbols.update(_clean_symbol(symbol) for symbol in peak_map.keys() if _clean_symbol(symbol))
+    symbols.update(_symbols_from_csv(state.get("positions_path")))
+    symbols.update(_symbols_from_csv(state.get("tracking_path"), open_only=True))
+    return symbols
+
+
+def autopilot_conflicting_symbols(symbols: set[str], path: Path | None = None) -> tuple[set[str], str]:
+    state = load_autopilot_state(path)
+    if str(state.get("status", "")).lower() != "running" or str(state.get("mode", "")).lower() != "paper_autopilot":
+        return set(), ""
+    requested = {_clean_symbol(symbol) for symbol in symbols if _clean_symbol(symbol)}
+    managed = autopilot_managed_symbols(path)
+    if not managed and (int(state.get("open_positions") or 0) > 0 or int(state.get("open_orders") or state.get("tracked_open_orders") or 0) > 0):
+        return requested, AUTOPILOT_BASKET_BLOCK_REASON
+    conflicts = requested & managed
+    return conflicts, AUTOPILOT_SYMBOL_CONFLICT_REASON if conflicts else ""

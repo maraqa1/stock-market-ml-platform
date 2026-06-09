@@ -12,7 +12,7 @@ from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import MODEL_OUTPUTS_DIR, PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
-from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission
+from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, autopilot_conflicting_symbols
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, latest_signal_table
@@ -146,6 +146,24 @@ def _mark_overnight_asset_eligibility(candidate_pool: pd.DataFrame, client: Alpa
     return out
 
 
+def _reject_autopilot_conflicts(plan: pd.DataFrame) -> pd.DataFrame:
+    if plan.empty or "symbol" not in plan.columns:
+        return plan
+    symbols = {str(symbol).upper().strip() for symbol in plan["symbol"].dropna().astype(str) if str(symbol).strip()}
+    conflicts, reason = autopilot_conflicting_symbols(symbols)
+    if not conflicts:
+        return plan
+    out = plan.copy()
+    mask = out["symbol"].astype(str).str.upper().str.strip().isin(conflicts)
+    out.loc[mask, "trade_quality_status"] = "rejected"
+    out.loc[mask, "trade_quality_reason"] = out.loc[mask, "trade_quality_reason"].apply(lambda value: _append_reason(value, reason))
+    out.loc[mask, "approved_notional"] = 0.0
+    out.loc[mask, "notional"] = 0.0
+    out.loc[mask, "suggested_quantity"] = 0
+    out.loc[mask, "order_eligible"] = False
+    return out
+
+
 def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple[Path, Path]:
     tracking_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_tracking_{stamp}.csv"
     positions_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_positions_{stamp}.csv"
@@ -206,9 +224,6 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
     ensure_data_dirs()
     config = alpaca_config()
     paper_only_guard(live_trading_enabled=config.live_trading_enabled)
-    blocked, block_reason = autopilot_blocks_basket_submission()
-    if blocked and config.submit_orders and not plan_only:
-        raise RuntimeError(block_reason)
     model_fresh, model_fresh_reason, model_signal_path = latest_model_freshness(signal_file)
     if not model_fresh and config.submit_orders and not plan_only and not _bool_env("STOCKML_ALLOW_STALE_MODEL_TRADING", False):
         raise RuntimeError(model_fresh_reason)
@@ -224,6 +239,7 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
         plan = build_order_plan(signals, config)
     stamp = timestamp()
     plan = _stamp_client_order_ids(plan, stamp)
+    plan = _reject_autopilot_conflicts(plan)
     candidate_pool_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_candidate_pool_{stamp}.csv"
     plan_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_plan_{stamp}.csv"
     result_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_results_{stamp}.csv"

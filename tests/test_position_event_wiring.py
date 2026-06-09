@@ -158,8 +158,40 @@ def test_paper_trader_records_submitted_and_guardrail_events(monkeypatch):
     assert [event[0][0] for event in events] == ["paper:FLEX", "paper:FLEX", "paper:AKAN"]
 
 
-def test_paper_trader_blocks_basket_submission_when_paper_autopilot_running(monkeypatch):
+def test_paper_trader_rejects_only_autopilot_symbol_conflicts(monkeypatch):
     client_calls = []
+    plan = pd.DataFrame(
+        [
+            {
+                "symbol": "BNY",
+                "client_order_id": "stockml-BNY-buy",
+                "side": "buy",
+                "type": "market",
+                "time_in_force": "day",
+                "extended_hours": False,
+                "trade_action": "Long",
+                "trade_quality_status": "approved",
+                "trade_quality_reason": "",
+                "order_eligible": True,
+                "suggested_quantity": 2,
+                "notional": 200,
+            },
+            {
+                "symbol": "FLEX",
+                "client_order_id": "stockml-FLEX-buy",
+                "side": "buy",
+                "type": "market",
+                "time_in_force": "day",
+                "extended_hours": False,
+                "trade_action": "Long",
+                "trade_quality_status": "approved",
+                "trade_quality_reason": "",
+                "order_eligible": True,
+                "suggested_quantity": 2,
+                "notional": 200,
+            },
+        ]
+    )
 
     class TrackingClient(FakeClient):
         def submit_order(self, request):
@@ -169,20 +201,22 @@ def test_paper_trader_blocks_basket_submission_when_paper_autopilot_running(monk
     TEST_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(paper_trader, "PORTAL_OUTPUTS_DIR", TEST_OUTPUT_DIR)
     monkeypatch.setattr(paper_trader, "alpaca_config", lambda: config(True))
-    monkeypatch.setattr(paper_trader, "autopilot_blocks_basket_submission", lambda: (True, "paper_autopilot_running_blocks_basket_submission"))
-    monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "FLEX"}]))
+    monkeypatch.setattr(paper_trader, "autopilot_conflicting_symbols", lambda symbols: ({"BNY"}, "paper_autopilot_symbol_conflict"))
+    monkeypatch.setattr(paper_trader, "latest_signal_table", lambda signal_file=None: pd.DataFrame([{"symbol": "BNY"}, {"symbol": "FLEX"}]))
     monkeypatch.setattr(paper_trader, "latest_model_freshness", lambda signal_file=None: (True, "model_signal_table_fresh", "signals.csv"))
-    monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: pd.DataFrame())
+    monkeypatch.setattr(paper_trader, "build_candidate_pool", lambda signals, cfg: pd.DataFrame([{"symbol": "BNY"}, {"symbol": "FLEX"}]))
+    monkeypatch.setattr(paper_trader, "build_order_plan", lambda signals, cfg: plan)
     monkeypatch.setattr(paper_trader, "AlpacaPaperClient", lambda cfg: TrackingClient())
+    monkeypatch.setattr(paper_trader, "record_event_safely", lambda *args, **kwargs: True)
 
-    try:
-        paper_trader.run_paper_trading()
-    except RuntimeError as exc:
-        assert str(exc) == "paper_autopilot_running_blocks_basket_submission"
-    else:
-        raise AssertionError("expected basket submission to be blocked")
+    result = paper_trader.run_paper_trading()
+    results = pd.read_csv(result["result_path"])
 
-    assert client_calls == []
+    assert result["orders_submitted"] == 1
+    assert [call["symbol"] for call in client_calls] == ["FLEX"]
+    bny = results[results["symbol"].eq("BNY")].iloc[0]
+    assert bny["status"] == "rejected"
+    assert bny["message"] == "Paper autopilot symbol conflict"
 
 
 def test_paper_trader_submits_extended_hours_limit_payload(monkeypatch):
