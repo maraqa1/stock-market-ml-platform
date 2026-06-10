@@ -324,6 +324,14 @@ def test_action_queue_adds_operator_calls_for_visible_supervision(tmp_path):
                 "unrealized_plpc": -0.0271,
             },
             {
+                "symbol": "STOP",
+                "decision": "close",
+                "recommended_action": "close_position",
+                "decision_reason": "stop_loss_triggered",
+                "unrealized_pl": -20.0,
+                "unrealized_plpc": -0.035,
+            },
+            {
                 "symbol": "GLIBK",
                 "decision": "replace",
                 "recommended_action": "close_then_open_replacement",
@@ -339,8 +347,11 @@ def test_action_queue_adds_operator_calls_for_visible_supervision(tmp_path):
     rows = {row["symbol"]: row for row in ctx["items"]}
 
     assert rows["FWRD"]["decision"] == "close_candidate"
-    assert rows["FWRD"]["operator_call_label"] == "Auto close"
+    assert rows["FWRD"]["operator_call_label"] == "Review close"
     assert rows["FWRD"]["operator_apply_enabled"] is False
+    assert rows["STOP"]["decision"] == "close_candidate"
+    assert rows["STOP"]["operator_call_label"] == "Auto close"
+    assert rows["STOP"]["action_button_label"] == "Auto managed"
     assert rows["FRMI"]["operator_call_label"] == "Review concentration"
     assert rows["FRMI"]["operator_apply_enabled"] is False
     assert rows["GLIBK"]["operator_call_label"] == "Hold - logic check"

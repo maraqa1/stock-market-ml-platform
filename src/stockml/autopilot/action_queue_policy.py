@@ -79,33 +79,33 @@ def classify_action_queue_item(
             status = "close_candidate"
             out["position_health_status"] = status
         if status == "close_now":
-            automatic = _close_is_automatic(close_automation_mode)
+            automatic = _close_is_automatic(close_automation_mode) and decision == "close"
             out.update(
                 {
                     "decision": "close_now",
-                    "operator_call": "close",
-                    "operator_call_label": "Auto close now" if automatic else "Close now",
+                    "operator_call": "close" if automatic else "warning",
+                    "operator_call_label": "Auto close now" if automatic else "Review close now",
                     "operator_call_reason": (
                         "Paper Autopilot will submit this close automatically on the next clock tick."
                         if automatic
-                        else "Close-now risk condition is breached for this open paper position."
+                        else "Close-now risk condition is visible, but the monitor has not emitted an automatic close decision."
                     ),
-                    "operator_apply_enabled": False if automatic else True,
+                    "operator_apply_enabled": False,
                 }
             )
         elif status == "close_candidate":
-            automatic = _close_is_automatic(close_automation_mode)
+            automatic = _close_is_automatic(close_automation_mode) and decision == "close"
             out.update(
                 {
                     "decision": "close_candidate",
-                    "operator_call": "close",
+                    "operator_call": "close" if automatic else "warning",
                     "operator_call_label": "Auto close" if automatic else "Review close",
                     "operator_call_reason": (
                         "Paper Autopilot will submit this close automatically when the clock runs."
                         if automatic
-                        else "Close candidate. Review broker state before paper close submission."
+                        else "Close candidate is visible in position health, but the monitor has not emitted an automatic close decision."
                     ),
-                    "operator_apply_enabled": False if automatic else True,
+                    "operator_apply_enabled": False,
                 }
             )
         elif status in {"watch", "watch_loss", "healthy_hold"}:
@@ -119,7 +119,7 @@ def classify_action_queue_item(
                 }
             )
 
-    if _close_is_automatic(close_automation_mode) and out.get("decision") in {"close_candidate", "close_now"}:
+    if _close_is_automatic(close_automation_mode) and out.get("operator_call_label") in {"Auto close", "Auto close now"}:
         out["action_button_label"] = "Auto managed"
     else:
         out["action_button_label"] = _apply_button(out.get("operator_call_label", ""), out.get("decision", ""))
