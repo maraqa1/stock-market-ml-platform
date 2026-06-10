@@ -22,6 +22,25 @@ def test_auto_trade_window_can_be_ignored(monkeypatch):
     assert _within_auto_trade_window(datetime(2026, 5, 9, 1, 0, tzinfo=timezone.utc)) is True
 
 
+def test_auto_trader_disabled_runs_plan_only(monkeypatch):
+    calls = []
+    monkeypatch.setenv("STOCKML_ALPACA_AUTOTRADE_ENABLED", "false")
+    monkeypatch.setattr(auto_trader, "_within_auto_trade_window", lambda: True)
+
+    def plan_run(signal_file=None, *, plan_only=False):
+        calls.append({"signal_file": signal_file, "plan_only": plan_only})
+        return {"orders_submitted": 0, "dry_run": True}
+
+    monkeypatch.setattr(auto_trader, "run_paper_trading", plan_run)
+
+    result = run_auto_trader()
+
+    assert calls == [{"signal_file": None, "plan_only": True}]
+    assert result["orders_submitted"] == 0
+    assert result["auto_trade_enabled"] is False
+    assert result["auto_trade_mode"] == "dry_run_only"
+
+
 def test_auto_trader_skips_cleanly_when_paper_autopilot_blocks_basket(monkeypatch):
     monkeypatch.setenv("STOCKML_ALPACA_AUTOTRADE_ENABLED", "true")
     monkeypatch.setattr(auto_trader, "_within_auto_trade_window", lambda: True)

@@ -41,7 +41,7 @@ def run_auto_trader(signal_file: Optional[Path] = None, force: bool = False) -> 
     mode = "order_run" if enabled or force else "dry_run_only"
     try:
         if not enabled and not force:
-            result = run_paper_trading(signal_file)
+            result = run_paper_trading(signal_file, plan_only=True)
             return {
                 **result,
                 "auto_trade_enabled": False,
