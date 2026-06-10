@@ -185,7 +185,12 @@ def _as_bps(value: Any) -> float:
     number = _num(value, default=float("nan"))
     if pd.isna(number):
         return float("nan")
-    return number * 10000.0 if abs(number) <= 5 else number
+    magnitude = abs(number)
+    if magnitude <= 1:
+        return number * 10000.0
+    if magnitude <= 20:
+        return number * 100.0
+    return number
 
 
 def _directional_bps(row: pd.Series | dict[str, Any], columns: list[str], *, side: str) -> float:
