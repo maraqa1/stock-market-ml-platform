@@ -40,6 +40,11 @@ DECISION_COLUMNS = [
     "replacement_side",
     "replacement_rank",
     "replacement_reason",
+    "replacement_score",
+    "replacement_edge_bps",
+    "replacement_quality_status",
+    "replacement_risk_tier",
+    "replacement_selection_method",
 ]
 
 
@@ -227,6 +232,7 @@ def build_position_decisions(
         replacement_side = _text(replacement.get("side")) if replacement is not None else ""
         replacement_rank = _num(replacement.get("candidate_rank"), default=float("nan")) if replacement is not None else float("nan")
         replacement_reason = ""
+        replacement_selection_method = "rank" if replacement is not None else ""
 
         if current_price <= 0:
             decision, action = "watch", "manual_review"
@@ -270,7 +276,26 @@ def build_position_decisions(
             decision, action = "watch", "rescore_before_add_or_hold"
             reasons.append("signal_stale")
 
-        if replacement is not None:
+        edge_replacement = (
+            find_edge_replacement(
+                _text(row.get("symbol")),
+                replacement_pool,
+                open_positions,
+                position_bias=desired_action,
+            )
+            if _should_seek_edge_replacement(row, decision, reasons, unrealized_plpc)
+            else None
+        )
+        if edge_replacement is not None:
+            replacement = edge_replacement
+            replacement_symbol = _text(replacement.get("symbol"))
+            replacement_side = _text(replacement.get("side"))
+            replacement_rank = _num(replacement.get("candidate_rank"), default=float("nan"))
+            replacement_selection_method = "edge"
+            decision, action = "replace", "review_edge_replacement"
+            replacement_reason = "stronger_edge_candidate_available"
+            reasons.append("replacement_edge_improvement")
+        elif replacement is not None:
             if decision == "close":
                 decision, action = "replace", "close_then_open_replacement"
                 replacement_reason = "current_position_exit_with_available_replacement"
@@ -286,6 +311,8 @@ def build_position_decisions(
         if not reasons:
             reasons.append("position_within_rules")
 
+        replacement_score = _score_value(replacement) if replacement is not None else None
+        replacement_edge = _candidate_directional_edge_bps(replacement, desired_action) if replacement is not None else None
         decisions.append(
             {
                 "symbol": _text(row.get("symbol")),
@@ -310,6 +337,11 @@ def build_position_decisions(
                 "replacement_side": replacement_side,
                 "replacement_rank": int(replacement_rank) if pd.notna(replacement_rank) else "",
                 "replacement_reason": replacement_reason,
+                "replacement_score": round(replacement_score, 6) if replacement_score is not None else "",
+                "replacement_edge_bps": round(replacement_edge, 2) if replacement_edge is not None else "",
+                "replacement_quality_status": _text(replacement.get("trade_quality_status")) if replacement is not None else "",
+                "replacement_risk_tier": _text(replacement.get("risk_tier")) if replacement is not None else "",
+                "replacement_selection_method": replacement_selection_method,
             }
         )
     return pd.DataFrame(decisions, columns=DECISION_COLUMNS)
@@ -394,6 +426,140 @@ def find_replacement(
 
     _log_replacement_search(symbol, considered, rejected, None)
     return None
+
+
+def find_edge_replacement(
+    symbol_to_replace: str,
+    shortlist: pd.DataFrame | list[dict[str, Any]],
+    open_positions: pd.DataFrame | list[dict[str, Any]],
+    *,
+    position_bias: str | None = None,
+) -> pd.Series | None:
+    """Select the strongest non-held same-side candidate for weak held names.
+
+    This selector is deliberately separate from ``find_replacement`` so the
+    legacy rank-rotation path remains rank-first. The edge selector only feeds
+    operator-review recommendations for positions already deemed weak by the
+    monitor; it does not submit or resize orders.
+    """
+
+    symbol = _text(symbol_to_replace).upper()
+    pool = shortlist.copy() if isinstance(shortlist, pd.DataFrame) else pd.DataFrame(shortlist)
+    positions = open_positions.copy() if isinstance(open_positions, pd.DataFrame) else pd.DataFrame(open_positions)
+    if pool.empty or "symbol" not in pool.columns:
+        return None
+
+    pool = pool.copy()
+    pool["symbol"] = pool["symbol"].astype(str).str.upper()
+    if "candidate_rank" not in pool.columns:
+        pool["candidate_rank"] = range(1, len(pool) + 1)
+    desired = _normal_bias(position_bias)
+    held = _held_symbols(positions)
+    status = pool.get("trade_quality_status", pd.Series("", index=pool.index)).astype(str).str.lower()
+    eligible = pool.get("order_eligible", pd.Series(False, index=pool.index)).map(_bool_value)
+    qty = pd.to_numeric(pool.get("suggested_quantity", pd.Series(0, index=pool.index)), errors="coerce").fillna(0)
+    pool = pool[status.isin({"approved", "reduced"}) & eligible & (qty >= 1)].copy()
+    if pool.empty:
+        return None
+
+    pool["__held"] = pool["symbol"].isin(held) | pool["symbol"].eq(symbol)
+    pool["__bias"] = pool.apply(lambda row: _normal_bias(row.get("trade_action") or row.get("bias") or row.get("side")), axis=1)
+    pool["__edge_bps"] = pool.apply(lambda row: _candidate_directional_edge_bps(row, desired), axis=1)
+    pool["__score"] = pool.apply(lambda row: _score_value(row), axis=1)
+    pool["__quality"] = pool.apply(_edge_replacement_quality_priority, axis=1)
+    pool["__rank"] = pd.to_numeric(pool["candidate_rank"], errors="coerce").fillna(999999)
+    pool = pool[
+        ~pool["__held"]
+        & pool["__edge_bps"].gt(0)
+        & (pool["__bias"].eq(desired) if desired else pool["__bias"].isin({"long", "short"}))
+    ].copy()
+    if pool.empty:
+        return None
+
+    pool = pool.sort_values(
+        ["__quality", "__edge_bps", "__score", "__rank", "symbol"],
+        ascending=[True, False, False, True, True],
+        na_position="last",
+    )
+    return pool.iloc[0]
+
+
+def _should_seek_edge_replacement(row: pd.Series, decision: str, reasons: list[str], unrealized_plpc: float) -> bool:
+    if decision not in {"hold", "watch"}:
+        return False
+    quality = _text(row.get("holding_quality")).lower()
+    holding_reason = _text(row.get("holding_gate_reason")).lower()
+    if quality in {"strong", "healthy"} and unrealized_plpc > 0:
+        return False
+    if quality in {"avoid", "weak"}:
+        return True
+    if "holding_edge_not_confirmed" in holding_reason:
+        return True
+    weak_reasons = {"latest_signal_unknown", "signal_stale", "signal_age_unknown"}
+    return bool(weak_reasons.intersection(reasons) and unrealized_plpc <= 0)
+
+
+def _candidate_directional_edge_bps(row: pd.Series | dict[str, Any] | None, desired_bias: str | None = None) -> float:
+    if row is None:
+        return 0.0
+    desired = _normal_bias(desired_bias)
+    candidate_bias = _normal_bias(_row_get(row, "trade_action") or _row_get(row, "bias") or _row_get(row, "side"))
+    sign = -1.0 if (desired or candidate_bias) == "short" else 1.0
+    for column in [
+        "expected_trade_return",
+        "expected_return",
+        "forward_5d_alpha_vs_sector",
+        "forward_5d_alpha_vs_spy",
+        "forward_5d_return",
+        "probability_edge",
+    ]:
+        value = _optional_float(_row_get(row, column))
+        if value is not None:
+            return sign * _return_like_to_bps(value)
+    return 0.0
+
+
+def _return_like_to_bps(value: float) -> float:
+    magnitude = abs(value)
+    if magnitude <= 1:
+        return value * 10000.0
+    if magnitude <= 20:
+        return value * 100.0
+    return value
+
+
+def _edge_replacement_quality_priority(row: pd.Series) -> int:
+    status = _text(row.get("trade_quality_status")).lower()
+    tier = _text(row.get("risk_tier")).lower()
+    if status == "approved" and tier == "high_quality":
+        return 0
+    if status == "approved":
+        return 1
+    if status == "reduced" and tier == "high_quality":
+        return 2
+    if status == "reduced" and tier == "medium":
+        return 3
+    if status == "reduced":
+        return 4
+    return 5
+
+
+def _bool_value(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = _text(value).lower()
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n", ""}:
+        return False
+    return bool(value)
+
+
+def _row_get(row: pd.Series | dict[str, Any], column: str) -> object:
+    try:
+        return row.get(column)  # type: ignore[union-attr]
+    except Exception:
+        return None
 
 
 def _rotation_config() -> dict[str, float | int]:

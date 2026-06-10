@@ -26,7 +26,7 @@ def _apply_button(operator_label: str, decision: str) -> str:
         return "Close now"
     if clean_decision == "close_candidate" or clean_label == "review close":
         return "Review close"
-    if clean_label in {"review open", "review"}:
+    if clean_label in {"review open", "review replacement", "review"}:
         return "Review"
     if clean_label == "open approved":
         return "Open paper order"
@@ -68,6 +68,24 @@ def classify_action_queue_item(
             out.setdefault("operator_call_label", "Review open")
             out.setdefault("operator_call_reason", "Review candidate for possible paper entry.")
             out.setdefault("operator_apply_enabled", False)
+        out["action_button_label"] = _apply_button(out.get("operator_call_label", ""), out.get("decision", ""))
+        return out
+
+    if decision == "replace" and _text(out.get("recommended_action")).lower() == "review_edge_replacement":
+        replacement = _text(out.get("replacement_symbol")).upper()
+        detail = f" Stronger candidate: {replacement}." if replacement else ""
+        out.update(
+            {
+                "operator_call": "warning",
+                "operator_call_label": "Review replacement",
+                "operator_call_reason": (
+                    "A stronger same-side candidate is available, but this is review-only; "
+                    "confirm close and replacement before any paper order."
+                    + detail
+                ),
+                "operator_apply_enabled": False,
+            }
+        )
         out["action_button_label"] = _apply_button(out.get("operator_call_label", ""), out.get("decision", ""))
         return out
 

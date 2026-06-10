@@ -87,3 +87,20 @@ def test_cstl_like_open_candidate_requires_fresh_rescore():
     assert result["operator_apply_enabled"] is False
     assert "requires_fresh_rescore" in result["decision_reason"]
     assert result["action_button_label"] == "Review"
+
+
+def test_edge_replacement_rows_are_review_only():
+    item = {
+        "symbol": "AGL",
+        "decision": "replace",
+        "recommended_action": "review_edge_replacement",
+        "decision_reason": "replacement_edge_improvement",
+        "replacement_symbol": "SNOW",
+    }
+
+    result = classify_action_queue_item(item, held_symbols={"AGL"}, rules=RULES)
+
+    assert result["operator_call_label"] == "Review replacement"
+    assert result["operator_apply_enabled"] is False
+    assert result["action_button_label"] == "Review"
+    assert "SNOW" in result["operator_call_reason"]

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from stockml.agents.position_decision_engine import build_position_decisions
+from stockml.agents.position_decision_engine import build_position_decisions, find_edge_replacement
 
 
 NOW = datetime(2026, 5, 8, 16, 0, tzinfo=timezone.utc)
@@ -170,3 +170,99 @@ def test_replace_when_materially_better_same_side_candidate_exists():
     assert row["decision"] == "replace"
     assert row["replacement_symbol"] == "ADMA"
     assert "replacement_rank_improvement" in row["decision_reason"]
+
+
+def test_edge_replacement_prefers_approved_high_quality_over_reduced_higher_edge():
+    shortlist = pd.DataFrame(
+        [
+            {
+                "symbol": "APPS",
+                "trade_action": "Long",
+                "side": "buy",
+                "candidate_rank": 1,
+                "trade_quality_status": "reduced",
+                "risk_tier": "medium",
+                "order_eligible": True,
+                "suggested_quantity": 20,
+                "expected_trade_return": 0.50,
+                "risk_adjusted_score": 0.10,
+            },
+            {
+                "symbol": "SNOW",
+                "trade_action": "Long",
+                "side": "buy",
+                "candidate_rank": 175,
+                "trade_quality_status": "approved",
+                "risk_tier": "high_quality",
+                "order_eligible": True,
+                "suggested_quantity": 10,
+                "expected_trade_return": 0.22,
+                "risk_adjusted_score": 0.05,
+            },
+        ]
+    )
+
+    replacement = find_edge_replacement(
+        "AGL",
+        shortlist,
+        pd.DataFrame([{"symbol": "AGL", "status": "open"}]),
+        position_bias="Long",
+    )
+
+    assert replacement is not None
+    assert replacement["symbol"] == "SNOW"
+
+
+def test_weak_held_position_gets_review_only_edge_replacement():
+    positions = pd.DataFrame([{"symbol": "AGL", "qty": 19, "current_price": 102.16, "avg_entry_price": 98.41, "side": "long", "unrealized_plpc": 0.0381}])
+    plan = pd.DataFrame([{"symbol": "AGL", "trade_action": "Long", "signal_generated_at": "2026-05-08T15:55:00Z"}])
+    holding_review = pd.DataFrame(
+        [
+            {
+                "symbol": "AGL",
+                "trading_stream": "same_day",
+                "max_holding_days": 1,
+                "holding_quality": "avoid",
+                "holding_gate_reason": "holding_edge_not_confirmed",
+            }
+        ]
+    )
+    candidate_pool = pd.DataFrame(
+        [
+            {
+                "symbol": "APPS",
+                "trade_action": "Long",
+                "side": "buy",
+                "candidate_rank": 1,
+                "trade_quality_status": "reduced",
+                "risk_tier": "medium",
+                "order_eligible": True,
+                "suggested_quantity": 20,
+                "expected_trade_return": 0.50,
+                "risk_adjusted_score": 0.10,
+            },
+            {
+                "symbol": "SNOW",
+                "trade_action": "Long",
+                "side": "buy",
+                "candidate_rank": 175,
+                "trade_quality_status": "approved",
+                "risk_tier": "high_quality",
+                "order_eligible": True,
+                "suggested_quantity": 10,
+                "expected_trade_return": 0.22,
+                "risk_adjusted_score": 0.05,
+            },
+        ]
+    )
+
+    decisions = build_position_decisions(positions, plan, candidate_pool=candidate_pool, holding_review=holding_review, now=NOW)
+    row = decisions.iloc[0]
+
+    assert row["decision"] == "replace"
+    assert row["recommended_action"] == "review_edge_replacement"
+    assert row["replacement_symbol"] == "SNOW"
+    assert row["replacement_selection_method"] == "edge"
+    assert row["replacement_quality_status"] == "approved"
+    assert row["replacement_risk_tier"] == "high_quality"
+    assert "replacement_edge_improvement" in row["decision_reason"]

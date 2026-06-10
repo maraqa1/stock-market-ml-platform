@@ -34,7 +34,15 @@
               <td>{{ side(item.side or "long") }}</td>
               <td data-sort-value="{{ item.unrealized_plpc or 0 }}">{{ signed_money(item.unrealized_pl or 0) }} {{ signed_pct(item.unrealized_plpc or 0) }}</td>
               <td class="num" data-sort-value="{{ item.signal_age_minutes|default(0, true) }}">{{ item.signal_age_minutes|default("", true) }}</td>
-              <td>{{ pill(item.decision) }}</td>
+              <td>
+                {{ pill(item.decision) }}
+                {% if item.replacement_symbol %}
+                  <div class="muted small">
+                    with <a href="/symbols/{{ item.replacement_symbol }}">{{ item.replacement_symbol }}</a>
+                    {% if item.replacement_edge_bps %}+{{ "%.0f"|format(item.replacement_edge_bps|float) }} bps edge{% endif %}
+                  </div>
+                {% endif %}
+              </td>
               <td>
                 {{ pill(item.operator_call or "info", item.operator_call_label or "Review") }}
                 <div class="muted small">{{ item.operator_call_reason }}</div>
