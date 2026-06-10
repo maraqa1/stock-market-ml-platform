@@ -112,7 +112,7 @@ def classify_action_queue_item(
                 }
             )
         elif status == "close_candidate":
-            automatic = _close_is_automatic(close_automation_mode) and decision == "close"
+            automatic = _close_is_automatic(close_automation_mode)
             out.update(
                 {
                     "decision": "close_candidate",
@@ -123,7 +123,7 @@ def classify_action_queue_item(
                         if automatic
                         else "Close candidate is visible in position health, but the monitor has not emitted an automatic close decision."
                     ),
-                    "operator_apply_enabled": False,
+                    "operator_apply_enabled": False if automatic else True,
                 }
             )
         elif status in {"watch", "watch_loss", "healthy_hold"}:
