@@ -11,7 +11,7 @@ import yaml
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.engine import Engine
 
-from stockml.common.paths import PROJECT_ROOT
+from stockml.common.paths import AGENT_DECISIONS_DIR, PORTAL_OUTPUTS_DIR, PROJECT_ROOT, latest_file
 from stockml.db.connection import get_engine
 from stockml.db.schema import rotation_recommendation_log
 from stockml.intraday import kill_switch
@@ -38,6 +38,8 @@ class RotationConfig:
     min_hold_minutes: int = 60
     max_rotations_per_day: int = 3
     require_operator_confirm: bool = True
+    edge_replacement_auto_enabled: bool = False
+    edge_replacement_auto_dry_run: bool = True
     respect_monitor_verdict: bool = True
     monitor_override_score_delta: float = 0.20
 
@@ -88,6 +90,19 @@ def _text(value: Any) -> str:
     return str(value).strip()
 
 
+def _bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y", "on"}:
+        return True
+    if text in {"false", "0", "no", "n", "off"}:
+        return False
+    return bool(value)
+
+
 def _time(value: Any) -> datetime | None:
     text = _text(value)
     if not text:
@@ -119,8 +134,10 @@ def load_rotation_config(path: Path | str = MONITOR_CONFIG_PATH) -> RotationConf
         min_score_delta=float(rotation.get("promotion_min_score_delta", rotation.get("min_score_delta", 0.10))),
         min_hold_minutes=int(rotation.get("min_hold_minutes", 60)),
         max_rotations_per_day=int(rotation.get("max_rotations_per_day", 3)),
-        require_operator_confirm=bool(rotation.get("require_operator_confirm", True)),
-        respect_monitor_verdict=bool(rotation.get("respect_monitor_verdict", True)),
+        require_operator_confirm=_bool(rotation.get("require_operator_confirm", True), True),
+        edge_replacement_auto_enabled=_bool(rotation.get("edge_replacement_auto_enabled", False), False),
+        edge_replacement_auto_dry_run=_bool(rotation.get("edge_replacement_auto_dry_run", True), True),
+        respect_monitor_verdict=_bool(rotation.get("respect_monitor_verdict", True), True),
         monitor_override_score_delta=float(rotation.get("monitor_override_score_delta", 0.20)),
     )
 
@@ -460,11 +477,147 @@ def _rotation_candidate(row: dict[str, Any], candidates: list[dict[str, Any]]) -
     return None
 
 
+def _root_path(root: Path | str | None = None) -> Path:
+    return Path(root) if root is not None else PROJECT_ROOT
+
+
+def _artifact_dir(root: Path | str | None, relative: str, default: Path) -> Path:
+    return _root_path(root) / relative if root is not None else default
+
+
+def _latest_csv(directory: Path, pattern: str) -> pd.DataFrame:
+    path = latest_file(directory, pattern)
+    if path is None or not path.exists() or path.stat().st_size == 0:
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path, low_memory=False)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
+
+
+def _clean_record(row: pd.Series | dict[str, Any]) -> dict[str, Any]:
+    items = row.items() if isinstance(row, dict) else row.to_dict().items()
+    out: dict[str, Any] = {}
+    for key, value in items:
+        try:
+            if pd.isna(value):
+                value = ""
+        except Exception:
+            pass
+        out[str(key)] = value
+    return out
+
+
+def _candidate_side(candidate: dict[str, Any]) -> tuple[str, str]:
+    bias = _bias(candidate.get("trade_action") or candidate.get("current_trade_action") or candidate.get("nightly_bias") or candidate.get("side"))
+    if bias == "short":
+        return "short", "sell"
+    return "long", "buy"
+
+
+def _candidate_score(candidate: dict[str, Any], decision: dict[str, Any]) -> float:
+    for key in ["promotion_score", "risk_adjusted_score", "side_probability", "confidence_score", "score"]:
+        value = candidate.get(key)
+        if _text(value):
+            return _float(value)
+    return _float(decision.get("replacement_score"))
+
+
+def _edge_replacement_candidate(decision: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    bias, side = _candidate_side(candidate)
+    trade_action = "Short" if bias == "short" else "Long"
+    details = dict(candidate)
+    details.update(
+        {
+            "rotation_replacement": True,
+            "edge_replacement": True,
+            "replace_symbol": _text(decision.get("symbol")).upper(),
+            "replacement_reason": _text(decision.get("replacement_reason")) or "stronger_edge_candidate_available",
+            "replacement_edge_bps": _float(decision.get("replacement_edge_bps")),
+            "latest_signal_status": "fresh",
+            "latest_signal_direction": bias,
+            "model_status": "decision_grade",
+            "current_trade_action": trade_action,
+            "side": side,
+            "nightly_bias": bias,
+        }
+    )
+    return {
+        **candidate,
+        "symbol": _text(candidate.get("symbol")).upper(),
+        "promotion_score": _candidate_score(candidate, decision),
+        "nightly_bias": bias,
+        "trade_action": trade_action,
+        "directional_action": trade_action,
+        "current_trade_action": trade_action,
+        "side": side,
+        "is_held": False,
+        "details": details,
+    }
+
+
+def _edge_replacement_candidates(
+    open_positions: list[dict[str, Any]],
+    *,
+    root: Path | str | None = None,
+    limit: int = 3,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    decisions_dir = _artifact_dir(root, "data/trading/agent_decisions", AGENT_DECISIONS_DIR)
+    candidates_dir = _artifact_dir(root, "data/portal_outputs", PORTAL_OUTPUTS_DIR)
+    decisions = _latest_csv(decisions_dir, "position_decisions_*.csv")
+    pool = _latest_csv(candidates_dir, "08_alpaca_paper_candidate_pool_*.csv")
+    if decisions.empty or pool.empty or "symbol" not in decisions.columns or "symbol" not in pool.columns:
+        return []
+
+    held = _held_symbols(open_positions)
+    decisions = decisions.copy()
+    pool = pool.copy()
+    decisions["__symbol"] = decisions["symbol"].fillna("").astype(str).str.upper()
+    decisions["__replacement"] = decisions.get("replacement_symbol", pd.Series("", index=decisions.index)).fillna("").astype(str).str.upper()
+    pool["__symbol"] = pool["symbol"].fillna("").astype(str).str.upper()
+    status = pool.get("trade_quality_status", pd.Series("", index=pool.index)).fillna("").astype(str).str.lower()
+    eligible = pool.get("order_eligible", pd.Series(False, index=pool.index)).map(_bool)
+    qty = pd.to_numeric(pool.get("suggested_quantity", pd.Series(0, index=pool.index)), errors="coerce").fillna(0)
+    pool = pool[status.isin({"approved", "reduced"}) & eligible & (qty >= 1)].copy()
+    if pool.empty:
+        return []
+
+    decision_filter = (
+        decisions.get("decision", pd.Series("", index=decisions.index)).fillna("").astype(str).str.lower().eq("replace")
+        & decisions.get("recommended_action", pd.Series("", index=decisions.index)).fillna("").astype(str).str.lower().eq("review_edge_replacement")
+        & decisions["__symbol"].isin(held)
+        & decisions["__replacement"].ne("")
+        & ~decisions["__replacement"].isin(held)
+    )
+    decisions = decisions[decision_filter].copy()
+    if decisions.empty:
+        return []
+
+    decisions["__edge"] = pd.to_numeric(decisions.get("replacement_edge_bps", pd.Series(0, index=decisions.index)), errors="coerce").fillna(0)
+    decisions = decisions.sort_values(["__edge", "__symbol"], ascending=[False, True]).head(max(0, int(limit)))
+
+    out: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for _, decision_row in decisions.iterrows():
+        decision = _clean_record(decision_row)
+        replacement_symbol = _text(decision.get("__replacement")).upper()
+        matches = pool[pool["__symbol"].eq(replacement_symbol)]
+        if matches.empty:
+            continue
+        candidate = _clean_record(matches.iloc[0])
+        decision_bias = _bias(decision.get("side"))
+        candidate_bias, _ = _candidate_side(candidate)
+        if decision_bias and candidate_bias and decision_bias != candidate_bias:
+            continue
+        out.append((decision, _edge_replacement_candidate(decision, candidate)))
+    return out
+
+
 def apply_auto_rotations(
     open_positions: list[dict[str, Any]],
     *,
     engine: Engine | None = None,
     now: datetime | None = None,
+    root: Path | str | None = None,
     close_func: Callable[[str], dict[str, Any]] | None = None,
     open_func: Callable[[list[dict[str, Any]], list[dict[str, Any]]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -476,9 +629,19 @@ def apply_auto_rotations(
 
     proposed = _proposed_rotation_rows(db, cfg.max_rotations_per_day)
     if not proposed:
-        return {"auto_rotations_attempted": 0, "auto_rotations_confirmed": 0, "auto_rotation_notes": ""}
+        if not cfg.edge_replacement_auto_enabled:
+            return {
+                "auto_rotations_attempted": 0,
+                "auto_rotations_confirmed": 0,
+                "auto_rotation_notes": "",
+                "auto_edge_replacements_attempted": 0,
+                "auto_edge_replacements_confirmed": 0,
+                "auto_edge_replacements_blocked": 0,
+                "auto_edge_replacements_dry_run": 0,
+            }
+        proposed = []
 
-    candidates = latest_strong_candidates(engine=db, limit=100)
+    candidates = latest_strong_candidates(engine=db, limit=100) if proposed else []
     close_position = close_func or (lambda symbol: apply_manual_position_action(symbol, "close"))
     open_replacement = open_func or (
         lambda rows, positions: apply_auto_open(
@@ -492,6 +655,10 @@ def apply_auto_rotations(
     )
     attempted = 0
     confirmed = 0
+    edge_attempted = 0
+    edge_confirmed = 0
+    edge_blocked = 0
+    edge_dry_run = 0
     notes: list[str] = []
     consumed_replacements: set[str] = set()
     consumed_replaces: set[str] = set()
@@ -548,8 +715,53 @@ def apply_auto_rotations(
             "paper_autopilot_rotation",
             {"replace_symbol": replace_symbol, "with_symbol": with_symbol, "rotation_id": row.get("id")},
         )
+
+    remaining = max(0, cfg.max_rotations_per_day - confirmed)
+    if cfg.edge_replacement_auto_enabled and remaining > 0:
+        for decision, candidate in _edge_replacement_candidates(open_positions, root=root, limit=remaining):
+            replace_symbol = _text(decision.get("symbol")).upper()
+            with_symbol = _text(candidate.get("symbol")).upper()
+            if not replace_symbol or not with_symbol or replace_symbol in consumed_replaces or with_symbol in consumed_replacements:
+                continue
+            attempted += 1
+            edge_attempted += 1
+            if cfg.edge_replacement_auto_dry_run:
+                edge_dry_run += 1
+                notes.append(f"{replace_symbol}->{with_symbol}:edge_dry_run")
+                continue
+            positions_after_replace = [pos for pos in open_positions if _text(pos.get("symbol")).upper() != replace_symbol]
+            open_result = open_replacement([candidate], positions_after_replace)
+            if int(open_result.get("autopilot_open_submitted") or 0) <= 0:
+                edge_blocked += 1
+                notes.append(f"{replace_symbol}->{with_symbol}:edge_blocked:{open_result.get('autopilot_open_notes') or 'open_not_submitted'}")
+                continue
+            close_result = close_position(replace_symbol)
+            if str(close_result.get("status") or "").lower() not in {"submitted", "dry_run", "recorded"}:
+                edge_blocked += 1
+                notes.append(f"{replace_symbol}->{with_symbol}:edge_open_submitted_close_failed")
+                continue
+            consumed_replacements.add(with_symbol)
+            consumed_replaces.add(replace_symbol)
+            confirmed += 1
+            edge_confirmed += 1
+            notes.append(f"{replace_symbol}->{with_symbol}:edge_confirmed")
+            record_event_safely(
+                str(decision.get("position_id") or position_id_for_symbol(replace_symbol)),
+                "monitor_rotate",
+                "paper_autopilot_edge_replacement",
+                {
+                    "replace_symbol": replace_symbol,
+                    "with_symbol": with_symbol,
+                    "replacement_edge_bps": decision.get("replacement_edge_bps"),
+                    "replacement_reason": decision.get("replacement_reason"),
+                },
+            )
     return {
         "auto_rotations_attempted": attempted,
         "auto_rotations_confirmed": confirmed,
         "auto_rotation_notes": "; ".join(notes[:10]),
+        "auto_edge_replacements_attempted": edge_attempted,
+        "auto_edge_replacements_confirmed": edge_confirmed,
+        "auto_edge_replacements_blocked": edge_blocked,
+        "auto_edge_replacements_dry_run": edge_dry_run,
     }

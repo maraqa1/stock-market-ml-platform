@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pandas as pd
 from sqlalchemy import create_engine, insert, select
 
 from portal.app import create_app
@@ -50,6 +51,48 @@ def position(symbol="FRMI", score=0.60, side="long", opened_at=None, pnl=0.0, re
         "unrealized_plpc": pnl,
         "decision_reason": reason,
     }
+
+
+def _write_edge_replacement_artifacts(root: Path, replace_symbol: str = "AGL", with_symbol: str = "SNOW") -> None:
+    decisions_dir = root / "data" / "trading" / "agent_decisions"
+    candidates_dir = root / "data" / "portal_outputs"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    candidates_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": replace_symbol,
+                "side": "long",
+                "decision": "replace",
+                "recommended_action": "review_edge_replacement",
+                "decision_reason": "replacement_edge_improvement",
+                "replacement_symbol": with_symbol,
+                "replacement_rank": 175,
+                "replacement_score": 0.055,
+                "replacement_edge_bps": 2225.87,
+                "replacement_quality_status": "approved",
+                "replacement_risk_tier": "high_quality",
+                "replacement_selection_method": "edge",
+            }
+        ]
+    ).to_csv(decisions_dir / "position_decisions_20260610_160000.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "symbol": with_symbol,
+                "trade_action": "Long",
+                "side": "buy",
+                "candidate_rank": 175,
+                "trade_quality_status": "approved",
+                "risk_tier": "high_quality",
+                "order_eligible": True,
+                "suggested_quantity": 10,
+                "expected_trade_return": 0.222587,
+                "risk_adjusted_score": 0.055647,
+                "current_price": 239.66,
+            }
+        ]
+    ).to_csv(candidates_dir / "08_alpaca_paper_candidate_pool_20260610_160000.csv", index=False)
 
 
 def test_rotation_recommendation_requires_score_delta():
@@ -167,6 +210,69 @@ def test_auto_rotations_confirm_and_size_with_injected_paths(monkeypatch):
     with db.connect() as conn:
         verdict = conn.execute(select(rotation_recommendation_log.c.verdict).where(rotation_recommendation_log.c.id == rotation_id)).scalar()
     assert verdict == "confirmed"
+
+
+def test_auto_edge_replacement_dry_run_uses_decision_and_candidate_pool(monkeypatch, tmp_path):
+    db = engine()
+    _write_edge_replacement_artifacts(tmp_path)
+    monkeypatch.setattr(
+        "stockml.autopilot.rotate.load_rotation_config",
+        lambda: RotationConfig(
+            require_operator_confirm=False,
+            edge_replacement_auto_enabled=True,
+            edge_replacement_auto_dry_run=True,
+            max_rotations_per_day=3,
+        ),
+    )
+    monkeypatch.setattr("stockml.autopilot.rotate.latest_strong_candidates", lambda **kwargs: [])
+
+    result = apply_auto_rotations(
+        [position(symbol="AGL", score=0.20, side="long")],
+        engine=db,
+        now=NOW,
+        root=tmp_path,
+        close_func=lambda symbol: (_ for _ in ()).throw(AssertionError("dry run must not close")),
+        open_func=lambda candidates, positions: (_ for _ in ()).throw(AssertionError("dry run must not open")),
+    )
+
+    assert result["auto_edge_replacements_attempted"] == 1
+    assert result["auto_edge_replacements_dry_run"] == 1
+    assert result["auto_edge_replacements_confirmed"] == 0
+    assert "AGL->SNOW:edge_dry_run" in result["auto_rotation_notes"]
+
+
+def test_auto_edge_replacement_confirms_with_injected_paths(monkeypatch, tmp_path):
+    db = engine()
+    _write_edge_replacement_artifacts(tmp_path)
+    monkeypatch.setattr(
+        "stockml.autopilot.rotate.load_rotation_config",
+        lambda: RotationConfig(
+            require_operator_confirm=False,
+            edge_replacement_auto_enabled=True,
+            edge_replacement_auto_dry_run=False,
+            max_rotations_per_day=3,
+        ),
+    )
+    monkeypatch.setattr("stockml.autopilot.rotate.latest_strong_candidates", lambda **kwargs: [])
+    opened = []
+    closed = []
+
+    result = apply_auto_rotations(
+        [position(symbol="AGL", score=0.20, side="long")],
+        engine=db,
+        now=NOW,
+        root=tmp_path,
+        close_func=lambda symbol: closed.append(symbol) or {"status": "submitted", "symbol": symbol},
+        open_func=lambda candidates, positions: opened.append((candidates, positions)) or {"autopilot_open_submitted": 1, "autopilot_open_notes": "SNOW:opened:order-1"},
+    )
+
+    assert result["auto_rotations_confirmed"] == 1
+    assert result["auto_edge_replacements_confirmed"] == 1
+    assert opened[0][0][0]["symbol"] == "SNOW"
+    assert opened[0][0][0]["details"]["edge_replacement"] is True
+    assert opened[0][0][0]["details"]["replace_symbol"] == "AGL"
+    assert opened[0][1] == []
+    assert closed == ["AGL"]
 
 
 def test_action_queue_surfaces_rotation_recommendations(monkeypatch, tmp_path):

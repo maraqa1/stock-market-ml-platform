@@ -842,6 +842,10 @@ def tick(
             "auto_rotations_attempted": 0,
             "auto_rotations_confirmed": 0,
             "auto_rotation_notes": "",
+            "auto_edge_replacements_attempted": 0,
+            "auto_edge_replacements_confirmed": 0,
+            "auto_edge_replacements_blocked": 0,
+            "auto_edge_replacements_dry_run": 0,
         }
         basket = evaluate_basket_risk(
             positions.fillna("").to_dict("records") if not positions.empty else [],
@@ -870,7 +874,7 @@ def tick(
             if auto_rotation_applier is not None:
                 auto_rotation_result = auto_rotation_applier(positions_records)
             else:
-                auto_rotation_result = apply_auto_rotations(positions_records)
+                auto_rotation_result = apply_auto_rotations(positions_records, root=root)
             if int(auto_rotation_result.get("auto_rotations_confirmed") or 0) > 0:
                 open_orders = max(open_orders, int(auto_rotation_result.get("auto_rotations_confirmed") or 0))
         if not allow_auto_open:
