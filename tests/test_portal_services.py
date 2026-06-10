@@ -5,6 +5,7 @@ import pandas as pd
 
 from portal.services.latest_file_reader import latest_file, readable_reason
 from portal.services.kpi import trading_kpi_context
+from portal.services.rotation_diagnostic_service import held_vs_candidate_context
 from portal.services.trading_api_service import action_queue_context, positions_context
 from portal.services.universe_service import universe_context
 from portal.services.signal_service import signal_context
@@ -120,6 +121,31 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert ctx["rejected_trimmed_rows"][0]["source"] == "Guardrail"
     assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Rejected / Error"] == 0
     assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Fill ratio"] == "Not available"
+
+
+def test_held_vs_candidate_context_compares_positions_and_available_candidates(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "AAA", "side": "long", "qty": 1, "market_value": 9.5, "cost_basis": 10, "unrealized_pl": -0.5, "unrealized_plpc": -0.05}],
+    )
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_1.csv",
+        [
+            {"symbol": "AAA", "side": "buy", "trade_quality_status": "rejected", "expected_trade_return": 0.0, "risk_adjusted_score": 0.0},
+            {"symbol": "VPG", "side": "buy", "trade_quality_status": "approved", "expected_trade_return": 0.04, "risk_adjusted_score": 0.05},
+        ],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "holding_period" / "holding_review_1.csv",
+        [{"symbol": "AAA", "holding_quality": "avoid", "recommended_action": "avoid"}],
+    )
+
+    ctx = held_vs_candidate_context(tmp_path)
+
+    assert ctx["summary"]["open_positions"] == 1
+    assert ctx["held_positions"][0]["symbol"] == "AAA"
+    assert ctx["held_positions"][0]["rotation_flag"] == "review_close"
+    assert ctx["available_candidates"][0]["symbol"] == "VPG"
 
 
 def test_trading_kpi_labels_gross_and_net_exposure(monkeypatch, tmp_path):

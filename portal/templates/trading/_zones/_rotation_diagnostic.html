@@ -1,0 +1,126 @@
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import number, signed_money, signed_pct, side %}
+{% from "_macros/table.html" import table_toolbar %}
+<section class="zone trading-zone" data-zone="rotation-diagnostic" id="rotation-diagnostic">
+  <div class="zone__header">
+    <span>Held Vs Candidate Diagnostic</span>
+    <span class="zone__header-meta">read-only &middot; {{ held_vs_candidate.generated_at or "not available" }}</span>
+  </div>
+  <div class="zone__body">
+    <p class="zone__description">Compares current broker positions with the latest candidate pool, monitor decisions, model context, and holding-review output. This panel does not submit orders or change thresholds.</p>
+    <div class="kpi-row positions-summary" aria-label="Held versus candidate summary">
+      <article class="kpi-card">
+        <span class="kpi-card__label">Held</span>
+        <strong class="kpi-card__value">{{ number(held_vs_candidate.summary.open_positions or 0, 0) }}</strong>
+        <small class="kpi-card__detail">broker positions compared</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Warnings</span>
+        <strong class="kpi-card__value {{ 'text-down' if (held_vs_candidate.summary.held_warning_rows or 0) > 0 else '' }}">{{ number(held_vs_candidate.summary.held_warning_rows or 0, 0) }}</strong>
+        <small class="kpi-card__detail">held rows needing review</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Available</span>
+        <strong class="kpi-card__value">{{ number(held_vs_candidate.summary.available_candidates or 0, 0) }}</strong>
+        <small class="kpi-card__detail">eligible non-held candidates</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">P&amp;L</span>
+        <strong class="kpi-card__value">{{ signed_money(held_vs_candidate.summary.unrealized_pl or 0) }}</strong>
+        <small class="kpi-card__detail">{{ signed_pct(held_vs_candidate.summary.unrealized_plpc_basis or 0) }} open basis</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Top Candidate</span>
+        <strong class="kpi-card__value">{{ held_vs_candidate.summary.top_candidate or "None" }}</strong>
+        <small class="kpi-card__detail">{{ number(held_vs_candidate.summary.top_candidate_edge_bps or 0, 0) }} bps edge</small>
+      </article>
+    </div>
+    {% if held_vs_candidate.missing_inputs %}
+      <div class="stale-banner">
+        Missing diagnostic inputs: {{ held_vs_candidate.missing_inputs|join(", ") }}.
+      </div>
+    {% endif %}
+    <details data-key="held-vs-candidate-held" open>
+      <summary class="details-summary">Held Positions</summary>
+      {{ table_toolbar("Filter held diagnostics") }}
+      <div class="table-scroll">
+      <table class="data" data-table="held-vs-candidate-held">
+        <thead>
+          <tr>
+            <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
+            <th>Side</th>
+            <th class="num" data-sortable data-sort-key="pnl" data-sort-type="number">P&amp;L</th>
+            <th>Status</th>
+            <th class="num" data-sortable data-sort-key="edge" data-sort-type="number">Edge</th>
+            <th>Hold</th>
+            <th>Decision</th>
+            <th>Flag</th>
+            <th>Warnings</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not held_vs_candidate.held_positions %}
+            <tr>
+              <td colspan="9" class="empty small">No open broker positions found in the latest tracking file.</td>
+            </tr>
+          {% else %}
+            {% for row in held_vs_candidate.held_positions %}
+              <tr>
+                <td class="num-l col-pinned" data-sort-value="{{ row.symbol }}"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                <td>{{ side(row.position_side) }}</td>
+                <td data-sort-value="{{ row.unrealized_pl or 0 }}">{{ signed_money(row.unrealized_pl or 0) }} {{ signed_pct(row.unrealized_plpc or 0) }}</td>
+                <td>{{ pill(row.trade_quality_status or "missing") }}</td>
+                <td class="num" data-sort-value="{{ row.directional_expected_edge_bps or 0 }}">{{ number(row.directional_expected_edge_bps, 0) if row.directional_expected_edge_bps != "" else "-" }}</td>
+                <td>{{ pill(row.holding_quality or "missing") }}</td>
+                <td title="{{ row.decision_reason or '' }}">{{ row.decision|replace("_", " ")|title }}</td>
+                <td>{{ pill(row.rotation_flag or "watch") }}</td>
+                <td>{{ (row.warnings or "none")|replace("|", ", ")|replace("_", " ") }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+      </div>
+    </details>
+    <details data-key="held-vs-candidate-available">
+      <summary class="details-summary">Available Replacement Candidates</summary>
+      {{ table_toolbar("Filter available candidates") }}
+      <div class="table-scroll">
+      <table class="data" data-table="held-vs-candidate-available">
+        <thead>
+          <tr>
+            <th class="col-pinned" data-sortable data-sort-key="symbol">Symbol</th>
+            <th>Side</th>
+            <th>Status</th>
+            <th class="num" data-sortable data-sort-key="edge" data-sort-type="number">Edge</th>
+            <th class="num" data-sortable data-sort-key="score" data-sort-type="number">Score</th>
+            <th class="num" data-sortable data-sort-key="confidence" data-sort-type="number">Confidence</th>
+            <th class="num" data-sortable data-sort-key="rank" data-sort-type="number">Rank</th>
+            <th>Sector</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not held_vs_candidate.available_candidates %}
+            <tr>
+              <td colspan="8" class="empty small">No eligible non-held candidates available after excluding held symbols and open broker orders.</td>
+            </tr>
+          {% else %}
+            {% for row in held_vs_candidate.available_candidates %}
+              <tr>
+                <td class="num-l col-pinned" data-sort-value="{{ row.symbol }}"><a href="/symbols/{{ row.symbol }}">{{ row.symbol }}</a></td>
+                <td>{{ side(row.side) }}</td>
+                <td>{{ pill(row.trade_quality_status or "unknown") }}</td>
+                <td class="num" data-sort-value="{{ row.directional_expected_edge_bps or 0 }}">{{ number(row.directional_expected_edge_bps, 0) if row.directional_expected_edge_bps != "" else "-" }}</td>
+                <td class="num" data-sort-value="{{ row.directional_risk_score_bps or 0 }}">{{ number(row.directional_risk_score_bps, 0) if row.directional_risk_score_bps != "" else "-" }}</td>
+                <td class="num" data-sort-value="{{ row.confidence_score or 0 }}">{{ number(row.confidence_score, 3) if row.confidence_score != "" else "-" }}</td>
+                <td class="num" data-sort-value="{{ row.candidate_rank or 0 }}">{{ number(row.candidate_rank, 0) if row.candidate_rank != "" else "-" }}</td>
+                <td>{{ row.sector or "-" }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+      </div>
+    </details>
+  </div>
+</section>

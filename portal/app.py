@@ -15,6 +15,7 @@ from portal.services.latest_file_reader import count_rows, file_status, latest_f
 from portal.services.near_miss_service import near_miss_context
 from portal.services.per_symbol_forecast_service import per_symbol_forecast_context
 from portal.services.same_day_view import missed_opportunities_context, record_same_day_operator_decision, same_day_panel_context
+from portal.services.rotation_diagnostic_service import held_vs_candidate_context
 from portal.services.reports_view import closed_trades_context, closed_trades_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
@@ -248,6 +249,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "monitor_activity": monitor_today_context(root),
                 "action_queue": action_queue,
                 "positions_api": positions_api,
+                "held_vs_candidate": held_vs_candidate_context(root),
                 "intraday_promotion": intraday_promotion_context(root),
                 "same_day_panel": same_day_panel_context(root),
                 "near_miss": near_miss_context(root),
@@ -654,6 +656,10 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/api/trading/queue")
     def api_trading_queue():
         return jsonify(action_queue_context(root_path()))
+
+    @app.route("/api/trading/held-vs-candidate")
+    def api_trading_held_vs_candidate():
+        return jsonify(held_vs_candidate_context(root_path()))
 
     @app.route("/api/trading/intraday-promotion")
     def api_trading_intraday_promotion():
