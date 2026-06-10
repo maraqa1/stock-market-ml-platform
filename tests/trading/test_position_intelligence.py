@@ -28,6 +28,19 @@ def test_winner_near_peak_is_protected_but_not_closed():
     assert result["distance_to_trailing_close"] > 0
 
 
+def test_fresh_signal_winner_uses_wider_trailing_line():
+    result = explain_position(
+        {"symbol": "FRESH", "unrealized_plpc": 0.031},
+        decision={"symbol": "FRESH", "decision": "hold", "decision_reason": "position_within_rules"},
+        peak_plpc=0.045,
+    )
+
+    assert result["management_state"] == "protect_profit"
+    assert result["close_triggered"] is False
+    assert result["fresh_trailing_active"] is True
+    assert result["distance_to_fresh_trailing_close"] > 0
+
+
 def test_loser_above_defensive_line_is_watch_loss():
     result = explain_position(
         {"symbol": "CRVS", "unrealized_plpc": -0.01692},

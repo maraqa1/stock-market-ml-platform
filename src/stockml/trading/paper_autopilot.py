@@ -32,6 +32,7 @@ from stockml.trading.config import alpaca_config
 from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
+from stockml.trading.profit_taking import ProfitTakingRules, classify_profit_taking
 
 
 STATE_VERSION = 1
@@ -40,8 +41,8 @@ OPEN_ORDER_STATES = {"accepted", "new", "pending_new", "pending_replace", "submi
 DEFENSIVE_STALE_LOSS_THRESHOLD = -0.025
 DEFENSIVE_UNKNOWN_LOSS_THRESHOLD = -0.02
 HARD_STOP_LOSS_THRESHOLD = -0.04
-TRAILING_PROFIT_MIN = 0.03
-TRAILING_GIVEBACK_THRESHOLD = 0.015
+DEFAULT_TRAILING_PROFIT_ARM_PCT = 2.0
+DEFAULT_TRAILING_GIVEBACK_PCT = 1.0
 AUTOPILOT_MODE_ORDER = ["observe", "paper_assist", "paper_autopilot", "ai_gated_paper"]
 AUTOPILOT_MODES: dict[str, dict[str, Any]] = {
     "observe": {
@@ -287,6 +288,7 @@ def capability_rows() -> list[dict[str, Any]]:
 
 
 def rule_rows() -> list[dict[str, Any]]:
+    profit_rules = ProfitTakingRules.from_percentages(DEFAULT_TRAILING_PROFIT_ARM_PCT, DEFAULT_TRAILING_GIVEBACK_PCT)
     return [
         {
             "rule": "Monitor close",
@@ -311,7 +313,11 @@ def rule_rows() -> list[dict[str, Any]]:
         },
         {
             "rule": "Trailing profit protection",
-            "trigger": f"Peak return >= {TRAILING_PROFIT_MIN:.1%} and giveback >= {TRAILING_GIVEBACK_THRESHOLD:.1%} on a stale signal.",
+            "trigger": (
+                f"Stale/unknown signal: peak return >= {profit_rules.trailing_profit_min:.1%} "
+                f"and giveback >= {profit_rules.trailing_giveback_threshold:.1%}. "
+                f"Fresh signal: larger giveback required."
+            ),
             "action": "Submit paper close order",
             "active_in": "Paper Autopilot",
         },
@@ -599,6 +605,22 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
     frame["__health_status"] = [str(value.get("position_health_status") or "") for value in health_rows]
     frame["__health_reason"] = [str(value.get("position_health_reason") or "") for value in health_rows]
     close_automation_mode = str(auto_config.close_automation_mode or "automatic").lower()
+    profit_rules = ProfitTakingRules.from_percentages(
+        auto_config.trailing_profit_arm_pct,
+        auto_config.trailing_profit_giveback_pct,
+    )
+    profit_rows = [
+        classify_profit_taking(
+            current_plpc=row.get("__plpc"),
+            peak_plpc=row.get("__peak_plpc"),
+            decision_reason=row.get("__reason"),
+            decision=row.get("__decision"),
+            rules=profit_rules,
+        )
+        for _, row in frame.iterrows()
+    ]
+    frame["__profit_close_triggered"] = [bool(value.get("close_triggered")) for value in profit_rows]
+    frame["__profit_close_reason"] = [str(value.get("close_trigger_reason") or "") for value in profit_rows]
     health_close_enabled = close_automation_mode != "review_only"
     health_close_now = frame["__health_status"] == "close_now"
     health_close_candidate = frame["__health_status"] == "close_candidate"
@@ -616,12 +638,7 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
             | unknown_signal_loss
         )
     )
-    trailing_profit = (
-        (frame["__decision"] == "watch")
-        & frame["__reason"].str.contains("signal_stale|latest_signal_unknown", na=False)
-        & (frame["__peak_plpc"] >= TRAILING_PROFIT_MIN)
-        & ((frame["__peak_plpc"] - frame["__plpc"]) >= TRAILING_GIVEBACK_THRESHOLD)
-    )
+    trailing_profit = frame["__profit_close_triggered"]
     rotate_enabled = auto_config.rotate_enabled
     out = frame[
         (explicit_close | health_close | hard_stop | defensive_stale_loss | trailing_profit | (replace_close & rotate_enabled))
@@ -633,7 +650,9 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
     out.loc[(replace_close & rotate_enabled).reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "monitor_replace"
     out.loc[hard_stop.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "hard_stop_loss"
     out.loc[defensive_stale_loss.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "defensive_stale_loss"
-    out.loc[trailing_profit.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "trailing_profit_giveback"
+    out.loc[trailing_profit.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = out.loc[
+        trailing_profit.reindex(out.index, fill_value=False), "__profit_close_reason"
+    ].replace("", "trailing_profit_giveback")
     out.loc[explicit_close.reindex(out.index, fill_value=False), "__autopilot_close_reason"] = "monitor_close"
     return out
 
@@ -697,7 +716,7 @@ def apply_paper_autopilot_decisions(
                 hard_stop_submitted += 1
             elif reason in {"position_health_close_candidate", "position_health_close_now"}:
                 health_submitted += 1
-            elif reason == "trailing_profit_giveback":
+            elif reason in {"trailing_profit_giveback", "fresh_signal_profit_giveback"}:
                 trailing_submitted += 1
             elif reason == "monitor_replace":
                 replace_submitted += 1

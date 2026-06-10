@@ -3,14 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from stockml.trading.profit_taking import DEFAULT_PROFIT_TAKING_RULES, ProfitTakingRules, classify_profit_taking
+
 
 @dataclass(frozen=True)
 class PositionRiskRules:
     hard_stop_loss_threshold: float = -0.04
     defensive_stale_loss_threshold: float = -0.025
     defensive_unknown_loss_threshold: float = -0.02
-    trailing_profit_min: float = 0.03
-    trailing_giveback_threshold: float = 0.015
+    profit_taking_rules: ProfitTakingRules = DEFAULT_PROFIT_TAKING_RULES
 
 
 DEFAULT_RULES = PositionRiskRules()
@@ -69,10 +70,14 @@ def explain_position(
     reason = str((decision or {}).get("decision_reason") or position.get("decision_reason") or "")
     decision_value = str((decision or {}).get("decision") or position.get("decision") or "").lower()
     signal_state = _signal_state(reason)
-    trailing_active = peak >= rules.trailing_profit_min
-    trailing_close_line = peak - rules.trailing_giveback_threshold if trailing_active else None
-    trailing_distance = current_plpc - trailing_close_line if trailing_close_line is not None else None
-    trailing_triggered = trailing_distance is not None and trailing_distance <= 0 and signal_state in {"unknown", "stale"}
+    profit = classify_profit_taking(
+        current_plpc=current_plpc,
+        peak_plpc=peak,
+        decision_reason=reason,
+        decision=decision_value,
+        rules=rules.profit_taking_rules,
+    )
+    trailing_triggered = bool(profit["close_triggered"])
     defensive_line = _defensive_line(signal_state, rules)
     defensive_distance = current_plpc - defensive_line if defensive_line is not None else None
     defensive_triggered = defensive_distance is not None and defensive_distance <= 0
@@ -84,11 +89,11 @@ def explain_position(
         summary = "Hard stop loss is breached."
     elif trailing_triggered:
         state = "close_triggered"
-        summary = "Trailing profit giveback is breached."
+        summary = "Profit-protection giveback is breached."
     elif defensive_triggered:
         state = "close_triggered"
         summary = f"Defensive {signal_state} signal loss threshold is breached."
-    elif trailing_active:
+    elif profit["trailing_active"]:
         state = "protect_profit"
         summary = "Trailing profit protection is armed."
     elif current_plpc < 0:
@@ -111,9 +116,16 @@ def explain_position(
         "current_plpc": current_plpc,
         "peak_plpc": peak,
         "giveback_plpc": giveback,
-        "trailing_active": trailing_active,
-        "trailing_close_line": trailing_close_line,
-        "distance_to_trailing_close": trailing_distance,
+        "trailing_active": profit["trailing_active"],
+        "trailing_close_line": profit["trailing_close_line"],
+        "distance_to_trailing_close": profit["distance_to_trailing_close"],
+        "fresh_trailing_active": profit["fresh_trailing_active"],
+        "fresh_trailing_close_line": profit["fresh_trailing_close_line"],
+        "distance_to_fresh_trailing_close": profit["distance_to_fresh_trailing_close"],
+        "profit_rule_arm": profit["rule_arm"],
+        "profit_rule_giveback": profit["rule_giveback"],
+        "fresh_profit_rule_arm": profit["fresh_rule_arm"],
+        "fresh_profit_rule_giveback": profit["fresh_rule_giveback"],
         "defensive_close_line": defensive_line,
         "distance_to_defensive_close": defensive_distance,
         "hard_stop_line": rules.hard_stop_loss_threshold,
@@ -122,7 +134,7 @@ def explain_position(
         "close_trigger_reason": (
             "hard_stop_loss"
             if hard_stop_triggered
-            else "trailing_profit_giveback"
+            else profit["close_trigger_reason"]
             if trailing_triggered
             else f"defensive_{signal_state}_loss"
             if defensive_triggered

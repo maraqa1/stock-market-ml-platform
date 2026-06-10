@@ -20,7 +20,8 @@ from stockml.autopilot.open import load_auto_open_config
 from stockml.autopilot.rotate import load_rotation_config
 from stockml.marketdata.providers.factory import configured_provider_name
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
-from stockml.trading.position_intelligence import enrich_positions
+from stockml.trading.position_intelligence import PositionRiskRules, enrich_positions
+from stockml.trading.profit_taking import ProfitTakingRules
 
 
 MONITOR_EVENT_TYPES = {"monitor_safe", "monitor_watch", "monitor_close", "monitor_rotate"}
@@ -508,11 +509,17 @@ def positions_context(root: Path) -> dict[str, Any]:
     rows = _records(positions)
     summary = _position_summary(positions)
     autopilot_state = load_autopilot_state(root)
+    auto_open_config = load_auto_open_config(root=root)
+    intelligence_rules = PositionRiskRules(
+        profit_taking_rules=ProfitTakingRules.from_percentages(
+            auto_open_config.trailing_profit_arm_pct,
+            auto_open_config.trailing_profit_giveback_pct,
+        )
+    )
     decisions = _attach_latest_model_signals(decisions, root)
-    rows = enrich_positions(rows, decisions=_records(decisions), autopilot_state=autopilot_state)
+    rows = enrich_positions(rows, decisions=_records(decisions), autopilot_state=autopilot_state, rules=intelligence_rules)
     rows = _attach_latest_model_signals_to_records(rows, root)
     rows = _attach_holding_review_to_records(rows, root)
-    auto_open_config = load_auto_open_config(root=root)
     health_rules = PositionHealthRules(
         max_position_loss_pct=float(auto_open_config.max_position_loss_pct),
         hard_stop_loss_pct=4.0,

@@ -380,6 +380,80 @@ def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch,
     assert "AAA:trailing_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
 
 
+def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "autopilot.yaml").write_text(
+        "version: 1\nautopilot:\n  trailing_profit_arm_pct: 2.0\n  trailing_profit_giveback_pct: 0.5\n",
+        encoding="utf-8",
+    )
+    state = paper_autopilot.load_state(tmp_path)
+    state["position_peak_plpc"] = {"AAA": 0.022}
+    paper_autopilot.save_state(state, tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1, "unrealized_plpc": 0.016}]).to_csv(positions, index=False)
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": 0.016}]).to_csv(decisions / "position_decisions_1.csv", index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            state=state,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        ),
+    )
+
+    assert state["autopilot_trailing_close_submitted"] == 1
+    assert "AAA:trailing_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
+
+
+def test_paper_autopilot_fresh_winner_requires_larger_giveback(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "autopilot.yaml").write_text(
+        "version: 1\nautopilot:\n  trailing_profit_arm_pct: 2.0\n  trailing_profit_giveback_pct: 1.0\n",
+        encoding="utf-8",
+    )
+    state = paper_autopilot.load_state(tmp_path)
+    state["position_peak_plpc"] = {"AAA": 0.045}
+    paper_autopilot.save_state(state, tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "qty": 1, "unrealized_plpc": 0.031}]).to_csv(positions, index=False)
+    decisions = tmp_path / "data" / "trading" / "agent_decisions"
+    decisions.mkdir(parents=True)
+    pd.DataFrame([{"symbol": "AAA", "decision": "hold", "decision_reason": "position_within_rules", "unrealized_plpc": 0.031}]).to_csv(decisions / "position_decisions_1.csv", index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            state=state,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        ),
+    )
+
+    assert state["autopilot_trailing_close_submitted"] == 0
+    assert "trailing_profit_giveback:submitted" not in state.get("autopilot_action_notes", "")
+
+
 def test_paper_autopilot_mode_protects_unknown_signal_winners_that_give_back(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)

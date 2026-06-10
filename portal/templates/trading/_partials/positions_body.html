@@ -46,11 +46,14 @@
           <div class="order-state text-secondary">{{ intel.signal_state|replace("_", " ") }}</div>
         {% endif %}
       </td>
-      <td class="num" data-sort-value="{{ intel.distance_to_trailing_close if intel.distance_to_trailing_close is not none else 999 }}">
+      {% set profit_distance = intel.distance_to_fresh_trailing_close if intel.signal_state == "fresh_or_unflagged" and intel.fresh_trailing_active else intel.distance_to_trailing_close %}
+      <td class="num" data-sort-value="{{ profit_distance if profit_distance is not none else 999 }}">
         {% if intel.close_triggered %}
           {{ intel.close_trigger_reason|replace("_", " ") }}
+        {% elif intel.signal_state == "fresh_or_unflagged" and intel.fresh_trailing_active %}
+          trail {{ signed_pct(profit_distance or 0) }}
         {% elif intel.trailing_active %}
-          trail {{ signed_pct(intel.distance_to_trailing_close or 0) }}
+          trail {{ signed_pct(profit_distance or 0) }}
         {% elif intel.defensive_close_line is not none %}
           def {{ signed_pct(intel.distance_to_defensive_close or 0) }}
         {% else %}
