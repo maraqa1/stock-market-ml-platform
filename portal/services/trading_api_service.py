@@ -839,8 +839,22 @@ def action_queue_context(root: Path) -> dict[str, Any]:
     items.extend(_rotation_queue_items(len(items), held_symbols=position_symbols, open_order_symbols=open_order_symbols))
     counts = _status_counts(pd.DataFrame(items), "decision")
     counts["close"] = int(counts.get("close", 0)) + int(counts.get("close_candidate", 0)) + int(counts.get("close_now", 0))
+    counts["action_required"] = sum(1 for item in items if _action_queue_item_requires_attention(item))
     generated_at = max([value for value in [_csv_timestamp(decisions_file), _csv_timestamp(evaluations_file), _csv_timestamp(positions_file)] if value] or [""])
     return {"source": "csv_artifacts", "generated_at": generated_at, "items": items, "counts": {"total": len(items), **counts}}
+
+
+def _action_queue_item_requires_attention(item: dict[str, Any]) -> bool:
+    decision = str(item.get("decision") or "").strip().lower()
+    label = str(item.get("operator_call_label") or "").strip().lower()
+    call = str(item.get("operator_call") or "").strip().lower()
+    if label in {"watch only", "hold winner"}:
+        return False
+    if decision in {"watch", "watch_loss", "healthy_hold"}:
+        return False
+    if bool(item.get("operator_apply_enabled")):
+        return True
+    return call in {"close", "warning"} or decision in {"close", "close_now", "close_candidate", "replace", "rotate", "open_candidate", "replace_candidate"}
 
 
 def _open_symbols_from_positions_file(positions_file: Path | None) -> set[str] | None:

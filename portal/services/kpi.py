@@ -94,7 +94,7 @@ def trading_kpi_context(
     net_market_value = float(summary.get("position_net_market_value") or 0.0)
     unrealized_pl = float(summary.get("position_unrealized_pl") or 0.0)
     unrealized_plpc = float(summary.get("position_unrealized_plpc") or 0.0)
-    pending = int(queue["counts"].get("total") or 0)
+    pending = int(queue["counts"].get("action_required", queue["counts"].get("total")) or 0)
     submitted = int(basket["counts"].get("submitted") or 0)
     filled = int(basket["counts"].get("filled") or 0)
     account_equity = float(account.get("equity") or config.account_equity or 0.0)

@@ -163,6 +163,43 @@ def test_trading_kpi_labels_gross_and_net_exposure(monkeypatch, tmp_path):
     assert "Net Exposure" not in cards
 
 
+def test_trading_kpi_counts_only_action_required_queue_items(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "portal.services.kpi.alpaca_config",
+        lambda: type(
+            "Config",
+            (),
+            {
+                "account_equity": 1000,
+                "max_orders": 10,
+                "paper_trading_enabled": True,
+                "live_trading_enabled": False,
+                "submit_orders": False,
+            },
+        )(),
+    )
+    monkeypatch.setattr("portal.services.kpi.account_snapshot", lambda config: {"equity": 1000, "source": "fixture"})
+
+    ctx = trading_kpi_context(
+        tmp_path,
+        positions={
+            "summary": {
+                "position_count": 6,
+                "position_market_value": 6243,
+                "position_net_market_value": 1247,
+                "position_unrealized_pl": 101.8,
+                "position_unrealized_plpc": 0.0164,
+            }
+        },
+        basket={"counts": {"submitted": 0, "filled": 0}},
+        queue={"counts": {"total": 6, "action_required": 1}},
+    )
+
+    cards = {card["label"]: card for card in ctx["cards"]}
+    assert cards["Pending Decisions"]["value"] == "1"
+    assert cards["Pending Decisions"]["alert"] is True
+
+
 def test_trading_context_exposes_expanded_candidate_shortlist(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_1.csv",
@@ -308,6 +345,47 @@ def test_action_queue_adds_operator_calls_for_visible_supervision(tmp_path):
     assert rows["FRMI"]["operator_apply_enabled"] is False
     assert rows["GLIBK"]["operator_call_label"] == "Hold - logic check"
     assert rows["GLIBK"]["operator_apply_enabled"] is False
+
+
+def test_action_queue_counts_only_rows_requiring_attention(tmp_path):
+    write_csv(
+        tmp_path / "data" / "trading" / "agent_decisions" / "position_decisions_1.csv",
+        [
+            {
+                "symbol": "WIN",
+                "decision": "replace",
+                "recommended_action": "close_then_open_replacement",
+                "decision_reason": "signal_stale|replacement_rank_improvement",
+                "unrealized_pl": 15.0,
+                "unrealized_plpc": 0.025,
+            },
+            {
+                "symbol": "WATCH",
+                "decision": "watch",
+                "recommended_action": "rescore_before_add_or_hold",
+                "decision_reason": "signal_stale|no_eligible_replacement_available",
+                "unrealized_pl": -2.0,
+                "unrealized_plpc": -0.005,
+            },
+            {
+                "symbol": "REVIEW",
+                "decision": "replace",
+                "recommended_action": "close_then_open_replacement",
+                "decision_reason": "signal_stale|replacement_rank_improvement",
+                "unrealized_pl": -3.0,
+                "unrealized_plpc": -0.01,
+            },
+        ],
+    )
+
+    ctx = action_queue_context(tmp_path)
+    rows = {row["symbol"]: row for row in ctx["items"]}
+
+    assert ctx["counts"]["total"] == 3
+    assert ctx["counts"]["action_required"] == 1
+    assert rows["WIN"]["operator_call_label"] == "Hold winner"
+    assert rows["WATCH"]["operator_call_label"] == "Watch only"
+    assert rows["REVIEW"]["operator_call_label"] == "Manual review"
 
 
 def test_positions_context_adds_position_management_intelligence(tmp_path):
