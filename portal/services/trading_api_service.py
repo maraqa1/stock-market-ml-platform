@@ -642,16 +642,14 @@ def _confirmed_close_order_rows(
     tracked = tracking.copy()
     tracked["__symbol"] = tracked["symbol"].fillna("").astype(str).str.upper()
     tracked = tracked[tracked["__symbol"].isin(symbols)].copy()
-    if "side" in tracked.columns:
-        tracked = tracked[tracked["side"].fillna("").astype(str).str.lower() == "sell"].copy()
     if action_order_ids and "order_id" in tracked.columns:
         tracked = tracked[tracked["order_id"].fillna("").astype(str).isin(action_order_ids)].copy()
     elif action_client_ids and "client_order_id" in tracked.columns:
         tracked = tracked[tracked["client_order_id"].fillna("").astype(str).isin(action_client_ids)].copy()
     else:
-        return actions.iloc[0:0].copy()
+        return close_actions.drop(columns=["__symbol"], errors="ignore")
     if tracked.empty:
-        return tracked.drop(columns=["__symbol"], errors="ignore")
+        return close_actions.drop(columns=["__symbol"], errors="ignore")
     sort_column = "updated_at" if "updated_at" in tracked.columns else "submitted_at" if "submitted_at" in tracked.columns else None
     if sort_column:
         tracked = tracked.sort_values(sort_column)

@@ -451,6 +451,37 @@ def test_positions_context_clears_held_overnight_banner_when_flat(tmp_path):
     assert ctx["eod_banner"] == ""
 
 
+def test_positions_context_surfaces_pending_operator_close_without_tracking_match(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "SHORTY", "qty": -5, "market_value": -50, "cost_basis": -55}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "operator_actions" / "operator_position_actions_1.csv",
+        [
+            {
+                "timestamp": "2026-06-10T13:00:35",
+                "symbol": "SHORTY",
+                "operator_action": "close",
+                "status": "submitted",
+                "alpaca_status": "pending_new",
+                "order_id": "close-shorty",
+                "client_order_id": "stockml-close-shorty",
+            }
+        ],
+    )
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_tracking_1.csv",
+        [{"symbol": "OTHER", "status": "submitted", "alpaca_status": "new", "order_id": "other"}],
+    )
+
+    ctx = positions_context(tmp_path)
+
+    assert ctx["pending_close_order_count"] == 1
+    assert ctx["positions"][0]["status"] == "submitted"
+    assert ctx["positions"][0]["broker_order"]["order_id"] == "close-shorty"
+
+
 def test_positions_context_uses_latest_model_signal_for_management_health(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
