@@ -38,6 +38,9 @@ class AlpacaConfig:
     directional_round_up_max_equity_pct: float = 0.05
     overnight_trading_enabled: bool = False
     overnight_limit_buffer_bps: float = 50.0
+    overnight_close_reprice_after_minutes: float = 5.0
+    overnight_close_reprice_step_bps: float = 50.0
+    overnight_close_reprice_max_buffer_bps: float = 300.0
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -102,4 +105,7 @@ def alpaca_config() -> AlpacaConfig:
         directional_round_up_max_equity_pct=_float_env("STOCKML_DIRECTIONAL_ROUND_UP_MAX_EQUITY_PCT", 0.05, minimum=0.0, maximum=1.0),
         overnight_trading_enabled=_bool_env("STOCKML_ALPACA_OVERNIGHT_TRADING_ENABLED", default=False),
         overnight_limit_buffer_bps=_float_env("STOCKML_ALPACA_OVERNIGHT_LIMIT_BUFFER_BPS", 50.0, minimum=0.0, maximum=500.0),
+        overnight_close_reprice_after_minutes=_float_env("STOCKML_ALPACA_OVERNIGHT_CLOSE_REPRICE_AFTER_MINUTES", 5.0, minimum=1.0, maximum=120.0),
+        overnight_close_reprice_step_bps=_float_env("STOCKML_ALPACA_OVERNIGHT_CLOSE_REPRICE_STEP_BPS", 50.0, minimum=1.0, maximum=500.0),
+        overnight_close_reprice_max_buffer_bps=_float_env("STOCKML_ALPACA_OVERNIGHT_CLOSE_REPRICE_MAX_BUFFER_BPS", 300.0, minimum=1.0, maximum=1000.0),
     )

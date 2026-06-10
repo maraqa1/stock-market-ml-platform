@@ -17,6 +17,7 @@ from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_fi
 from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
 from stockml.trading.monitor_auto_close import execute_monitor_auto_closes
+from stockml.trading.overnight_close_reprice import reprice_stale_overnight_close_orders
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
 from stockml.trading.timer_settings import monitor_should_run
@@ -82,8 +83,9 @@ def main() -> int:
     journal_path = write_trade_journal(journal, stamp)
     pnl_path = write_pnl_summary(pnl, stamp)
     decision_path = write_position_decisions(decisions, stamp)
+    overnight_reprice = reprice_stale_overnight_close_orders()
     auto_close = execute_monitor_auto_closes(decisions, active_order_symbols=_active_order_symbols())
-    if int(auto_close.get("auto_close_attempted", 0) or 0):
+    if int(auto_close.get("auto_close_attempted", 0) or 0) or int(overnight_reprice.get("overnight_reprice_attempted", 0) or 0):
         refreshed = refresh_order_tracking()
         positions_path = Path(refreshed["positions_path"])
 
@@ -111,6 +113,15 @@ def main() -> int:
         print(f"auto_close_reason: {auto_close.get('auto_close_reason')}")
     if auto_close.get("auto_close_notes"):
         print(f"auto_close_notes: {auto_close.get('auto_close_notes')}")
+    print(f"overnight_reprice_status: {overnight_reprice.get('overnight_reprice_status')}")
+    print(f"overnight_reprice_candidates: {overnight_reprice.get('overnight_reprice_candidates', 0)}")
+    print(f"overnight_reprice_attempted: {overnight_reprice.get('overnight_reprice_attempted', 0)}")
+    print(f"overnight_reprice_canceled: {overnight_reprice.get('overnight_reprice_canceled', 0)}")
+    print(f"overnight_reprice_submitted: {overnight_reprice.get('overnight_reprice_submitted', 0)}")
+    print(f"overnight_reprice_skipped: {overnight_reprice.get('overnight_reprice_skipped', 0)}")
+    print(f"overnight_reprice_error: {overnight_reprice.get('overnight_reprice_error', 0)}")
+    if overnight_reprice.get("overnight_reprice_notes"):
+        print(f"overnight_reprice_notes: {overnight_reprice.get('overnight_reprice_notes')}")
     return 0
 
 
