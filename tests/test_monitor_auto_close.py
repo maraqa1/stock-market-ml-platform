@@ -99,3 +99,27 @@ def test_execute_monitor_auto_closes_skips_prior_submitted_close():
     assert result["auto_close_skipped_existing"] == 1
     assert result["auto_close_attempted"] == 1
     assert calls == [("BBB", "close")]
+
+
+def test_execute_monitor_auto_closes_only_skips_active_broker_order_symbols():
+    decisions = pd.DataFrame(
+        [
+            {"symbol": "AAA", "decision": "close", "recommended_action": "close_position"},
+            {"symbol": "BBB", "decision": "close", "recommended_action": "close_position"},
+        ]
+    )
+    previous = pd.DataFrame([{"symbol": "AAA", "operator_action": "close", "status": "submitted"}])
+    calls = []
+
+    result = execute_monitor_auto_closes(
+        decisions,
+        close_automation_mode="automatic",
+        previous_actions=previous,
+        active_order_symbols={"BBB"},
+        action_func=lambda symbol, action: calls.append((symbol, action)) or {"status": "submitted"},
+    )
+
+    assert result["auto_close_candidates"] == 2
+    assert result["auto_close_skipped_existing"] == 1
+    assert result["auto_close_attempted"] == 1
+    assert calls == [("AAA", "close")]

@@ -63,6 +63,7 @@ def execute_monitor_auto_closes(
     config: AlpacaConfig | None = None,
     action_func: Callable[[str, str], dict[str, Any]] | None = None,
     previous_actions: pd.DataFrame | None = None,
+    active_order_symbols: set[str] | None = None,
 ) -> dict[str, Any]:
     """Submit paper close orders for explicit monitor loss-control decisions.
 
@@ -98,7 +99,9 @@ def execute_monitor_auto_closes(
         }
 
     cfg = config or alpaca_config()
-    already_submitted = _prior_submitted_close_symbols(previous_actions)
+    already_submitted = {str(symbol).strip().upper() for symbol in (active_order_symbols or set()) if str(symbol).strip()}
+    if previous_actions is not None and active_order_symbols is None:
+        already_submitted = _prior_submitted_close_symbols(previous_actions)
     candidate_count = len(candidates)
     candidates = candidates[~candidates["symbol"].isin(already_submitted)].copy()
     skipped_existing = candidate_count - len(candidates)

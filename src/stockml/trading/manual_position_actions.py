@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +10,8 @@ from stockml.common.paths import OPERATOR_ACTIONS_DIR, ensure_data_dirs
 from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
+from stockml.trading.order_builder import extended_limit_price
+from stockml.trading.submission_guards import asset_is_overnight_tradable
 
 
 ACTION_COLUMNS = [
@@ -59,6 +61,74 @@ def _base_result(symbol: str, action: str) -> dict[str, Any]:
     }
 
 
+def _number(value: Any, default: float = 0.0) -> float:
+    if value in [None, ""]:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _qty_text(quantity: float) -> str:
+    if float(quantity).is_integer():
+        return str(int(quantity))
+    return f"{quantity:.6f}".rstrip("0").rstrip(".")
+
+
+def _position_for_symbol(client: AlpacaPaperClient, symbol: str) -> dict[str, Any] | None:
+    for position in client.list_positions():
+        if str(position.get("symbol") or "").upper() == symbol:
+            return position
+    return None
+
+
+def _overnight_limit_close_order(
+    symbol: str,
+    *,
+    cfg: AlpacaConfig,
+    client: AlpacaPaperClient,
+) -> tuple[dict[str, Any] | None, str]:
+    if not cfg.overnight_trading_enabled:
+        return None, "overnight_close_disabled"
+
+    position = _position_for_symbol(client, symbol)
+    if not position:
+        return None, "position_not_found"
+
+    asset = client.get_asset(symbol)
+    if not asset_is_overnight_tradable(asset):
+        return None, "asset_not_overnight_tradable"
+
+    raw_qty = _number(position.get("qty"), 0.0)
+    quantity = abs(raw_qty)
+    if quantity <= 0:
+        return None, "position_quantity_zero"
+
+    side = "sell" if raw_qty > 0 else "buy"
+    price = _number(position.get("current_price"), 0.0)
+    if price <= 0:
+        price = _number(position.get("avg_entry_price"), 0.0)
+    limit_price = extended_limit_price(pd.Series({"current_price": price}), side, cfg.overnight_limit_buffer_bps)
+    if limit_price is None:
+        return None, "overnight_close_limit_price_missing"
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")[:17]
+    order = {
+        "symbol": symbol,
+        "qty": _qty_text(quantity),
+        "side": side,
+        "type": "limit",
+        "time_in_force": "day",
+        "extended_hours": True,
+        "limit_price": limit_price,
+        "client_order_id": f"stockml-close-{stamp}-{symbol}"[:48],
+    }
+    return client.submit_order(order), "manual_close_overnight_limit_submitted"
+
+
 def apply_manual_position_action(
     symbol: str,
     action: str,
@@ -96,9 +166,13 @@ def apply_manual_position_action(
             result["message"] = "alpaca_credentials_missing"
         else:
             try:
-                response = (client or AlpacaPaperClient(cfg)).close_position(clean_symbol)
+                alpaca_client = client or AlpacaPaperClient(cfg)
+                response, submitted_message = _overnight_limit_close_order(clean_symbol, cfg=cfg, client=alpaca_client)
+                if response is None:
+                    response = alpaca_client.close_position(clean_symbol)
+                    submitted_message = "manual_close_submitted"
                 result["status"] = "submitted"
-                result["message"] = "manual_close_submitted"
+                result["message"] = submitted_message
                 result["order_id"] = response.get("id", "")
                 result["client_order_id"] = response.get("client_order_id", "")
                 result["alpaca_status"] = response.get("status", "")

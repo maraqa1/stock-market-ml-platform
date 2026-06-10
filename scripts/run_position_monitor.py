@@ -14,6 +14,8 @@ if str(SRC) not in sys.path:
 
 from stockml.agents.position_decision_engine import build_position_decisions, write_position_decisions
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
+from stockml.trading.alpaca_client import AlpacaPaperClient
+from stockml.trading.config import alpaca_config
 from stockml.trading.monitor_auto_close import execute_monitor_auto_closes
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
@@ -27,6 +29,17 @@ def _read_csv(path: Path | None) -> pd.DataFrame:
 
 def _latest_portal(pattern: str) -> Path | None:
     return latest_file(PORTAL_OUTPUTS_DIR, pattern)
+
+
+def _active_order_symbols() -> set[str]:
+    cfg = alpaca_config()
+    if not cfg.api_key or not cfg.secret_key:
+        return set()
+    try:
+        orders = AlpacaPaperClient(cfg).list_orders(status="open", limit=500)
+    except Exception:
+        return set()
+    return {str(row.get("symbol") or "").strip().upper() for row in orders if str(row.get("symbol") or "").strip()}
 
 
 def main() -> int:
@@ -69,7 +82,7 @@ def main() -> int:
     journal_path = write_trade_journal(journal, stamp)
     pnl_path = write_pnl_summary(pnl, stamp)
     decision_path = write_position_decisions(decisions, stamp)
-    auto_close = execute_monitor_auto_closes(decisions)
+    auto_close = execute_monitor_auto_closes(decisions, active_order_symbols=_active_order_symbols())
     if int(auto_close.get("auto_close_attempted", 0) or 0):
         refreshed = refresh_order_tracking()
         positions_path = Path(refreshed["positions_path"])
