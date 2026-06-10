@@ -43,6 +43,14 @@ def test_close_when_stop_loss_is_triggered():
     assert "stop_loss_triggered" in decisions.iloc[0]["decision_reason"]
 
 
+def test_close_when_hard_stop_loss_threshold_is_triggered():
+    positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 140, "side": "long", "unrealized_plpc": -0.041}])
+    plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "Long", "signal_generated_at": "2026-05-08T15:55:00Z", "stop_loss_price": 135}])
+    decisions = build_position_decisions(positions, plan, now=NOW)
+    assert decisions.iloc[0]["decision"] == "close"
+    assert "hard_stop_loss_triggered" in decisions.iloc[0]["decision_reason"]
+
+
 def test_close_when_take_profit_is_triggered():
     positions = pd.DataFrame([{"symbol": "FLEX", "qty": 5, "current_price": 151, "side": "long"}])
     plan = pd.DataFrame([{"symbol": "FLEX", "trade_action": "Long", "signal_generated_at": "2026-05-08T15:55:00Z", "take_profit_price": 150}])

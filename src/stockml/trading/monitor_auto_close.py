@@ -31,7 +31,8 @@ def monitor_close_candidates(decisions: pd.DataFrame) -> pd.DataFrame:
     reason = frame.get("decision_reason", pd.Series("", index=frame.index)).map(_text).str.lower()
     symbols = frame["symbol"].map(_text).str.upper()
     close_only = decision.eq("close") & recommended.eq("close_position") & symbols.ne("")
-    stop_loss_replace = decision.eq("replace") & recommended.eq("close_then_open_replacement") & reason.str.contains("stop_loss_triggered", regex=False) & symbols.ne("")
+    loss_triggered = reason.str.contains("stop_loss_triggered", regex=False) | reason.str.contains("hard_stop_loss_triggered", regex=False)
+    stop_loss_replace = decision.eq("replace") & recommended.eq("close_then_open_replacement") & loss_triggered & symbols.ne("")
     selected = close_only | stop_loss_replace
     out = frame[selected].copy()
     out["symbol"] = symbols.loc[out.index]

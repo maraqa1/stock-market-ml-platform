@@ -14,6 +14,7 @@ from stockml.services.events import position_id_for_symbol, record_event_safely
 
 LOGGER = logging.getLogger(__name__)
 MONITOR_CONFIG_PATH = PROJECT_ROOT / "config" / "monitor.yaml"
+HARD_STOP_LOSS_THRESHOLD = -0.04
 
 
 DECISION_COLUMNS = [
@@ -198,6 +199,7 @@ def build_position_decisions(
         current_score = _score_value(row)
         current_price = _num(row.get("current_price") or row.get("last_price"))
         avg_entry = _num(row.get("avg_entry_price") or row.get("filled_avg_price"))
+        unrealized_plpc = _num(row.get("unrealized_plpc"))
         stop_loss = _num(row.get("stop_loss_price"), default=float("nan"))
         take_profit = _num(row.get("take_profit_price"), default=float("nan"))
         holding_review_max = row.get("max_holding_days_holding")
@@ -247,6 +249,10 @@ def build_position_decisions(
                 decision, action = "close", "close_position"
                 reasons.append("stop_loss_triggered")
 
+        if unrealized_plpc <= HARD_STOP_LOSS_THRESHOLD:
+            decision, action = "close", "close_position"
+            reasons.append("hard_stop_loss_triggered")
+
         if current_price > 0 and pd.notna(take_profit):
             if (not is_short and current_price >= take_profit) or (is_short and current_price <= take_profit):
                 decision, action = "close", "close_position"
@@ -290,7 +296,7 @@ def build_position_decisions(
                 "market_value": _num(row.get("market_value")),
                 "cost_basis": _num(row.get("cost_basis")),
                 "unrealized_pl": _num(row.get("unrealized_pl")),
-                "unrealized_plpc": _num(row.get("unrealized_plpc")),
+                "unrealized_plpc": unrealized_plpc,
                 "latest_signal": latest_signal,
                 "trading_stream": trading_stream,
                 "signal_age_minutes": round(signal_age, 2) if signal_age is not None else "",

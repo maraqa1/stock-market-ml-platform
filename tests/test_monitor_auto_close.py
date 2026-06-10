@@ -10,6 +10,7 @@ def test_monitor_close_candidates_include_stop_loss_replacements():
         [
             {"symbol": "AAA", "decision": "close", "recommended_action": "close_position", "decision_reason": "stop_loss_triggered"},
             {"symbol": "BBB", "decision": "replace", "recommended_action": "close_then_open_replacement", "decision_reason": "stop_loss_triggered|replacement_available"},
+            {"symbol": "EEE", "decision": "replace", "recommended_action": "close_then_open_replacement", "decision_reason": "hard_stop_loss_triggered|replacement_available"},
             {"symbol": "DDD", "decision": "replace", "recommended_action": "close_then_open_replacement", "decision_reason": "replacement_rank_improvement"},
             {"symbol": "CCC", "decision": "watch", "recommended_action": "manual_review", "decision_reason": "signal_stale"},
         ]
@@ -17,7 +18,7 @@ def test_monitor_close_candidates_include_stop_loss_replacements():
 
     candidates = monitor_close_candidates(decisions)
 
-    assert candidates["symbol"].tolist() == ["AAA", "BBB"]
+    assert candidates["symbol"].tolist() == ["AAA", "BBB", "EEE"]
 
 
 def test_execute_monitor_auto_closes_skips_when_not_automatic():
