@@ -424,6 +424,33 @@ def test_positions_context_basket_return_matches_gross_summary_return(tmp_path):
     assert ctx["basket_return"] == ctx["summary"]["position_unrealized_plpc"]
 
 
+def test_positions_context_reconciles_stale_held_overnight_banner(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [
+            {"symbol": "AAA", "qty": 1, "market_value": 100, "cost_basis": 100},
+            {"symbol": "BBB", "qty": 1, "market_value": 100, "cost_basis": 100},
+        ],
+    )
+    state_path = tmp_path / "data" / "portal_outputs" / "paper_autopilot_state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text('{"eod_state":"postclose","eod_banner":"Held overnight: 8 positions did not flatten."}', encoding="utf-8")
+
+    ctx = positions_context(tmp_path)
+
+    assert ctx["eod_banner"] == "Held overnight: 2 positions did not flatten."
+
+
+def test_positions_context_clears_held_overnight_banner_when_flat(tmp_path):
+    state_path = tmp_path / "data" / "portal_outputs" / "paper_autopilot_state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text('{"eod_state":"postclose","eod_banner":"Held overnight: 8 positions did not flatten."}', encoding="utf-8")
+
+    ctx = positions_context(tmp_path)
+
+    assert ctx["eod_banner"] == ""
+
+
 def test_positions_context_uses_latest_model_signal_for_management_health(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",

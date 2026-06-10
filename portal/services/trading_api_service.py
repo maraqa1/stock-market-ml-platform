@@ -45,6 +45,8 @@ TRADING_STAGE_ARTIFACTS = {
     "submitted": ("portal_outputs", "08_alpaca_paper_order_results_*.csv", "08_alpaca_paper_order_results_{stamp}.csv", "order results"),
 }
 
+HELD_OVERNIGHT_BANNER_RE = re.compile(r"^Held overnight:\s+\d+\s+positions did not flatten\.$", re.IGNORECASE)
+
 
 def _engine():
     return get_engine(required=False)
@@ -81,6 +83,15 @@ def _records(frame: pd.DataFrame, limit: int = 500) -> list[dict[str, Any]]:
     if frame.empty:
         return []
     return [_record(row) for row in frame.head(limit).fillna("").to_dict("records")]
+
+
+def _reconciled_eod_banner(autopilot_state: dict[str, Any], current_position_count: int) -> str:
+    banner = str(autopilot_state.get("eod_banner") or "").strip()
+    if not banner or not HELD_OVERNIGHT_BANNER_RE.match(banner):
+        return banner
+    if current_position_count <= 0:
+        return ""
+    return f"Held overnight: {current_position_count} positions did not flatten."
 
 
 def _csv_timestamp(path: Path | None) -> str:
@@ -551,7 +562,7 @@ def positions_context(root: Path) -> dict[str, Any]:
         "basket_risk_reason_text": basket.reason_text,
         "pending_close_order_count": len(pending_close_orders),
         "eod_state": autopilot_state.get("eod_state") or "inactive",
-        "eod_banner": autopilot_state.get("eod_banner") or "",
+        "eod_banner": _reconciled_eod_banner(autopilot_state, len(rows)),
         "positions": rows,
     }
 
