@@ -4,7 +4,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
+import requests
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_from_directory, url_for
 from markupsafe import Markup, escape
 
 from portal.services.database_reader import db_available
@@ -201,6 +202,78 @@ def create_app(root: Path | None = None) -> Flask:
                 gold["gold_file"],
             ],
         )
+
+    def ase_agent_dist() -> Path:
+        return Path(os.environ.get("ASE_AGENT_DIST", "/home/massa/ase-agent/frontend/dist"))
+
+    def ase_agent_upstream() -> str:
+        return os.environ.get("ASE_AGENT_UPSTREAM", "http://127.0.0.1:8000").rstrip("/")
+
+    def ase_fallback_context() -> dict:
+        return {
+            "title": "ASE Mobile",
+            "market": {
+                "status": "Delayed",
+                "index": "3,910.59",
+                "change": "-0.43%",
+                "value": "7.8M JD",
+                "volume": "6.2M",
+                "trades": "3,184",
+                "session": "Regular market",
+                "hours": "10:30-12:30 AST",
+                "updated": "11 Jun 2026, 13:45 AST",
+            },
+            "watchlist": [
+                {"symbol": "JOPH", "name": "Jordan Phosphate Mines", "price": "15.30", "change": "-2.24%", "tone": "down"},
+                {"symbol": "JOEP", "name": "Jordan Electric Power", "price": "3.54", "change": "+0.00%", "tone": "flat"},
+                {"symbol": "JOPT", "name": "Jordan Petroleum Refinery", "price": "9.01", "change": "-0.77%", "tone": "down"},
+            ],
+            "movers": [
+                {"symbol": "JOPH", "label": "Phosphate watch", "change": "confirmation above 16.20"},
+                {"symbol": "JOEP", "label": "Power watch", "change": "staged buy zone"},
+                {"symbol": "JOPT", "label": "Refinery watch", "change": "buy support zone"},
+            ],
+            "disclosures": [
+                {"symbol": "JOPH", "type": "Disclosure", "date": "Delayed"},
+                {"symbol": "JOEP", "type": "Disclosure", "date": "Delayed"},
+                {"symbol": "JOPT", "type": "Disclosure", "date": "Delayed"},
+            ],
+        }
+
+    @app.route("/ase/api/<path:api_path>", methods=["GET", "POST", "PATCH", "DELETE"])
+    def ase_agent_api_proxy(api_path: str):
+        upstream = f"{ase_agent_upstream()}/api/{api_path}"
+        try:
+            upstream_response = requests.request(
+                method=request.method,
+                url=upstream,
+                params=request.args,
+                data=request.get_data(),
+                headers={key: value for key, value in request.headers if key.lower() not in {"host", "content-length"}},
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            return jsonify({"detail": f"ASE Agent upstream unavailable: {exc}"}), 502
+        excluded = {"content-encoding", "content-length", "connection", "transfer-encoding"}
+        headers = [(key, value) for key, value in upstream_response.headers.items() if key.lower() not in excluded]
+        return Response(upstream_response.content, status=upstream_response.status_code, headers=headers)
+
+    @app.route("/ase")
+    @app.route("/ase/")
+    def ase_mobile():
+        dist = ase_agent_dist()
+        if (dist / "index.html").exists():
+            return send_from_directory(dist, "index.html")
+        return render_template("ase_mobile.html", **ase_fallback_context())
+
+    @app.route("/ase/<path:asset_path>")
+    def ase_mobile_asset(asset_path: str):
+        dist = ase_agent_dist()
+        if (dist / asset_path).is_file():
+            return send_from_directory(dist, asset_path)
+        if (dist / "index.html").exists():
+            return send_from_directory(dist, "index.html")
+        return redirect(url_for("ase_mobile"))
 
     @app.route("/universe")
     def universe():

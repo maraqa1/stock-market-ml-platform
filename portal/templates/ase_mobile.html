@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="ase-mobile" aria-label="Amman Stock Exchange mobile preview">
+  <div class="ase-appbar">
+    <div class="ase-brand">
+      <img src="https://www.ase.com.jo/themes/custom/ase/logo.svg" alt="Amman Stock Exchange">
+      <span>Amman Stock Exchange</span>
+    </div>
+    <button class="ase-icon-button" type="button" aria-label="Notifications">!</button>
+  </div>
+
+  <form class="ase-search" action="/ase" method="get" role="search">
+    <input type="search" name="q" placeholder="Search symbols, disclosures, news" aria-label="Search ASE">
+    <button type="submit" aria-label="Search">Go</button>
+  </form>
+
+  <section class="ase-market" aria-labelledby="ase-market-title">
+    <div class="ase-market__header">
+      <div>
+        <span class="ase-chip">{{ market.status }}</span>
+        <h1 id="ase-market-title">ASE Index</h1>
+      </div>
+      <span class="ase-session">{{ market.session }}</span>
+    </div>
+    <div class="ase-index-row">
+      <strong>{{ market.index }}</strong>
+      <span class="ase-change ase-change--down">{{ market.change }}</span>
+    </div>
+    <div class="ase-metrics" aria-label="Daily summary">
+      <div>
+        <span>Value</span>
+        <strong>{{ market.value }}</strong>
+      </div>
+      <div>
+        <span>Volume</span>
+        <strong>{{ market.volume }}</strong>
+      </div>
+      <div>
+        <span>Trades</span>
+        <strong>{{ market.trades }}</strong>
+      </div>
+    </div>
+    <div class="ase-timeline">
+      <span>{{ market.hours }}</span>
+      <span>{{ market.updated }}</span>
+    </div>
+  </section>
+
+  <nav class="ase-segments" aria-label="Market views">
+    <a class="is-active" href="#watchlist">Watchlist</a>
+    <a href="#movers">Movers</a>
+    <a href="#disclosures">Disclosures</a>
+  </nav>
+
+  <section class="ase-section" id="watchlist" aria-labelledby="watchlist-title">
+    <div class="ase-section__head">
+      <h2 id="watchlist-title">My Watchlist</h2>
+      <a href="https://aselive.jo/">ASE Live</a>
+    </div>
+    <div class="ase-list">
+      {% for stock in watchlist %}
+        <article class="ase-stock">
+          <div>
+            <strong>{{ stock.symbol }}</strong>
+            <span>{{ stock.name }}</span>
+          </div>
+          <div class="ase-stock__price">
+            <strong>{{ stock.price }}</strong>
+            <span class="ase-change ase-change--{{ stock.tone }}">{{ stock.change }}</span>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="ase-section" id="movers" aria-labelledby="movers-title">
+    <div class="ase-section__head">
+      <h2 id="movers-title">Market Activity</h2>
+      <a href="/ase">Refresh</a>
+    </div>
+    <div class="ase-mover-grid">
+      {% for mover in movers %}
+        <article class="ase-mover">
+          <span>{{ mover.label }}</span>
+          <strong>{{ mover.symbol }}</strong>
+          <small>{{ mover.change }}</small>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="ase-section" id="disclosures" aria-labelledby="disclosures-title">
+    <div class="ase-section__head">
+      <h2 id="disclosures-title">Circulars & Disclosures</h2>
+      <a href="https://www.ase.com.jo/en/Circulars-Disclosures">All</a>
+    </div>
+    <div class="ase-disclosures">
+      {% for item in disclosures %}
+        <a href="https://www.ase.com.jo/en" class="ase-disclosure">
+          <span>{{ item.symbol }}</span>
+          <strong>{{ item.type }}</strong>
+          <small>{{ item.date }}</small>
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <nav class="ase-bottom-nav" aria-label="ASE mobile sections">
+    <a class="is-active" href="/ase">Market</a>
+    <a href="#watchlist">Watch</a>
+    <a href="#disclosures">News</a>
+    <a href="https://www.ase.com.jo/en/Investors/Investor-Awareness">Learn</a>
+  </nav>
+</section>
+{% endblock %}

@@ -46,7 +46,7 @@ def symbol_client():
 
 
 def test_main_routes_return_200(client):
-    for route in ["/", "/universe", "/data-quality", "/admin", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/intraday", "/validation", "/model-validation", "/reports", "/no-decision", "/dev/styleguide"]:
+    for route in ["/", "/universe", "/data-quality", "/admin", "/gold", "/data", "/signals", "/trading", "/journal", "/shortlist", "/intraday", "/ase", "/validation", "/model-validation", "/reports", "/no-decision", "/dev/styleguide"]:
         response = client.get(route)
         assert response.status_code == 200
 
@@ -115,6 +115,7 @@ def test_base_renders_spec25_top_nav_and_search(client):
         b"Activity Journal",
         b"Model Shortlist",
         b"Intraday",
+        b"ASE Mobile",
         b"Validation",
         b"Reports",
         b"Data Estate",
@@ -129,6 +130,17 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b"js/nav_search.js" in response.data
     assert b"js/keyboard.js" in response.data
     assert b"js/table_sort.js" in response.data
+
+
+def test_ase_mobile_page_renders_market_sections(client):
+    response = client.get("/ase")
+    assert response.status_code == 200
+    assert b"Amman Stock Exchange" in response.data
+    assert b"ASE Index" in response.data
+    assert b"My Watchlist" in response.data
+    assert b"Market Activity" in response.data
+    assert b"Circulars & Disclosures" in response.data
+    assert b"ASE Live" in response.data
 
 
 def test_dashboard_shows_daily_report_download_links(client):
