@@ -12,7 +12,7 @@ from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import MODEL_OUTPUTS_DIR, PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
-from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, autopilot_conflicting_symbols
+from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, autopilot_conflicting_symbols, reconcile_autopilot_state_from_tracking
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, latest_signal_table
@@ -414,6 +414,11 @@ def refresh_order_tracking(result_file: Optional[Path] = None) -> dict[str, Path
     results = pd.read_csv(result_file, low_memory=False) if result_file and result_file.exists() else pd.DataFrame()
     stamp = timestamp()
     tracking_path, positions_path = _write_tracking_snapshot(results, config, stamp)
+    reconcile_autopilot_state_from_tracking(
+        tracking_path=tracking_path,
+        positions_path=positions_path,
+        orders_tracked=len(results),
+    )
     return {
         "orders_tracked": len(results),
         "tracking_path": tracking_path,

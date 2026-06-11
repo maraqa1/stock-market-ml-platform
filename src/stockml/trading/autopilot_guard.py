@@ -27,6 +27,13 @@ def load_autopilot_state(path: Path | None = None) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def save_autopilot_state(state: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
+    state_path = path or autopilot_state_path()
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return state
+
+
 def autopilot_blocks_basket_submission(path: Path | None = None) -> tuple[bool, str]:
     state = load_autopilot_state(path)
     if str(state.get("status", "")).lower() == "running" and str(state.get("mode", "")).lower() == "paper_autopilot":
@@ -60,6 +67,67 @@ def _symbols_from_csv(path_value: object, *, open_only: bool = False) -> set[str
     except Exception:
         return set()
     return symbols
+
+
+def _csv_row_count(path_value: object) -> int:
+    path_text = str(path_value or "").strip()
+    if not path_text:
+        return 0
+    path = Path(path_text)
+    if not path.exists() or path.stat().st_size <= 1:
+        return 0
+    try:
+        with path.open(newline="", encoding="utf-8") as handle:
+            return sum(1 for _ in csv.DictReader(handle))
+    except Exception:
+        return 0
+
+
+def reconcile_autopilot_state_from_tracking(
+    *,
+    tracking_path: Path | str | None,
+    positions_path: Path | str | None,
+    orders_tracked: int = 0,
+    state_path: Path | None = None,
+) -> dict[str, Any]:
+    """Update Paper Autopilot state from the latest broker tracking snapshot.
+
+    The broker snapshot is authoritative for flatness. If the latest tracking
+    and positions files show no open broker orders and no positions, clear stale
+    managed-symbol memory so a previous cycle cannot block a new basket.
+    """
+    state = load_autopilot_state(state_path)
+    if str(state.get("status", "")).lower() != "running" or str(state.get("mode", "")).lower() != "paper_autopilot":
+        return state
+
+    open_order_symbols = _symbols_from_csv(tracking_path, open_only=True)
+    position_count = _csv_row_count(positions_path)
+    open_order_count = len(open_order_symbols)
+    state.update(
+        {
+            "open_positions": position_count,
+            "open_orders": open_order_count,
+            "broker_open_orders": open_order_count,
+            "tracked_open_orders": open_order_count,
+            "orders_tracked": int(orders_tracked or 0),
+            "tracking_path": str(tracking_path or ""),
+            "positions_path": str(positions_path or ""),
+        }
+    )
+    if position_count == 0 and open_order_count == 0:
+        state.update(
+            {
+                "phase": "tracking_orders",
+                "termination_reason": "",
+                "eod_dispositions": [],
+                "eod_remaining": 0,
+                "eod_banner": "",
+                "position_peak_plpc": {},
+                "autopilot_action_notes": "",
+                "last_error": "",
+            }
+        )
+    return save_autopilot_state(state, state_path)
 
 
 def autopilot_managed_symbols(path: Path | None = None) -> set[str]:
