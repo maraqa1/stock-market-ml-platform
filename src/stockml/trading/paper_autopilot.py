@@ -691,6 +691,10 @@ def apply_paper_autopilot_decisions(
     apply_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
     notes: list[str] = []
     submitted = 0
+    dry_run = 0
+    rejected = 0
+    errors = 0
+    skipped = 0
     defensive_submitted = 0
     hard_stop_submitted = 0
     health_submitted = 0
@@ -720,11 +724,23 @@ def apply_paper_autopilot_decisions(
                 trailing_submitted += 1
             elif reason == "monitor_replace":
                 replace_submitted += 1
+        elif status == "dry_run":
+            dry_run += 1
+        elif status == "error":
+            errors += 1
+        elif status == "skipped":
+            skipped += 1
+        else:
+            rejected += 1
         close_reason = str(row.get("__autopilot_close_reason") or "monitor_close")
         notes.append(f"{symbol}:{close_reason}:{status or 'unknown'}:{message or 'no_message'}")
     return {
         "autopilot_actions": actions,
         "autopilot_close_submitted": submitted,
+        "autopilot_close_dry_run": dry_run,
+        "autopilot_close_rejected": rejected,
+        "autopilot_close_error": errors,
+        "autopilot_close_skipped_existing": skipped,
         "autopilot_defensive_close_submitted": defensive_submitted,
         "autopilot_hard_stop_submitted": hard_stop_submitted,
         "autopilot_health_close_submitted": health_submitted,

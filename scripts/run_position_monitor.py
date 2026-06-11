@@ -16,10 +16,10 @@ from stockml.agents.position_decision_engine import build_position_decisions, wr
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
-from stockml.trading.monitor_auto_close import execute_monitor_auto_closes
 from stockml.trading.overnight_close_reprice import reprice_stale_overnight_close_orders
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
+from stockml.trading.position_monitor_closes import execute_position_monitor_closes
 from stockml.trading.timer_settings import monitor_should_run
 from stockml.trading.trade_journal import build_trade_journal, write_trade_journal
 
@@ -84,7 +84,12 @@ def main() -> int:
     pnl_path = write_pnl_summary(pnl, stamp)
     decision_path = write_position_decisions(decisions, stamp)
     overnight_reprice = reprice_stale_overnight_close_orders()
-    auto_close = execute_monitor_auto_closes(decisions, active_order_symbols=_active_order_symbols())
+    auto_close = execute_position_monitor_closes(
+        positions,
+        decisions,
+        root=ROOT,
+        active_order_symbols=_active_order_symbols(),
+    )
     if int(auto_close.get("auto_close_attempted", 0) or 0) or int(overnight_reprice.get("overnight_reprice_attempted", 0) or 0):
         refreshed = refresh_order_tracking()
         positions_path = Path(refreshed["positions_path"])
