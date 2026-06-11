@@ -125,6 +125,48 @@ def test_paper_autopilot_mode_stays_running_when_flat(monkeypatch, tmp_path):
     assert state["termination_reason"] == ""
 
 
+def test_paper_autopilot_cancels_stale_entries_before_waiting_for_fills(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    first_tracking = tmp_path / "tracking_first.csv"
+    second_tracking = tmp_path / "tracking_second.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "new"}]).to_csv(first_tracking, index=False)
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "canceled"}]).to_csv(second_tracking, index=False)
+    pd.DataFrame([]).to_csv(positions, index=False)
+    refreshes = [
+        {"orders_tracked": 1, "tracking_path": first_tracking, "positions_path": positions},
+        {"orders_tracked": 1, "tracking_path": second_tracking, "positions_path": positions},
+    ]
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: refreshes.pop(0),
+        broker_open_orders_func=lambda cfg: 0,
+        stale_entry_maintainer=lambda: {
+            "stale_entry_status": "ok",
+            "stale_entry_open_orders": 1,
+            "stale_entry_candidates": 1,
+            "stale_entry_canceled": 1,
+            "stale_entry_skipped": 0,
+            "stale_entry_error": 0,
+            "stale_entry_notes": "AAA:canceled:31.0m",
+            "stale_entry_path": "data/trading/stale_entry_orders/stale_entry_orders_test.csv",
+        },
+        allow_auto_open=False,
+    )
+
+    assert state["status"] == "running"
+    assert state["phase"] == "tracking_orders"
+    assert state["open_orders"] == 0
+    assert state["tracked_open_orders"] == 0
+    assert state["stale_entry_canceled"] == 1
+    assert state["stale_entry_candidates"] == 1
+    assert state["stale_entry_notes"] == "AAA:canceled:31.0m"
+    assert state["tracking_path"].endswith("tracking_second.csv")
+
+
 def test_paper_autopilot_tick_counts_direct_broker_orders(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)

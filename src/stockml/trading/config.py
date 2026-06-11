@@ -41,6 +41,8 @@ class AlpacaConfig:
     overnight_close_reprice_after_minutes: float = 5.0
     overnight_close_reprice_step_bps: float = 50.0
     overnight_close_reprice_max_buffer_bps: float = 300.0
+    stale_entry_cancel_enabled: bool = True
+    stale_entry_cancel_after_minutes: float = 20.0
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -108,4 +110,6 @@ def alpaca_config() -> AlpacaConfig:
         overnight_close_reprice_after_minutes=_float_env("STOCKML_ALPACA_OVERNIGHT_CLOSE_REPRICE_AFTER_MINUTES", 5.0, minimum=1.0, maximum=120.0),
         overnight_close_reprice_step_bps=_float_env("STOCKML_ALPACA_OVERNIGHT_CLOSE_REPRICE_STEP_BPS", 50.0, minimum=1.0, maximum=500.0),
         overnight_close_reprice_max_buffer_bps=_float_env("STOCKML_ALPACA_OVERNIGHT_CLOSE_REPRICE_MAX_BUFFER_BPS", 300.0, minimum=1.0, maximum=1000.0),
+        stale_entry_cancel_enabled=_bool_env("STOCKML_ALPACA_STALE_ENTRY_CANCEL_ENABLED", default=True),
+        stale_entry_cancel_after_minutes=_float_env("STOCKML_ALPACA_STALE_ENTRY_CANCEL_AFTER_MINUTES", 20.0, minimum=1.0, maximum=240.0),
     )

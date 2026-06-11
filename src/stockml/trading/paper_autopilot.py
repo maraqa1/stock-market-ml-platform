@@ -33,6 +33,7 @@ from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.profit_taking import ProfitTakingRules, classify_profit_taking
+from stockml.trading.stale_entry_orders import cancel_stale_entry_orders
 
 
 STATE_VERSION = 1
@@ -102,6 +103,11 @@ TICK_LOG_COLUMNS = [
     "autopilot_open_submitted",
     "autopilot_open_blocked",
     "autopilot_open_notes",
+    "stale_entry_open_orders",
+    "stale_entry_candidates",
+    "stale_entry_canceled",
+    "stale_entry_notes",
+    "stale_entry_path",
     "eod_state",
     "eod_actions",
     "eod_flatten_submitted",
@@ -172,6 +178,11 @@ def _default_state() -> dict[str, Any]:
         "autopilot_open_submitted": 0,
         "autopilot_open_blocked": 0,
         "autopilot_open_notes": "",
+        "stale_entry_open_orders": 0,
+        "stale_entry_candidates": 0,
+        "stale_entry_canceled": 0,
+        "stale_entry_notes": "",
+        "stale_entry_path": "",
         "position_peak_plpc": {},
         "eod_state": "inactive",
         "eod_actions": 0,
@@ -782,6 +793,7 @@ def tick(
     autopilot_decision_applier: Callable[[Path | None, pd.DataFrame, dict[str, Any]], dict[str, Any]] = apply_paper_autopilot_decisions,
     eod_runner: Callable[[pd.DataFrame, dict[str, Any], int], dict[str, Any]] | None = None,
     auto_open_applier: Callable[[list[dict[str, Any]], list[dict[str, Any]], str], dict[str, Any]] | None = None,
+    stale_entry_maintainer: Callable[[], dict[str, Any]] | None = None,
     strong_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_strong_candidates,
     fallback_candidate_loader: Callable[[], list[dict[str, Any]]] = latest_flat_account_fallback_candidates,
     near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
@@ -818,6 +830,25 @@ def tick(
         intraday_summary = intraday_decision_loader()
         open_orders = max(tracked_open_orders, broker_open_orders)
         open_positions = int(len(positions))
+        stale_entry_result = {
+            "stale_entry_open_orders": 0,
+            "stale_entry_candidates": 0,
+            "stale_entry_canceled": 0,
+            "stale_entry_skipped": 0,
+            "stale_entry_error": 0,
+            "stale_entry_notes": "",
+            "stale_entry_path": "",
+        }
+        if state.get("mode") == "paper_autopilot" and open_orders > 0:
+            stale_entry_result = (stale_entry_maintainer or cancel_stale_entry_orders)()
+            if int(stale_entry_result.get("stale_entry_canceled") or 0) > 0:
+                refreshed = refresh_func()
+                tracking = _read_csv(refreshed.get("tracking_path"))
+                positions = attach_holding_review_to_positions(_read_csv(refreshed.get("positions_path")), root)
+                tracked_open_orders = _count_open_orders(tracking)
+                broker_open_orders = (broker_open_orders_func or _count_broker_open_orders)(cfg)
+                open_orders = max(tracked_open_orders, broker_open_orders)
+                open_positions = int(len(positions))
         update_position_peaks(state, positions)
         if open_positions > 0 and load_monitor_decisions(root).empty:
             build_fresh_monitor_decisions(root, positions, now=datetime.now(timezone.utc))
@@ -1010,6 +1041,7 @@ def tick(
                 **autopilot_result,
                 **auto_rotation_result,
                 **auto_open_result,
+                **stale_entry_result,
                 **eod_result,
                 "live_trading_enabled": False,
             }
