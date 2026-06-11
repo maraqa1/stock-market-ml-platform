@@ -22,5 +22,8 @@ def test_intraday_clock_generates_per_symbol_forecast_before_autopilot():
     scoring_index = script.index("score_unscored_snapshots")
     forecast_index = script.index("forecast = generate_per_symbol_forecast")
     autopilot_index = script.index("state = autopilot_tick")
+    snapshot_index = script.index("snapshot = export_trading_snapshot")
+    trace_index = script.index("trace = write_intraday_handoff_trace")
 
     assert refresh_index < scoring_index < forecast_index < autopilot_index
+    assert autopilot_index < snapshot_index < trace_index

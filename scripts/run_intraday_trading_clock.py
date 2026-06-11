@@ -18,6 +18,7 @@ from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 from stockml.trading.paper_autopilot import start as start_autopilot
 from stockml.trading.paper_autopilot import tick as autopilot_tick
+from stockml.trading.intraday_handoff_trace import write_intraday_handoff_trace
 from stockml.trading.snapshot_export import export_trading_snapshot
 
 from scripts.run_rotation_recommendations import main as run_rotation_recommendations
@@ -90,6 +91,19 @@ def main() -> int:
     print("trading_snapshot_status:", snapshot.get("status"))
     print("trading_snapshot_rows:", snapshot.get("rows", 0))
     print("trading_snapshot_path:", snapshot.get("path", ""))
+
+    trace = write_intraday_handoff_trace(
+        root=ROOT,
+        refresh=refresh,
+        scoring=scoring,
+        forecast=forecast,
+        autopilot=state,
+        snapshot=snapshot,
+    )
+    print("intraday_handoff_trace_status:", trace.get("status"))
+    print("intraday_handoff_trace_rows:", trace.get("rows", 0))
+    print("intraday_handoff_trace_path:", trace.get("path", ""))
+    print("intraday_handoff_summary_path:", trace.get("summary_path", ""))
     return 0 if not state.get("last_error") else 1
 
 
