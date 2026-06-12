@@ -22,6 +22,7 @@ from stockml.trading.pnl_tracker import position_pnl_summary, write_pnl_summary
 from stockml.trading.position_monitor_closes import execute_position_monitor_closes
 from stockml.trading.timer_settings import monitor_should_run
 from stockml.trading.trade_journal import build_trade_journal, write_trade_journal
+from stockml.reports.closed_trades_attribution import write_reconstructed_closed_trades_attribution
 
 
 def _read_csv(path: Path | None) -> pd.DataFrame:
@@ -83,6 +84,7 @@ def main() -> int:
     journal_path = write_trade_journal(journal, stamp)
     pnl_path = write_pnl_summary(pnl, stamp)
     decision_path = write_position_decisions(decisions, stamp)
+    closed_trades, closed_trades_path = write_reconstructed_closed_trades_attribution(root=ROOT, stamp=stamp)
     overnight_reprice = reprice_stale_overnight_close_orders()
     auto_close = execute_position_monitor_closes(
         positions,
@@ -103,6 +105,8 @@ def main() -> int:
     print(f"journal_path: {journal_path}")
     print(f"pnl_path: {pnl_path}")
     print(f"decision_path: {decision_path}")
+    print(f"closed_trades_rows: {len(closed_trades)}")
+    print(f"closed_trades_path: {closed_trades_path}")
     print(f"cadence_reason: {cadence_reason}")
     if not decisions.empty:
         print(f"decision_counts: {decisions['decision'].value_counts().to_dict()}")

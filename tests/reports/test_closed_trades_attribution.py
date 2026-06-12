@@ -194,3 +194,71 @@ def test_portal_closed_trades_page_and_csv_render(tmp_path: Path):
     assert csv_response.status_code == 200
     assert csv_response.mimetype == "text/csv"
     assert b"position_id,symbol" in csv_response.data
+
+
+def test_reconstructs_closed_trades_from_position_snapshots(tmp_path: Path):
+    portal = tmp_path / "data" / "portal_outputs"
+    portal.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "AAA",
+                "side": "long",
+                "qty": 10,
+                "avg_entry_price": 10.0,
+                "current_price": 10.2,
+                "market_value": 102.0,
+                "cost_basis": 100.0,
+                "unrealized_pl": 2.0,
+            }
+        ]
+    ).to_csv(portal / "08_alpaca_paper_positions_20260612_140000.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "AAA",
+                "side": "long",
+                "qty": 10,
+                "avg_entry_price": 10.0,
+                "current_price": 10.5,
+                "market_value": 105.0,
+                "cost_basis": 100.0,
+                "unrealized_pl": 5.0,
+            }
+        ]
+    ).to_csv(portal / "08_alpaca_paper_positions_20260612_140500.csv", index=False)
+    (portal / "08_alpaca_paper_positions_20260612_141000.csv").write_text("\n")
+
+    from stockml.reports.closed_trades_attribution import build_closed_trades_from_position_snapshots
+
+    frame = build_closed_trades_from_position_snapshots(root=tmp_path, created_at=NOW)
+
+    assert len(frame) == 1
+    row = frame.iloc[0]
+    assert row["symbol"] == "AAA"
+    assert row["direction"] == "long"
+    assert row["entry_fill"] == 10.0
+    assert row["exit_fill"] == 10.5
+    assert row["realized_pnl_usd"] > 0
+    assert row["trigger_source"] == "position_snapshot_reconstruction"
+    assert row["signal_state_at_close"] == "estimated_exit_from_last_position_snapshot"
+
+
+def test_reconstructed_closed_trades_writer_outputs_csv(tmp_path: Path):
+    portal = tmp_path / "data" / "portal_outputs"
+    portal.mkdir(parents=True)
+    pd.DataFrame(
+        [{"symbol": "BBB", "side": "short", "qty": -5, "avg_entry_price": 20.0, "current_price": 19.0}]
+    ).to_csv(portal / "08_alpaca_paper_positions_20260612_150000.csv", index=False)
+    (portal / "08_alpaca_paper_positions_20260612_150500.csv").write_text("\n")
+
+    from stockml.reports.closed_trades_attribution import write_reconstructed_closed_trades_attribution
+
+    frame, path = write_reconstructed_closed_trades_attribution(root=tmp_path, stamp="20260612_151000")
+
+    assert len(frame) == 1
+    assert path.exists()
+    assert path.name == "closed_trades_attribution_20260612_151000.csv"
+    written = pd.read_csv(path)
+    assert written.iloc[0]["symbol"] == "BBB"
+    assert written.iloc[0]["realized_pnl_usd"] > 0

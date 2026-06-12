@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import re
 import io
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +27,128 @@ from stockml.reports.closed_trade_metrics import (
     signed_price_move_bps,
 )
 
+
+POSITION_SNAPSHOT_PATTERN = re.compile(r"08_alpaca_paper_positions_(\d{8}_\d{6})\.csv$")
+
+
+def build_closed_trades_from_position_snapshots(
+    *,
+    root: Path | str | None = None,
+    max_snapshots: int = 2000,
+    created_at: datetime | None = None,
+) -> pd.DataFrame:
+    """Reconstruct closed paper trades from broker position snapshots.
+
+    Alpaca position snapshots only contain currently open positions. When a symbol is
+    present in one snapshot and missing in a later snapshot, the position has been
+    flattened. If no exact close-fill activity is available, use the last observed
+    broker mark as an estimated exit fill and mark the trigger source accordingly.
+    """
+    project_root = Path(root) if root is not None else Path.cwd()
+    portal_dir = project_root / "data" / "portal_outputs" if (project_root / "data").exists() else project_root
+    paths = sorted(portal_dir.glob("08_alpaca_paper_positions_*.csv"), key=_snapshot_time)
+    if max_snapshots > 0:
+        paths = paths[-max_snapshots:]
+    active: dict[str, dict[str, Any]] = {}
+    closed: list[dict[str, Any]] = []
+    for path in paths:
+        snap_time = _snapshot_time(path)
+        frame = _read_position_snapshot(path)
+        current: dict[str, dict[str, Any]] = {}
+        for record in frame.to_dict("records"):
+            symbol = str(record.get("symbol") or "").strip().upper()
+            if not symbol:
+                continue
+            normalized = _snapshot_record(record, snap_time)
+            previous = active.get(symbol)
+            if previous:
+                normalized["opened_at"] = previous.get("opened_at") or normalized.get("opened_at")
+                normalized["entry_fill"] = previous.get("entry_fill") or normalized.get("entry_fill")
+                normalized["entry_target"] = previous.get("entry_target") or normalized.get("entry_target")
+                normalized["signal_price"] = previous.get("signal_price") or normalized.get("signal_price")
+                normalized["position_id"] = previous.get("position_id") or normalized.get("position_id")
+            current[symbol] = normalized
+        for symbol, previous in list(active.items()):
+            if symbol not in current:
+                closed.append(_closed_trade_from_snapshot(previous, closed_at=snap_time))
+        active = current
+    if not closed:
+        return pd.DataFrame(columns=ATTRIBUTION_COLUMNS)
+    frame = build_closed_trades_attribution(closed, created_at=created_at)
+    if frame.empty:
+        return frame
+    return frame.drop_duplicates("position_id", keep="last").reset_index(drop=True)
+
+
+def write_reconstructed_closed_trades_attribution(
+    *,
+    root: Path | str | None = None,
+    stamp: str | None = None,
+    output_dir: Path | None = None,
+    persist: bool = False,
+    engine: Engine | None = None,
+) -> tuple[pd.DataFrame, Path]:
+    frame = build_closed_trades_from_position_snapshots(root=root)
+    base = Path(root) if root is not None else Path.cwd()
+    out_dir = output_dir or ((base / "data" / "trading") if (base / "data").exists() else TRADING_DIR)
+    path = write_attribution_csv(frame, stamp=stamp, output_dir=out_dir)
+    if persist and not frame.empty:
+        persist_attribution(frame, engine=engine)
+    return frame, path
+
+
+def _snapshot_time(path: Path) -> datetime:
+    match = POSITION_SNAPSHOT_PATTERN.search(path.name)
+    if match:
+        parsed = datetime.strptime(match.group(1), "%Y%m%d_%H%M%S")
+        return parsed.replace(tzinfo=timezone.utc)
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+
+
+def _read_position_snapshot(path: Path) -> pd.DataFrame:
+    if not path.exists() or path.stat().st_size <= 1:
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path, low_memory=False)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _snapshot_record(record: dict[str, Any], snap_time: datetime) -> dict[str, Any]:
+    side = normalize_direction(record.get("side") or ("short" if as_float(record.get("qty")) < 0 else "long"))
+    entry = as_float(_first(record, "avg_entry_price", "entry_fill", default=0.0))
+    current = as_float(_first(record, "current_price", "last", "market_price", default=entry))
+    qty = abs(as_float(record.get("qty")))
+    return {
+        "position_id": _snapshot_position_id(str(record.get("symbol") or ""), snap_time.isoformat(), side, qty, entry),
+        "symbol": str(record.get("symbol") or "").strip().upper(),
+        "direction": side,
+        "opened_at": snap_time.isoformat(),
+        "closed_at": "",
+        "signal_price": entry,
+        "entry_target": entry,
+        "entry_fill": entry,
+        "exit_target": current,
+        "exit_fill": current,
+        "quantity": qty,
+        "close_reason": "snapshot_flattened",
+        "trigger_source": "position_snapshot_reconstruction",
+        "signal_state_at_close": "estimated_exit_from_last_position_snapshot",
+    }
+
+
+def _closed_trade_from_snapshot(record: dict[str, Any], *, closed_at: datetime) -> dict[str, Any]:
+    out = dict(record)
+    out["closed_at"] = closed_at.isoformat()
+    out["close_reason"] = "snapshot_flattened"
+    out["trigger_source"] = "position_snapshot_reconstruction"
+    out["signal_state_at_close"] = "estimated_exit_from_last_position_snapshot"
+    return out
+
+
+def _snapshot_position_id(symbol: str, opened_at: str, direction: str, qty: float, entry_fill: float) -> int:
+    key = f"{symbol.upper()}|{opened_at}|{direction}|{qty:.8f}|{entry_fill:.8f}"
+    return int(hashlib.sha1(key.encode("utf-8")).hexdigest()[:15], 16)
 
 ATTRIBUTION_COLUMNS = [
     "position_id",
