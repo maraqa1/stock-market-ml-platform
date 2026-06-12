@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from scripts.run_position_monitor import _read_csv
 from stockml.trading import paper_autopilot
 from stockml.trading.position_monitor_closes import execute_position_monitor_closes
 
@@ -12,6 +13,15 @@ def _write_decisions(root, rows):
     frame = pd.DataFrame(rows)
     frame.to_csv(directory / "position_decisions_1.csv", index=False)
     return frame
+
+
+def test_position_monitor_read_csv_treats_empty_file_as_empty_frame(tmp_path):
+    path = tmp_path / "empty_positions.csv"
+    path.write_text("", encoding="utf-8")
+
+    frame = _read_csv(path)
+
+    assert frame.empty
 
 
 def test_position_monitor_uses_paper_autopilot_trailing_profit(tmp_path):

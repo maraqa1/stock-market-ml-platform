@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -26,7 +27,12 @@ from stockml.reports.closed_trades_attribution import write_reconstructed_closed
 
 
 def _read_csv(path: Path | None) -> pd.DataFrame:
-    return pd.read_csv(path, low_memory=False) if path and path.exists() else pd.DataFrame()
+    if not path or not path.exists() or path.stat().st_size <= 1:
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path, low_memory=False)
+    except EmptyDataError:
+        return pd.DataFrame()
 
 
 def _latest_portal(pattern: str) -> Path | None:

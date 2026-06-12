@@ -120,3 +120,44 @@ def test_reconcile_keeps_open_order_symbols_managed(tmp_path):
 
     assert conflicts == {"CRCL"}
     assert reason == AUTOPILOT_SYMBOL_CONFLICT_REASON
+
+
+def test_reconcile_does_not_count_canceled_or_filled_rows_as_open(tmp_path):
+    state_path = tmp_path / "paper_autopilot_state.json"
+    positions_path = tmp_path / "positions.csv"
+    tracking_path = tmp_path / "tracking.csv"
+    positions_path.write_text("", encoding="utf-8")
+    tracking_path.write_text(
+        "symbol,status,alpaca_status,filled_qty\n"
+        "CRCL,submitted,canceled,0\n"
+        "SBET,submitted,filled,242\n",
+        encoding="utf-8",
+    )
+    state_path.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "mode": "paper_autopilot",
+                "phase": "waiting_for_fills",
+                "open_positions": 0,
+                "open_orders": 2,
+                "eod_dispositions": [{"symbol": "CRCL"}, {"symbol": "SBET"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = reconcile_autopilot_state_from_tracking(
+        tracking_path=tracking_path,
+        positions_path=positions_path,
+        orders_tracked=2,
+        state_path=state_path,
+    )
+    conflicts, reason = autopilot_conflicting_symbols({"CRCL", "SBET"}, state_path)
+
+    assert state["open_orders"] == 0
+    assert state["tracked_open_orders"] == 0
+    assert state["broker_open_orders"] == 0
+    assert state["phase"] == "tracking_orders"
+    assert conflicts == set()
+    assert reason == ""

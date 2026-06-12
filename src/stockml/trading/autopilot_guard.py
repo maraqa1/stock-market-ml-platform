@@ -58,8 +58,7 @@ def _symbols_from_csv(path_value: object, *, open_only: bool = False) -> set[str
             for row in csv.DictReader(handle):
                 if open_only:
                     status = str(row.get("alpaca_status") or row.get("status") or "").strip().lower()
-                    filled_qty = str(row.get("filled_qty") or "").strip()
-                    if status not in {"new", "accepted", "pending_new", "partially_filled"} and not filled_qty:
+                    if status not in {"new", "accepted", "pending_new", "partially_filled"}:
                         continue
                 symbol = _clean_symbol(row.get("symbol") or row.get("ticker"))
                 if symbol:
