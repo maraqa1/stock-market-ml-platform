@@ -14,6 +14,7 @@ from stockml.autopilot.open import (
     latest_near_miss_fallback_candidates,
     latest_plan_fallback_candidates,
     latest_per_symbol_forecast_fallback_candidates,
+    latest_strong_candidates,
     load_auto_open_config,
     position_size_usd,
     ranked_fallback_candidates,
@@ -379,6 +380,64 @@ def test_auto_open_blocks_same_day_momentum_below_score_gate():
 
     assert result["autopilot_open_submitted"] == 0
     assert "WEAK:blocked:same_day_score_below_minimum" in result["autopilot_open_notes"]
+
+
+def test_latest_strong_candidates_enriches_model_evidence_from_candidate_pool(monkeypatch, tmp_path):
+    engine = _engine()
+    now = datetime(2026, 6, 11, 18, 55, tzinfo=timezone.utc)
+    with engine.begin() as conn:
+        snapshot_id = conn.execute(
+            insert(intraday_candidate_snapshots).values(
+                snapshot_at=now,
+                bar_close_at=now,
+                symbol="CXW",
+                nightly_score=0.95,
+                nightly_bias="long",
+                is_held=False,
+                last_price=19.25,
+                status="ok",
+                details={"source": "intraday_promotion"},
+            )
+        ).inserted_primary_key[0]
+        conn.execute(
+            insert(intraday_promotion_log).values(
+                logged_at=now,
+                snapshot_id=snapshot_id,
+                symbol="CXW",
+                verdict="promote_to_selection_strong",
+                promotion_score=1.0,
+                contributing=["long_trend_5m_positive"],
+            )
+        )
+    evidence_path = tmp_path / "08_alpaca_paper_candidate_pool_20260611_152557.csv"
+    pd.DataFrame(
+        [
+            {
+                "symbol": "CXW",
+                "trade_action": "Long",
+                "directional_action": "Long",
+                "directional_strength": 0.955657,
+                "meta_label_decision": "Take Trade",
+                "trade_quality_status": "reduced",
+                "candidate_status": "reduced",
+                "order_eligible": True,
+                "risk_adjusted_score": 3.159219,
+            }
+        ]
+    ).to_csv(evidence_path, index=False)
+    monkeypatch.setattr("stockml.autopilot.open.latest_file", lambda directory, pattern: evidence_path)
+
+    candidates = latest_strong_candidates(engine=engine)
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["symbol"] == "CXW"
+    assert candidate["meta_label_decision"] == "Take Trade"
+    assert candidate["trade_quality_status"] == "reduced"
+    assert candidate["candidate_status"] == "reduced"
+    assert candidate["order_eligible"] is True
+    assert candidate["details"]["source"] == "intraday_promotion"
+    assert candidate["details"]["model_evidence_source"] == "latest_candidate_pool"
 
 
 def test_auto_open_blocks_promoted_candidate_rejected_by_meta_label():

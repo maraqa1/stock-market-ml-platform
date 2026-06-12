@@ -13,7 +13,7 @@ from sqlalchemy.engine import Engine
 
 from stockml.autopilot.basket_risk import evaluate_basket_risk
 from stockml.autopilot.candidate_arbitration import arbitrate_candidates, arbitration_score
-from stockml.common.paths import HOLDING_PERIOD_DIR, PROJECT_ROOT, TRADING_DIR, latest_file
+from stockml.common.paths import HOLDING_PERIOD_DIR, PORTAL_OUTPUTS_DIR, PROJECT_ROOT, TRADING_DIR, latest_file
 from stockml.db.connection import get_engine
 from stockml.db.schema import autopilot_open_log, intraday_candidate_snapshots, intraday_promotion_log
 from stockml.intraday import kill_switch
@@ -27,6 +27,27 @@ from stockml.trading.signal_alignment_gate import evaluate_entry_signal_alignmen
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "autopilot.yaml"
 MAX_PORTAL_LIMIT = 100
+MODEL_EVIDENCE_FIELDS = (
+    "trade_action",
+    "directional_action",
+    "directional_strength",
+    "side_probability",
+    "risk_adjusted_score",
+    "meta_label_decision",
+    "trade_quality_status",
+    "candidate_status",
+    "order_eligible",
+    "strategy_stream",
+    "trading_stream",
+    "same_day_momentum",
+    "current_trade_action",
+    "same_day_trade_action",
+    "nightly_bias",
+    "probability_edge",
+    "expected_trade_return",
+    "rank_overall",
+    "candidate_rank_overall",
+)
 
 
 @dataclass(frozen=True)
@@ -531,6 +552,59 @@ def position_size_usd(account_equity: float, config: AutoOpenConfig) -> float:
     return round(size, 2) if size >= config.min_position_value_usd else 0.0
 
 
+def _clean_evidence_value(value: Any) -> Any:
+    if value in [None, ""]:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    return value
+
+
+def _candidate_pool_model_evidence(path: Path | None = None) -> dict[str, dict[str, Any]]:
+    source = path or latest_file(PORTAL_OUTPUTS_DIR, "08_alpaca_paper_candidate_pool_*.csv")
+    if source is None or not source.exists():
+        return {}
+    try:
+        frame = pd.read_csv(source, usecols=lambda column: column in {"symbol", "ticker", *MODEL_EVIDENCE_FIELDS}, low_memory=False)
+    except Exception:
+        return {}
+    symbol_col = "symbol" if "symbol" in frame.columns else ("ticker" if "ticker" in frame.columns else "")
+    if not symbol_col:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in frame.to_dict("records"):
+        symbol = str(row.get(symbol_col) or "").strip().upper()
+        if not symbol:
+            continue
+        evidence = {
+            key: clean
+            for key in MODEL_EVIDENCE_FIELDS
+            if key in row
+            for clean in [_clean_evidence_value(row.get(key))]
+            if clean is not None
+        }
+        if evidence:
+            out[symbol] = evidence
+    return out
+
+
+def _enrich_candidate_with_model_evidence(candidate: dict[str, Any], evidence_by_symbol: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    symbol = str(candidate.get("symbol") or "").strip().upper()
+    evidence = evidence_by_symbol.get(symbol)
+    if not evidence:
+        return candidate
+    enriched = dict(candidate)
+    for key, value in evidence.items():
+        enriched.setdefault(key, value)
+    details = dict(enriched.get("details") or {})
+    details.setdefault("model_evidence_source", "latest_candidate_pool")
+    enriched["details"] = details
+    return enriched
+
+
 def latest_strong_candidates(*, engine: Engine | None = None, limit: int = 20) -> list[dict[str, Any]]:
     db = engine or get_engine(required=True)
     with db.connect() as conn:
@@ -556,7 +630,9 @@ def latest_strong_candidates(*, engine: Engine | None = None, limit: int = 20) -
             .order_by(intraday_promotion_log.c.promotion_score.desc(), intraday_promotion_log.c.symbol.asc())
             .limit(limit)
         ).mappings().all()
-    return [dict(row) for row in rows]
+    evidence_by_symbol = _candidate_pool_model_evidence()
+    return [_enrich_candidate_with_model_evidence(dict(row), evidence_by_symbol) for row in rows]
+
 
 
 def latest_flat_account_fallback_candidates(*, engine: Engine | None = None, config: AutoOpenConfig | None = None, limit: int = 5) -> list[dict[str, Any]]:
