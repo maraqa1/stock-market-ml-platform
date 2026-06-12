@@ -19,7 +19,7 @@ def _bool_env(name: str, default: bool = False) -> bool:
 
 def auto_trading_enabled() -> bool:
     _hydrate_environment()
-    return _bool_env("STOCKML_ALPACA_AUTOTRADE_ENABLED", default=False)
+    return _bool_env("STOCKML_ALPACA_AUTOTRADE_ENABLED", default=True)
 
 
 def _within_auto_trade_window(now: Optional[datetime] = None) -> bool:

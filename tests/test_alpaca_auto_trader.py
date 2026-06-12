@@ -4,9 +4,9 @@ from stockml.trading import auto_trader
 from stockml.trading.auto_trader import _within_auto_trade_window, auto_trading_enabled, run_auto_trader
 
 
-def test_auto_trading_disabled_by_default(monkeypatch):
+def test_auto_trading_enabled_by_default(monkeypatch):
     monkeypatch.delenv("STOCKML_ALPACA_AUTOTRADE_ENABLED", raising=False)
-    assert auto_trading_enabled() is False
+    assert auto_trading_enabled() is True
 
 
 def test_auto_trade_window_respects_weekday_hours(monkeypatch):

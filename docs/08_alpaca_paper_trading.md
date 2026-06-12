@@ -29,7 +29,7 @@ STOCKML_ALPACA_SUBMIT_ORDERS=false
 STOCKML_ALPACA_EXTENDED_HOURS=false
 STOCKML_ALPACA_OVERNIGHT_TRADING_ENABLED=false
 STOCKML_ALPACA_OVERNIGHT_LIMIT_BUFFER_BPS=50
-STOCKML_ALPACA_AUTOTRADE_ENABLED=false
+STOCKML_ALPACA_AUTOTRADE_ENABLED=true
 STOCKML_ALPACA_AUTOTRADE_START_UTC=14:45
 STOCKML_ALPACA_AUTOTRADE_END_UTC=20:30
 STOCKML_ALPACA_IGNORE_TRADE_WINDOW=false
@@ -119,9 +119,9 @@ cd /home/massa/stock-market-ml-platform
 sudo bash deployment/vm/install_alpaca_auto_trader.sh
 ```
 
-Default behavior is safe:
+Default behavior for paper trading:
 
-- `STOCKML_ALPACA_AUTOTRADE_ENABLED=false` writes a dry-run plan only.
+- Paper auto-trade is enabled by default. Set `STOCKML_ALPACA_AUTOTRADE_ENABLED=false` to force dry-run plan-only mode.
 - `STOCKML_ALPACA_SUBMIT_ORDERS=false` prevents Alpaca order submission even if the auto-trader timer runs.
 - The auto-trader timer runs Monday to Friday at `14:45 UTC`.
 - The tracking timer refreshes order and position status hourly during the US market session window.

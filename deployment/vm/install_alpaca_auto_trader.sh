@@ -26,7 +26,7 @@ sudo systemctl list-timers 'stockml-*' --no-pager
 
 echo
 echo "Installed Alpaca paper trading timers."
-echo "Default behavior is safe: STOCKML_ALPACA_AUTOTRADE_ENABLED=false and STOCKML_ALPACA_SUBMIT_ORDERS=false."
+echo "Paper auto-trade is enabled by default; broker submission still requires STOCKML_ALPACA_SUBMIT_ORDERS=true and live trading remains disabled by default."
 echo "Position monitor runs every 30 seconds during market hours and writes hold/watch/close decisions."
 echo "Intraday trading clock runs every 5 minutes during UTC market coverage and keeps promotion/autopilot data fresh."
 echo "Review ${REPO_DIR}/docs/08_alpaca_paper_trading.md before enabling paper submission."
