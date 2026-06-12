@@ -650,6 +650,14 @@ def test_trading_page_renders_intraday_promotion_zone(client):
     assert b'data-table="intraday-promotion"' in response.data
 
 
+def test_trading_page_renders_refreshable_held_vs_candidate_zone(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b'data-zone="rotation-diagnostic"' in response.data
+    assert b'data-held-vs-candidate-url="/api/trading/held-vs-candidate"' in response.data
+    assert b'data-held-vs-held-body' in response.data
+
+
 def test_trading_page_renders_same_day_panel(client):
     response = client.get("/trading")
     assert response.status_code == 200

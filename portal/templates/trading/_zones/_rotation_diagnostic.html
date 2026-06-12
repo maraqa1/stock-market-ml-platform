@@ -1,38 +1,38 @@
 {% from "_macros/pill.html" import pill %}
 {% from "_macros/format.html" import number, signed_money, signed_pct, side %}
 {% from "_macros/table.html" import table_toolbar %}
-<section class="zone trading-zone" data-zone="rotation-diagnostic" id="rotation-diagnostic">
+<section class="zone trading-zone" data-zone="rotation-diagnostic" data-held-vs-candidate-url="/api/trading/held-vs-candidate" data-held-vs-candidate-refresh-ms="{{ trading_cadence.positions_refresh_ms or 5000 }}" id="rotation-diagnostic">
   <div class="zone__header">
     <span>Held Vs Candidate Diagnostic</span>
-    <span class="zone__header-meta">read-only &middot; {{ held_vs_candidate.generated_at or "not available" }}</span>
+    <span class="zone__header-meta" data-held-vs-generated>read-only &middot; {{ held_vs_candidate.generated_at or "not available" }}</span>
   </div>
   <div class="zone__body">
     <p class="zone__description">Compares current broker positions with the latest candidate pool, monitor decisions, model context, and holding-review output. This panel does not submit orders or change thresholds.</p>
     <div class="kpi-row positions-summary" aria-label="Held versus candidate summary">
       <article class="kpi-card">
         <span class="kpi-card__label">Held</span>
-        <strong class="kpi-card__value">{{ number(held_vs_candidate.summary.open_positions or 0, 0) }}</strong>
+        <strong class="kpi-card__value" data-held-vs-summary="open_positions">{{ number(held_vs_candidate.summary.open_positions or 0, 0) }}</strong>
         <small class="kpi-card__detail">broker positions compared</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Warnings</span>
-        <strong class="kpi-card__value {{ 'text-down' if (held_vs_candidate.summary.held_warning_rows or 0) > 0 else '' }}">{{ number(held_vs_candidate.summary.held_warning_rows or 0, 0) }}</strong>
+        <strong class="kpi-card__value {{ 'text-down' if (held_vs_candidate.summary.held_warning_rows or 0) > 0 else '' }}" data-held-vs-summary="held_warning_rows">{{ number(held_vs_candidate.summary.held_warning_rows or 0, 0) }}</strong>
         <small class="kpi-card__detail">held rows needing review</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Available</span>
-        <strong class="kpi-card__value">{{ number(held_vs_candidate.summary.available_candidates or 0, 0) }}</strong>
+        <strong class="kpi-card__value" data-held-vs-summary="available_candidates">{{ number(held_vs_candidate.summary.available_candidates or 0, 0) }}</strong>
         <small class="kpi-card__detail">eligible non-held candidates</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">P&amp;L</span>
-        <strong class="kpi-card__value">{{ signed_money(held_vs_candidate.summary.unrealized_pl or 0) }}</strong>
-        <small class="kpi-card__detail">{{ signed_pct(held_vs_candidate.summary.unrealized_plpc_basis or 0) }} open basis</small>
+        <strong class="kpi-card__value" data-held-vs-summary="unrealized_pl">{{ signed_money(held_vs_candidate.summary.unrealized_pl or 0) }}</strong>
+        <small class="kpi-card__detail" data-held-vs-summary="unrealized_plpc_basis">{{ signed_pct(held_vs_candidate.summary.unrealized_plpc_basis or 0) }} open basis</small>
       </article>
       <article class="kpi-card">
         <span class="kpi-card__label">Top Candidate</span>
-        <strong class="kpi-card__value">{{ held_vs_candidate.summary.top_candidate or "None" }}</strong>
-        <small class="kpi-card__detail">{{ number(held_vs_candidate.summary.top_candidate_edge_bps or 0, 0) }} bps edge</small>
+        <strong class="kpi-card__value" data-held-vs-summary="top_candidate">{{ held_vs_candidate.summary.top_candidate or "None" }}</strong>
+        <small class="kpi-card__detail" data-held-vs-summary="top_candidate_edge_bps">{{ number(held_vs_candidate.summary.top_candidate_edge_bps or 0, 0) }} bps edge</small>
       </article>
     </div>
     {% if held_vs_candidate.missing_inputs %}
@@ -58,7 +58,7 @@
             <th>Warnings</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody data-held-vs-held-body>
           {% if not held_vs_candidate.held_positions %}
             <tr>
               <td colspan="9" class="empty small">No open broker positions found in the latest tracking file.</td>
@@ -99,7 +99,7 @@
             <th>Sector</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody data-held-vs-available-body>
           {% if not held_vs_candidate.available_candidates %}
             <tr>
               <td colspan="8" class="empty small">No eligible non-held candidates available after excluding held symbols and open broker orders.</td>

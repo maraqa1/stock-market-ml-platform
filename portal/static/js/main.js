@@ -351,3 +351,116 @@ if (positionsBody) {
     }
   }, refreshMs);
 }
+
+
+const heldVsCandidateZone = document.querySelector("[data-held-vs-candidate-url]");
+if (heldVsCandidateZone) {
+  let inFlight = false;
+  const refreshUrl = heldVsCandidateZone.dataset.heldVsCandidateUrl;
+  const refreshMs = Number(heldVsCandidateZone.dataset.heldVsCandidateRefreshMs || 5000);
+  const moneyFormatter = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+  const pctFormatter = new Intl.NumberFormat(undefined, { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const intFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+  const generated = heldVsCandidateZone.querySelector("[data-held-vs-generated]");
+  const heldBody = heldVsCandidateZone.querySelector("[data-held-vs-held-body]");
+  const availableBody = heldVsCandidateZone.querySelector("[data-held-vs-available-body]");
+
+  const escapeHtml = (value) => String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+  const titleText = (value) => String(value || "missing").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  const pill = (value) => `<span class="pill pill-info">${escapeHtml(titleText(value))}</span>`;
+  const sideText = (value) => {
+    const raw = String(value || "").toLowerCase();
+    if (raw === "short") return "▼ Short";
+    if (raw === "long") return "▲ Long";
+    return escapeHtml(value || "-");
+  };
+  const signedMoney = (value) => {
+    const number = Number(value || 0);
+    if (number === 0) return moneyFormatter.format(0);
+    return `${number > 0 ? "+" : "-"}${moneyFormatter.format(Math.abs(number))}`;
+  };
+  const signedPct = (value) => {
+    const number = Number(value || 0);
+    if (number === 0) return pctFormatter.format(0);
+    return `${number > 0 ? "+" : "-"}${pctFormatter.format(Math.abs(number))}`;
+  };
+  const numberText = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? intFormatter.format(number) : "-";
+  };
+  const updateSummary = (summary = {}) => {
+    const update = (key, value) => {
+      const element = heldVsCandidateZone.querySelector(`[data-held-vs-summary="${key}"]`);
+      if (element) element.textContent = value;
+    };
+    update("open_positions", numberText(summary.open_positions || 0));
+    update("held_warning_rows", numberText(summary.held_warning_rows || 0));
+    update("available_candidates", numberText(summary.available_candidates || 0));
+    update("unrealized_pl", signedMoney(summary.unrealized_pl || 0));
+    update("unrealized_plpc_basis", `${signedPct(summary.unrealized_plpc_basis || 0)} open basis`);
+    update("top_candidate", summary.top_candidate || "None");
+    update("top_candidate_edge_bps", `${numberText(summary.top_candidate_edge_bps || 0)} bps edge`);
+  };
+  const renderHeld = (rows = []) => {
+    if (!heldBody) return;
+    if (!rows.length) {
+      heldBody.innerHTML = '<tr><td colspan="9" class="empty small">No open broker positions found in the latest tracking file.</td></tr>';
+      return;
+    }
+    heldBody.innerHTML = rows.map((row) => `
+      <tr>
+        <td class="num-l col-pinned" data-sort-value="${escapeHtml(row.symbol)}"><a href="/symbols/${encodeURIComponent(row.symbol)}">${escapeHtml(row.symbol)}</a></td>
+        <td>${sideText(row.position_side)}</td>
+        <td data-sort-value="${Number(row.unrealized_pl || 0)}">${signedMoney(row.unrealized_pl || 0)} ${signedPct(row.unrealized_plpc || 0)}</td>
+        <td>${pill(row.trade_quality_status || "missing")}</td>
+        <td class="num" data-sort-value="${Number(row.directional_expected_edge_bps || 0)}">${numberText(row.directional_expected_edge_bps)}</td>
+        <td>${pill(row.holding_quality || "missing")}</td>
+        <td title="${escapeHtml(row.decision_reason || "")}">${escapeHtml(titleText(row.decision))}</td>
+        <td>${pill(row.rotation_flag || "watch")}</td>
+        <td>${escapeHtml(String(row.warnings || "none").replaceAll("|", ", ").replaceAll("_", " "))}</td>
+      </tr>`).join("");
+  };
+  const renderAvailable = (rows = []) => {
+    if (!availableBody) return;
+    if (!rows.length) {
+      availableBody.innerHTML = '<tr><td colspan="8" class="empty small">No eligible non-held candidates available after excluding held symbols and open broker orders.</td></tr>';
+      return;
+    }
+    heldVsCandidateZone.querySelectorAll('[data-held-vs-summary="top_candidate"]').forEach((element) => {
+      element.textContent = rows[0]?.symbol || "None";
+    });
+    availableBody.innerHTML = rows.map((row) => `
+      <tr>
+        <td class="num-l col-pinned" data-sort-value="${escapeHtml(row.symbol)}"><a href="/symbols/${encodeURIComponent(row.symbol)}">${escapeHtml(row.symbol)}</a></td>
+        <td>${sideText(row.side)}</td>
+        <td>${pill(row.trade_quality_status || "unknown")}</td>
+        <td class="num" data-sort-value="${Number(row.directional_expected_edge_bps || 0)}">${numberText(row.directional_expected_edge_bps)}</td>
+        <td class="num" data-sort-value="${Number(row.directional_risk_score_bps || 0)}">${numberText(row.directional_risk_score_bps)}</td>
+        <td class="num" data-sort-value="${Number(row.confidence_score || 0)}">${Number(row.confidence_score || 0).toFixed(3)}</td>
+        <td class="num" data-sort-value="${Number(row.candidate_rank || 0)}">${numberText(row.candidate_rank)}</td>
+        <td>${escapeHtml(row.sector || "-")}</td>
+      </tr>`).join("");
+  };
+  window.setInterval(async () => {
+    if (document.hidden || inFlight) return;
+    inFlight = true;
+    try {
+      const response = await fetch(refreshUrl);
+      if (!response.ok) throw new Error(`Held vs candidate refresh failed: ${response.status}`);
+      const payload = await response.json();
+      if (generated) generated.textContent = `read-only · ${payload.generated_at || "not available"}`;
+      updateSummary(payload.summary || {});
+      renderHeld(payload.held_positions || []);
+      renderAvailable(payload.available_candidates || []);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      inFlight = false;
+    }
+  }, refreshMs);
+}
