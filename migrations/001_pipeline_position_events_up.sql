@@ -32,10 +32,29 @@ CREATE TABLE IF NOT EXISTS position_events (
     details JSON,
     CONSTRAINT ck_position_events_event_type CHECK (
         event_type IN (
-            'scored', 'ranked', 'selected', 'submitted', 'filled', 'partial',
-            'monitor_safe', 'monitor_watch', 'monitor_close', 'monitor_rotate',
-            'operator_keep', 'operator_close', 'operator_override',
-            'broker_rejected', 'guardrail_blocked'
+            'scored',
+            'ranked',
+            'selected',
+            'submitted',
+            'filled',
+            'partial',
+            'monitor_safe',
+            'monitor_watch',
+            'monitor_close',
+            'monitor_rotate',
+            'operator_keep',
+            'operator_close',
+            'operator_override',
+            'broker_rejected',
+            'guardrail_blocked',
+            'anti_churn_blocked',
+            'candidate_scanned',
+            'candidate_blocked',
+            'candidate_submitted',
+            'candidate_skipped_duplicate',
+            'candidate_skipped_anti_churn',
+            'candidate_skipped_meta_label',
+            'candidate_skipped_not_overnight_tradable'
         )
     )
 );
