@@ -41,6 +41,14 @@ POSITION_EVENT_TYPES = (
     "operator_override",
     "broker_rejected",
     "guardrail_blocked",
+    "anti_churn_blocked",
+    "candidate_scanned",
+    "candidate_blocked",
+    "candidate_submitted",
+    "candidate_skipped_duplicate",
+    "candidate_skipped_anti_churn",
+    "candidate_skipped_meta_label",
+    "candidate_skipped_not_overnight_tradable",
 )
 KILL_SWITCH_EVENT_TYPES = ("tripped", "resumed")
 INTRADAY_VERDICTS = ("allow_long", "allow_short", "hold", "block", "data_unavailable")

@@ -57,3 +57,26 @@ def test_anti_churn_report_schema_is_stable():
         now=NOW,
     )
     assert list(report.columns) == ANTI_CHURN_REPORT_COLUMNS
+
+
+def test_anti_churn_block_writes_activity_event(monkeypatch, tmp_path):
+    from sqlalchemy import create_engine, select
+    from stockml.db.schema import create_all, position_events
+    from stockml.services import events
+    from stockml.trading.anti_churn_guard import write_anti_churn_report
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    create_all(engine)
+    monkeypatch.setattr(events, "get_engine", lambda required=False: engine)
+    _, report = guard_actions(
+        [{"symbol": "AAA", "action": "close", "side": "sell", "reason": "monitor_close"}],
+        open_positions=[{"symbol": "AAA", "opened_at": NOW - timedelta(minutes=1)}],
+        now=NOW,
+        cycle_id="cycle1",
+    )
+    write_anti_churn_report(report, root=tmp_path, stamp="test")
+    with engine.connect() as conn:
+        rows = conn.execute(select(position_events).where(position_events.c.event_type == "anti_churn_blocked")).mappings().all()
+    assert len(rows) == 1
+    assert rows[0]["source"] == "anti_churn_guard"
+    assert rows[0]["details"]["reason"] == "minimum_hold_period_not_met"

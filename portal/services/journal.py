@@ -13,7 +13,7 @@ from sqlalchemy.engine import Engine
 
 from portal.services.latest_file_reader import latest_file, safe_read_csv
 from stockml.db.connection import get_engine
-from stockml.db.schema import position_events
+from stockml.db.schema import POSITION_EVENT_TYPES, position_events
 
 
 DEFAULT_LIMIT = 200
@@ -95,8 +95,15 @@ def _symbol_from_event(row: dict[str, Any]) -> str:
 
 def _details_summary(event_type: str, details: Any) -> str:
     data = details if isinstance(details, dict) else {}
+    if data.get("details_summary"):
+        return str(data.get("details_summary"))
     if event_type == "filled":
-        return f"{data.get('qty', 'unknown')} @ ${data.get('avg_price') or data.get('filled_avg_price', 'unknown')} · {data.get('order_id', '')}".strip()
+        order_id = data.get("broker_order_id") or data.get("order_id", "")
+        return f"{data.get('side', '')} {data.get('filled_qty') or data.get('qty', 'unknown')} {data.get('symbol', '')} filled @ {data.get('filled_avg_price') or data.get('avg_price', 'unknown')} · {order_id}".strip()
+    if event_type.startswith("candidate_"):
+        return f"{event_type.replace('_', ' ')} · {data.get('symbol', '')} · {data.get('block_reason') or data.get('verdict') or ''}".strip()
+    if event_type == "anti_churn_blocked":
+        return f"anti churn · {data.get('reason') or 'blocked'} · {data.get('attempted_action') or ''}".strip()
     if event_type == "monitor_close":
         return str(data.get("reason") or "monitor close")
     if event_type == "broker_rejected":
@@ -178,23 +185,7 @@ def _artifact_events(root: Path, filters: JournalFilters) -> list[dict[str, Any]
             if filters.symbol and symbol != filters.symbol:
                 continue
             event_type = str(row.get("event_type") or row.get("lifecycle_state") or row.get("decision") or default_type).lower()
-            if event_type not in {
-                "scored",
-                "ranked",
-                "selected",
-                "submitted",
-                "filled",
-                "partial",
-                "monitor_safe",
-                "monitor_watch",
-                "monitor_close",
-                "monitor_rotate",
-                "operator_keep",
-                "operator_close",
-                "operator_override",
-                "broker_rejected",
-                "guardrail_blocked",
-            }:
+            if event_type not in set(POSITION_EVENT_TYPES):
                 if source == "monitor" and event_type in {"watch", "close", "rotate"}:
                     event_type = f"monitor_{event_type}"
                 elif source == "operator" and event_type in {"keep", "close", "override"}:

@@ -9,7 +9,7 @@ import pandas as pd
 import yaml
 
 from stockml.common.paths import AGENT_DECISIONS_DIR, PROJECT_ROOT, ensure_data_dirs, timestamp
-from stockml.services.events import position_id_for_symbol, record_event_safely
+from stockml.services.events import position_id_for_symbol, record_event_once, record_event_safely
 
 
 LOGGER = logging.getLogger(__name__)
@@ -646,21 +646,35 @@ def write_position_decisions(decisions: pd.DataFrame, stamp: str | None = None) 
             "close": "monitor_close",
             "replace": "monitor_rotate",
         }.get(decision, "monitor_watch")
-        record_event_safely(
-            position_id_for_symbol(symbol),
-            event_type,
-            "position_monitor",
-            {
-                "symbol": symbol,
-                "decision": row.get("decision"),
-                "recommended_action": row.get("recommended_action"),
-                "decision_reason": row.get("decision_reason"),
-                "current_price": row.get("current_price"),
-                "unrealized_pl": row.get("unrealized_pl"),
-                "unrealized_plpc": row.get("unrealized_plpc"),
-                "replacement_symbol": row.get("replacement_symbol"),
-                "replacement_reason": row.get("replacement_reason"),
-                "decision_path": str(path),
-            },
-        )
+        details = {
+            "symbol": symbol,
+            "decision": row.get("decision"),
+            "recommended_action": row.get("recommended_action"),
+            "decision_reason": row.get("decision_reason"),
+            "current_price": row.get("current_price"),
+            "unrealized_pl": row.get("unrealized_pl"),
+            "unrealized_plpc": row.get("unrealized_plpc"),
+            "replacement_symbol": row.get("replacement_symbol"),
+            "replacement_reason": row.get("replacement_reason"),
+            "decision_path": str(path),
+        }
+        if event_type == "monitor_rotate":
+            replacement = _text(row.get("replacement_symbol")).upper()
+            key = f"monitor_rotate:{symbol}:{replacement}:{row.get('recommended_action')}"
+            details.update({"event_key": key, "skipped_reason": "monitor_action_cooldown_active"})
+            record_event_once(
+                position_id_for_symbol(symbol),
+                event_type,
+                "position_monitor",
+                details,
+                event_key=key,
+                cooldown_seconds=30 * 60,
+            )
+        else:
+            record_event_safely(
+                position_id_for_symbol(symbol),
+                event_type,
+                "position_monitor",
+                details,
+            )
     return path

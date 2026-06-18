@@ -17,6 +17,7 @@ from stockml.common.paths import HOLDING_PERIOD_DIR, PORTAL_OUTPUTS_DIR, PROJECT
 from stockml.db.connection import get_engine
 from stockml.db.schema import autopilot_open_log, intraday_candidate_snapshots, intraday_promotion_log
 from stockml.intraday import kill_switch
+from stockml.services.events import position_id_for_symbol, record_event_once
 from stockml.safety.paper_only_guard import paper_only_guard
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
@@ -1086,6 +1087,59 @@ def _todays_same_day_momentum_open_count(engine: Engine, now: datetime) -> int:
     return _todays_detail_open_count(engine, now, "same_day_momentum")
 
 
+def _candidate_event_type(verdict: str, block_reason: str) -> str:
+    reason = str(block_reason or "")
+    if verdict == "opened":
+        return "candidate_submitted"
+    if reason in {"model_meta_label_rejected", "model_evidence_missing"}:
+        return "candidate_skipped_meta_label"
+    if reason == "asset_not_overnight_tradable":
+        return "candidate_skipped_not_overnight_tradable"
+    if reason.startswith("anti_churn"):
+        return "candidate_skipped_anti_churn"
+    return "candidate_blocked"
+
+
+def _record_candidate_lifecycle_event(
+    *,
+    symbol: str,
+    verdict: str,
+    block_reason: str = "",
+    order_id: str = "",
+    size_usd: float = 0.0,
+    details: dict[str, Any] | None = None,
+    now: datetime,
+) -> None:
+    payload = dict(details or {})
+    order = payload.get("order") if isinstance(payload.get("order"), dict) else {}
+    event_type = _candidate_event_type(verdict, block_reason)
+    cycle_id = str(payload.get("cycle_id") or now.strftime("%Y%m%d_%H%M%S"))
+    extended = bool(order.get("extended_hours", payload.get("extended_hours", False)))
+    event_key = f"{cycle_id}:{symbol}:{event_type}:{block_reason}:{order_id}"
+    record_event_once(
+        position_id_for_symbol(symbol),
+        event_type,
+        "paper_autopilot",
+        {
+            "event_key": event_key,
+            "cycle_id": cycle_id,
+            "symbol": symbol,
+            "action": "open",
+            "candidate_source": payload.get("fallback_reason") or payload.get("model_evidence_source") or "paper_autopilot",
+            "session_mode": "24x5" if extended else "regular",
+            "extended_hours": extended,
+            "overnight_tradable": payload.get("asset_overnight_tradable", ""),
+            "order_type": order.get("type", payload.get("order_type", "")),
+            "limit_price": order.get("limit_price", payload.get("limit_price", "")),
+            "block_reason": block_reason,
+            "verdict": verdict,
+            "order_id": order_id,
+            "size_usd": size_usd,
+        },
+        event_key=event_key,
+    )
+
+
 def _record_open(
     *,
     symbol: str,
@@ -1115,7 +1169,17 @@ def _record_open(
                 details=details or {},
             )
         )
-        return result.inserted_primary_key[0] if result.inserted_primary_key else None
+        inserted_id = result.inserted_primary_key[0] if result.inserted_primary_key else None
+    _record_candidate_lifecycle_event(
+        symbol=symbol,
+        verdict=verdict,
+        block_reason=block_reason or "",
+        order_id=order_id or "",
+        size_usd=size_usd,
+        details=details or {},
+        now=now,
+    )
+    return inserted_id
 
 
 def _asset_bool(asset: dict[str, Any] | None, key: str, default: bool = True) -> bool:
@@ -1230,6 +1294,24 @@ def apply_auto_open(
             details["side"] = candidate.get("side")
         if candidate.get("nightly_bias") and not details.get("nightly_bias"):
             details["nightly_bias"] = candidate.get("nightly_bias")
+        cycle_id = stamp.strftime("%Y%m%d_%H%M%S")
+        details.setdefault("cycle_id", cycle_id)
+        scan_event_key = f"{cycle_id}:{symbol}:candidate_scanned"
+        record_event_once(
+            position_id_for_symbol(symbol),
+            "candidate_scanned",
+            "paper_autopilot",
+            {
+                "event_key": scan_event_key,
+                "cycle_id": cycle_id,
+                "symbol": symbol,
+                "action": "open",
+                "candidate_source": details.get("fallback_reason") or details.get("model_evidence_source") or "paper_autopilot",
+                "session_mode": "24x5" if bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled) else "regular",
+                "extended_hours": bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled),
+            },
+            event_key=scan_event_key,
+        )
         if _is_same_day_momentum_candidate(details):
             details.setdefault("strategy_stream", "same_day_momentum")
             details.setdefault("trading_stream", "same_day_momentum")
@@ -1378,6 +1460,7 @@ def apply_auto_open(
             "asset_tradable": _asset_bool(asset, "tradable", True),
             "asset_fractionable": _asset_bool(asset, "fractionable", True),
             "asset_shortable": _asset_bool(asset, "shortable", True),
+            "asset_overnight_tradable": asset_is_overnight_tradable(asset),
         }
         if not asset_details["asset_tradable"]:
             blocked += 1

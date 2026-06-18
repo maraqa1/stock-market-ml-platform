@@ -126,7 +126,7 @@ def _overnight_limit_close_order(
         "limit_price": limit_price,
         "client_order_id": f"stockml-close-{stamp}-{symbol}"[:48],
     }
-    return client.submit_order(order), "manual_close_overnight_limit_submitted"
+    return client.submit_order(order), "close_submitted_overnight_limit"
 
 
 def apply_manual_position_action(
@@ -152,16 +152,16 @@ def apply_manual_position_action(
         result["message"] = "unsupported_operator_action"
     elif clean_action == "keep":
         result["status"] = "recorded"
-        result["message"] = "operator_keep_position"
+        result["message"] = "keep_recorded"
     else:
         cfg = config or alpaca_config()
         if cfg.live_trading_enabled:
-            result["message"] = "live_trading_disabled_for_manual_close"
+            result["message"] = "close_blocked_live_trading_disabled"
         elif not cfg.paper_trading_enabled:
             result["message"] = "paper_trading_disabled"
         elif not cfg.submit_orders:
             result["status"] = "dry_run"
-            result["message"] = "manual_close_dry_run_submit_orders_disabled"
+            result["message"] = "close_blocked_submit_disabled"
         elif not cfg.api_key or not cfg.secret_key:
             result["message"] = "alpaca_credentials_missing"
         else:
@@ -170,7 +170,7 @@ def apply_manual_position_action(
                 response, submitted_message = _overnight_limit_close_order(clean_symbol, cfg=cfg, client=alpaca_client)
                 if response is None:
                     response = alpaca_client.close_position(clean_symbol)
-                    submitted_message = "manual_close_submitted"
+                    submitted_message = "close_submitted_regular"
                 result["status"] = "submitted"
                 result["message"] = submitted_message
                 result["order_id"] = response.get("id", "")
@@ -196,7 +196,7 @@ def apply_manual_position_action(
                     "symbol": clean_symbol,
                     "operator_action": clean_action,
                     "status": result.get("status"),
-                    "message": result.get("message"),
+                    "final_outcome": result.get("message"),
                     "order_id": result.get("order_id"),
                     "client_order_id": result.get("client_order_id"),
                     "alpaca_status": result.get("alpaca_status"),

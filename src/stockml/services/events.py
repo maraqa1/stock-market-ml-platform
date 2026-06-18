@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Iterator
 
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from sqlalchemy.engine import Connection, Engine
 
 from stockml.db.connection import get_engine
@@ -115,6 +115,47 @@ def record_event_safely(
             if conn is None:
                 return False
             record_event(position_id, event_type, source, details, target=conn, event_at=event_at)
+            return True
+    except Exception:
+        return False
+
+
+def _details_event_key(details: Any) -> str:
+    return str(details.get("event_key") or "") if isinstance(details, dict) else ""
+
+
+def record_event_once(
+    position_id: str,
+    event_type: str,
+    source: str,
+    details: dict[str, Any] | None = None,
+    *,
+    event_key: str | None = None,
+    event_at: datetime | None = None,
+    cooldown_seconds: int | None = None,
+) -> bool:
+    payload = dict(details or {})
+    key = str(event_key or payload.get("event_key") or "").strip()
+    if key:
+        payload["event_key"] = key
+    try:
+        with _connection(None, required=False) as conn:
+            if conn is None:
+                return False
+            conditions = [
+                position_events.c.position_id == str(position_id or "").strip(),
+                position_events.c.event_type == event_type,
+                position_events.c.source == source,
+            ]
+            if cooldown_seconds is not None and cooldown_seconds > 0:
+                cutoff = (event_at or _utc_now()) - __import__("datetime").timedelta(seconds=cooldown_seconds)
+                conditions.append(position_events.c.event_at >= cutoff)
+            rows = conn.execute(select(position_events.c.details).where(*conditions).order_by(position_events.c.event_at.desc()).limit(500)).scalars().all()
+            if key and any(_details_event_key(row) == key for row in rows):
+                return False
+            if not key and cooldown_seconds is not None and rows:
+                return False
+            record_event(position_id, event_type, source, payload, target=conn, event_at=event_at)
             return True
     except Exception:
         return False

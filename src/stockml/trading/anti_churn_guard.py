@@ -8,6 +8,7 @@ from typing import Any, Iterable
 import pandas as pd
 
 from stockml.common.paths import PROJECT_ROOT, timestamp
+from stockml.services.events import position_id_for_symbol, record_event_once
 
 ANTI_CHURN_REPORT_COLUMNS = [
     "symbol",
@@ -260,6 +261,33 @@ def write_anti_churn_report(report: pd.DataFrame, *, root: Path | str | None = N
     report = report.reindex(columns=ANTI_CHURN_REPORT_COLUMNS)
     path = out_dir / f"anti_churn_report_{stamp or timestamp()}.csv"
     report.to_csv(path, index=False)
+    reason_aliases = {
+        "minimum_hold_not_met": "minimum_hold_period_not_met",
+        "reopen_cooldown_active": "cooldown_after_close_active",
+        "same_cycle_open_close": "same_cycle_open_close_conflict",
+        "reverse_same_symbol_same_day": "same_day_reverse_blocked",
+    }
+    for row in report.fillna("").to_dict("records"):
+        symbol = _symbol(row)
+        reason = reason_aliases.get(str(row.get("reason") or ""), str(row.get("reason") or ""))
+        action = str(row.get("blocked_action") or "")
+        cycle_id = str(row.get("cycle_id") or stamp or "")
+        event_key = f"anti_churn:{cycle_id}:{symbol}:{action}:{reason}"
+        record_event_once(
+            position_id_for_symbol(symbol),
+            "anti_churn_blocked",
+            "anti_churn_guard",
+            {
+                "event_key": event_key,
+                "symbol": symbol,
+                "reason": reason,
+                "attempted_action": action,
+                "details_summary": f"{reason} {action}".strip(),
+                "cycle_id": cycle_id,
+                "anti_churn_report_path": str(path),
+            },
+            event_key=event_key,
+        )
     return path
 
 

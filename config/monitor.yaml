@@ -10,3 +10,5 @@ rotation:
   edge_replacement_auto_dry_run: true
   respect_monitor_verdict: true
   monitor_override_score_delta: 0.20
+
+monitor_action_cooldown_minutes: 30

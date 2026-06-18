@@ -1,0 +1,2 @@
+ALTER TABLE position_events DROP CONSTRAINT IF EXISTS ck_position_events_event_type;
+ALTER TABLE position_events ADD CONSTRAINT ck_position_events_event_type CHECK (event_type IN ('scored', 'ranked', 'selected', 'submitted', 'filled', 'partial', 'monitor_safe', 'monitor_watch', 'monitor_close', 'monitor_rotate', 'operator_keep', 'operator_close', 'operator_override', 'broker_rejected', 'guardrail_blocked'));

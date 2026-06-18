@@ -55,7 +55,7 @@ def test_keep_records_operator_action_without_alpaca_call(tmp_path: Path):
     path = tmp_path / "actions.csv"
     result = apply_manual_position_action("FLEX", "keep", config=config(), client=client, output_path=path)
     assert result["status"] == "recorded"
-    assert result["message"] == "operator_keep_position"
+    assert result["message"] == "keep_recorded"
     assert client.closed == []
     saved = pd.read_csv(path)
     assert saved.iloc[0]["symbol"] == "FLEX"
@@ -65,7 +65,7 @@ def test_close_is_dry_run_when_submission_disabled(tmp_path: Path):
     client = FakeClient()
     result = apply_manual_position_action("FLEX", "close", config=config(submit_orders=False), client=client, output_path=tmp_path / "actions.csv")
     assert result["status"] == "dry_run"
-    assert result["message"] == "manual_close_dry_run_submit_orders_disabled"
+    assert result["message"] == "close_blocked_submit_disabled"
     assert client.closed == []
 
 
@@ -81,7 +81,7 @@ def test_close_uses_overnight_limit_order_when_enabled(tmp_path: Path):
     client = FakeClient()
     result = apply_manual_position_action("FLEX", "close", config=config(submit_orders=True, overnight=True), client=client, output_path=tmp_path / "actions.csv")
     assert result["status"] == "submitted"
-    assert result["message"] == "manual_close_overnight_limit_submitted"
+    assert result["message"] == "close_submitted_overnight_limit"
     assert client.closed == []
     assert client.orders[0]["symbol"] == "FLEX"
     assert client.orders[0]["side"] == "sell"
@@ -99,7 +99,7 @@ def test_close_falls_back_when_asset_is_not_overnight_tradable(tmp_path: Path):
     client = RegularOnlyClient()
     result = apply_manual_position_action("FLEX", "close", config=config(submit_orders=True, overnight=True), client=client, output_path=tmp_path / "actions.csv")
     assert result["status"] == "submitted"
-    assert result["message"] == "manual_close_submitted"
+    assert result["message"] == "close_submitted_regular"
     assert client.closed == ["FLEX"]
     assert client.orders == []
 
@@ -108,5 +108,5 @@ def test_close_refuses_live_trading(tmp_path: Path):
     client = FakeClient()
     result = apply_manual_position_action("FLEX", "close", config=config(submit_orders=True, live=True), client=client, output_path=tmp_path / "actions.csv")
     assert result["status"] == "rejected"
-    assert result["message"] == "live_trading_disabled_for_manual_close"
+    assert result["message"] == "close_blocked_live_trading_disabled"
     assert client.closed == []

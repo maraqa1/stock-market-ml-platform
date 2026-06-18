@@ -10,7 +10,7 @@ import pandas as pd
 from stockml.safety.paper_only_guard import paper_only_guard
 from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import MODEL_OUTPUTS_DIR, PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
-from stockml.services.events import position_id_for_symbol, record_event_safely
+from stockml.services.events import position_id_for_symbol, record_event_once, record_event_safely
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, autopilot_conflicting_symbols, reconcile_autopilot_state_from_tracking
@@ -193,19 +193,38 @@ def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple
                 tracking_rows.append(tracked)
                 filled_qty = pd.to_numeric(tracked.get("filled_qty", 0), errors="coerce")
                 if str(tracked.get("alpaca_status", "")).lower() == "filled" or (not pd.isna(filled_qty) and filled_qty > 0):
-                    record_event_safely(
-                        position_id_for_symbol(tracked.get("symbol", "")),
+                    broker_order_id = tracked.get("order_id", "")
+                    filled_qty_text = str(tracked.get("filled_qty", ""))
+                    filled_avg_price_text = str(tracked.get("filled_avg_price", ""))
+                    fill_event_key = f"{broker_order_id}:filled:{tracked.get('alpaca_status', '')}:{filled_qty_text}:{filled_avg_price_text}"
+                    side = tracked.get("side", "")
+                    symbol = tracked.get("symbol", "")
+                    summary = f"{side} {filled_qty_text} {symbol} filled @ {filled_avg_price_text} · {broker_order_id}"
+                    record_event_once(
+                        position_id_for_symbol(symbol),
                         "filled",
                         "alpaca_tracking",
                         {
-                            "symbol": tracked.get("symbol", ""),
-                            "order_id": tracked.get("order_id", ""),
+                            "event_key": fill_event_key,
+                            "details_summary": summary,
+                            "broker_order_id": broker_order_id,
+                            "order_id": broker_order_id,
                             "client_order_id": tracked.get("client_order_id", ""),
+                            "symbol": symbol,
+                            "side": side,
+                            "qty": tracked.get("suggested_quantity", tracked.get("qty", "")),
                             "filled_qty": tracked.get("filled_qty", ""),
                             "filled_avg_price": tracked.get("filled_avg_price", ""),
-                            "alpaca_status": tracked.get("alpaca_status", ""),
+                            "order_type": tracked.get("type", tracked.get("order_type", "")),
+                            "status": tracked.get("alpaca_status", ""),
+                            "submitted_at": tracked.get("submitted_at", ""),
+                            "filled_at": tracked.get("filled_at", tracked.get("updated_at", "")),
+                            "open_or_close": tracked.get("open_or_close", "open"),
+                            "session_mode": "24x5" if _boolish(tracked.get("extended_hours"), False) else "regular",
+                            "extended_hours": tracked.get("extended_hours", ""),
                             "tracking_path": str(tracking_path),
                         },
+                        event_key=fill_event_key,
                     )
             except Exception as exc:
                 tracking_rows.append({**row, "message": f"tracking_error: {exc}"})
@@ -276,19 +295,28 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
     for selected in plan.to_dict("records"):
         selected_eligible = bool(selected.get("order_eligible")) and int(selected.get("suggested_quantity", 0) or 0) >= 1
         if str(selected.get("trade_quality_status", "")).lower() in {"approved", "reduced"} and selected_eligible:
-            record_event_safely(
-                position_id_for_symbol(selected.get("symbol", "")),
+            symbol = selected.get("symbol", "")
+            cycle_id = stamp
+            candidate_source = selected.get("candidate_source", "paper_order_plan")
+            selected_event_key = f"{cycle_id}:{str(symbol).upper()}:{candidate_source}:selected"
+            record_event_once(
+                position_id_for_symbol(symbol),
                 "selected",
                 "paper_order_plan",
                 {
-                    "symbol": selected.get("symbol", ""),
+                    "event_key": selected_event_key,
+                    "cycle_id": cycle_id,
+                    "symbol": symbol,
                     "side": selected.get("side", ""),
+                    "action": "selected",
+                    "candidate_source": candidate_source,
                     "trade_action": selected.get("trade_action", ""),
                     "trade_quality_status": selected.get("trade_quality_status", ""),
                     "approved_notional": selected.get("approved_notional", selected.get("notional", "")),
                     "suggested_quantity": selected.get("suggested_quantity", ""),
                     "plan_path": str(plan_path),
                 },
+                event_key=selected_event_key,
             )
 
     result_rows = []
