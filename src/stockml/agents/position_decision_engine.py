@@ -660,8 +660,9 @@ def write_position_decisions(decisions: pd.DataFrame, stamp: str | None = None) 
         }
         if event_type == "monitor_rotate":
             replacement = _text(row.get("replacement_symbol")).upper()
-            key = f"monitor_rotate:{symbol}:{replacement}:{row.get('recommended_action')}"
-            details.update({"event_key": key, "skipped_reason": "monitor_action_cooldown_active"})
+            details_summary = _text(row.get("details_summary") or row.get("decision_reason") or row.get("replacement_reason") or row.get("recommended_action"))
+            key = f"monitor_rotate:{symbol}:{replacement}:{row.get('recommended_action')}:{details_summary}"
+            details.update({"event_key": key, "details_summary": details_summary, "skipped_reason": "monitor_action_cooldown_active"})
             record_event_once(
                 position_id_for_symbol(symbol),
                 event_type,

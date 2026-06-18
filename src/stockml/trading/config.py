@@ -43,6 +43,7 @@ class AlpacaConfig:
     overnight_close_reprice_max_buffer_bps: float = 300.0
     stale_entry_cancel_enabled: bool = True
     stale_entry_cancel_after_minutes: float = 20.0
+    execution_owner: str = "paper_autopilot"
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -112,4 +113,5 @@ def alpaca_config() -> AlpacaConfig:
         overnight_close_reprice_max_buffer_bps=_float_env("STOCKML_ALPACA_OVERNIGHT_CLOSE_REPRICE_MAX_BUFFER_BPS", 300.0, minimum=1.0, maximum=1000.0),
         stale_entry_cancel_enabled=_bool_env("STOCKML_ALPACA_STALE_ENTRY_CANCEL_ENABLED", default=True),
         stale_entry_cancel_after_minutes=_float_env("STOCKML_ALPACA_STALE_ENTRY_CANCEL_AFTER_MINUTES", 20.0, minimum=1.0, maximum=240.0),
+        execution_owner=os.environ.get("STOCKML_EXECUTION_OWNER", "paper_autopilot").strip().lower() or "paper_autopilot",
     )

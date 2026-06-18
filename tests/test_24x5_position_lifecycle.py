@@ -7,7 +7,7 @@ from stockml.db.schema import create_all, position_events
 from stockml.services import events
 from stockml.trading.config import AlpacaConfig
 
-NOW = datetime(2026, 6, 18, 13, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc)
 
 
 class GuardedClient:

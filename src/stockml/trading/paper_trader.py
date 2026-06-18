@@ -11,10 +11,14 @@ from stockml.safety.paper_only_guard import paper_only_guard
 from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import MODEL_OUTPUTS_DIR, PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.services.events import position_id_for_symbol, record_event_once, record_event_safely
+from stockml.db.connection import get_engine
+from stockml.db.schema import position_events
+from sqlalchemy import select
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, autopilot_conflicting_symbols, reconcile_autopilot_state_from_tracking
 from stockml.trading.config import alpaca_config
+from stockml.trading.execution_owner import LEGACY_BLOCK_REASON, legacy_paper_trader_can_submit
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, latest_signal_table
 from stockml.trading.position_intent_guard import PositionIntentConfig, guard_order_submission, record_position_intent_block, write_position_intent_report
@@ -112,6 +116,86 @@ def _append_reason(existing: object, reason: str) -> str:
     return text if reason in parts else "|".join([*parts, reason])
 
 
+def _filled_event_signature(row: dict) -> tuple[str, str, str, str]:
+    return (
+        _clean_text(row.get("order_id") or row.get("broker_order_id")),
+        _clean_text(row.get("alpaca_status") or row.get("status")).lower(),
+        _clean_text(row.get("filled_qty")),
+        _clean_text(row.get("filled_avg_price")),
+    )
+
+
+def _filled_event_exists(symbol: str, signature: tuple[str, str, str, str]) -> bool:
+    broker_order_id, status, filled_qty, filled_avg_price = signature
+    if not broker_order_id:
+        return False
+    engine = get_engine(required=False)
+    if engine is None:
+        return False
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(position_events.c.details)
+            .where(
+                position_events.c.position_id == position_id_for_symbol(symbol),
+                position_events.c.event_type == "filled",
+                position_events.c.source == "alpaca_tracking",
+            )
+            .order_by(position_events.c.event_at.desc())
+            .limit(2000)
+        ).scalars().all()
+    for details in rows:
+        if not isinstance(details, dict):
+            continue
+        existing = (
+            _clean_text(details.get("broker_order_id") or details.get("order_id")),
+            _clean_text(details.get("status") or details.get("alpaca_status")).lower(),
+            _clean_text(details.get("filled_qty")),
+            _clean_text(details.get("filled_avg_price")),
+        )
+        if existing == signature:
+            return True
+    return False
+
+
+def record_alpaca_fill_once(tracked: dict, *, tracking_path: Path) -> bool:
+    symbol = _clean_text(tracked.get("symbol")).upper()
+    signature = _filled_event_signature(tracked)
+    broker_order_id, status, filled_qty_text, filled_avg_price_text = signature
+    if not symbol or not broker_order_id:
+        return False
+    if _filled_event_exists(symbol, signature):
+        return False
+    fill_event_key = f"{broker_order_id}:filled:{status}:{filled_qty_text}:{filled_avg_price_text}"
+    side = tracked.get("side", "")
+    summary = f"{side} {filled_qty_text} {symbol} filled @ {filled_avg_price_text} · {broker_order_id}"
+    return record_event_once(
+        position_id_for_symbol(symbol),
+        "filled",
+        "alpaca_tracking",
+        {
+            "event_key": fill_event_key,
+            "details_summary": summary,
+            "broker_order_id": broker_order_id,
+            "order_id": broker_order_id,
+            "client_order_id": tracked.get("client_order_id", ""),
+            "symbol": symbol,
+            "side": side,
+            "qty": tracked.get("suggested_quantity", tracked.get("qty", "")),
+            "filled_qty": tracked.get("filled_qty", ""),
+            "filled_avg_price": tracked.get("filled_avg_price", ""),
+            "order_type": tracked.get("type", tracked.get("order_type", "")),
+            "status": tracked.get("alpaca_status", ""),
+            "submitted_at": tracked.get("submitted_at", ""),
+            "filled_at": tracked.get("filled_at", tracked.get("updated_at", "")),
+            "open_or_close": tracked.get("open_or_close", "open"),
+            "session_mode": "24x5" if _boolish(tracked.get("extended_hours"), False) else "regular",
+            "extended_hours": tracked.get("extended_hours", ""),
+            "tracking_path": str(tracking_path),
+        },
+        event_key=fill_event_key,
+    )
+
+
 def _mark_overnight_asset_eligibility(candidate_pool: pd.DataFrame, client: AlpacaPaperClient) -> pd.DataFrame:
     if candidate_pool.empty or "extended_hours" not in candidate_pool.columns:
         return candidate_pool
@@ -194,39 +278,7 @@ def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple
                 tracking_rows.append(tracked)
                 filled_qty = pd.to_numeric(tracked.get("filled_qty", 0), errors="coerce")
                 if str(tracked.get("alpaca_status", "")).lower() == "filled" or (not pd.isna(filled_qty) and filled_qty > 0):
-                    broker_order_id = tracked.get("order_id", "")
-                    filled_qty_text = str(tracked.get("filled_qty", ""))
-                    filled_avg_price_text = str(tracked.get("filled_avg_price", ""))
-                    fill_event_key = f"{broker_order_id}:filled:{tracked.get('alpaca_status', '')}:{filled_qty_text}:{filled_avg_price_text}"
-                    side = tracked.get("side", "")
-                    symbol = tracked.get("symbol", "")
-                    summary = f"{side} {filled_qty_text} {symbol} filled @ {filled_avg_price_text} · {broker_order_id}"
-                    record_event_once(
-                        position_id_for_symbol(symbol),
-                        "filled",
-                        "alpaca_tracking",
-                        {
-                            "event_key": fill_event_key,
-                            "details_summary": summary,
-                            "broker_order_id": broker_order_id,
-                            "order_id": broker_order_id,
-                            "client_order_id": tracked.get("client_order_id", ""),
-                            "symbol": symbol,
-                            "side": side,
-                            "qty": tracked.get("suggested_quantity", tracked.get("qty", "")),
-                            "filled_qty": tracked.get("filled_qty", ""),
-                            "filled_avg_price": tracked.get("filled_avg_price", ""),
-                            "order_type": tracked.get("type", tracked.get("order_type", "")),
-                            "status": tracked.get("alpaca_status", ""),
-                            "submitted_at": tracked.get("submitted_at", ""),
-                            "filled_at": tracked.get("filled_at", tracked.get("updated_at", "")),
-                            "open_or_close": tracked.get("open_or_close", "open"),
-                            "session_mode": "24x5" if _boolish(tracked.get("extended_hours"), False) else "regular",
-                            "extended_hours": tracked.get("extended_hours", ""),
-                            "tracking_path": str(tracking_path),
-                        },
-                        event_key=fill_event_key,
-                    )
+                    record_alpaca_fill_once(tracked, tracking_path=tracking_path)
             except Exception as exc:
                 tracking_rows.append({**row, "message": f"tracking_error: {exc}"})
         try:
@@ -322,10 +374,25 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
 
     result_rows = []
     position_intent_rows = []
-    can_submit = config.submit_orders and not plan_only and config.paper_trading_enabled and not config.live_trading_enabled
+    owner_allows_submit, owner_block_reason = legacy_paper_trader_can_submit(config)
+    can_submit = config.submit_orders and not plan_only and config.paper_trading_enabled and not config.live_trading_enabled and owner_allows_submit
     if config.submit_orders and config.live_trading_enabled:
         raise RuntimeError("Live trading is disabled by policy for this platform")
-    if can_submit and not plan.empty:
+    if config.submit_orders and not plan_only and config.paper_trading_enabled and not config.live_trading_enabled and not owner_allows_submit:
+        for order in plan.to_dict("records"):
+            eligible = bool(order.get("order_eligible")) and int(order.get("suggested_quantity", 0) or 0) >= 1
+            if str(order.get("trade_quality_status", "")).lower() in {"approved", "reduced"} and eligible:
+                result_rows.append(_result_row(order, "dry_run", message=owner_block_reason))
+                record_event_safely(
+                    position_id_for_symbol(order.get("symbol", "")),
+                    "guardrail_blocked",
+                    "paper_trader",
+                    {"symbol": order.get("symbol", ""), "reason": owner_block_reason, "stage": "execution_owner", "execution_owner": getattr(config, "execution_owner", "")},
+                )
+            else:
+                message = format_reasons(order.get("trade_quality_reason", "trade_quality_rejected"))
+                result_rows.append(_result_row(order, "rejected", message=message))
+    elif can_submit and not plan.empty:
         client = asset_client or AlpacaPaperClient(config)
         context = load_submission_context(client)
         seen_client_ids: set[str] = set()
@@ -462,7 +529,9 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
         "result_rejected": sum(1 for row in result_rows if row["status"] == "rejected"),
         "result_error": sum(1 for row in result_rows if row["status"] == "error"),
         "result_dry_run": sum(1 for row in result_rows if row["status"] == "dry_run"),
-        "dry_run": plan_only or not config.submit_orders,
+        "dry_run": plan_only or not config.submit_orders or not owner_allows_submit,
+        "execution_owner": getattr(config, "execution_owner", ""),
+        "execution_owner_block_reason": "" if owner_allows_submit else owner_block_reason,
         "plan_only": plan_only,
         "shorting_enabled": config.allow_short_selling,
         "paper_trading_enabled": config.paper_trading_enabled,
