@@ -1,7 +1,7 @@
 version: 1
 autopilot:
   open_enabled: true
-  rotate_enabled: true
+  rotate_enabled: false
   max_auto_opens_per_day: 20
   max_positions: 20
   min_account_equity_usd: 250
@@ -71,3 +71,33 @@ basket_risk:
   min_positions_for_percentage_rule: 5
   small_book_basket_return_floor_pct: -0.015
   small_book_loss_floor_pct: -0.020
+
+anti_churn:
+  enabled: true
+  minimum_hold_minutes: 30
+  cooldown_minutes_after_close: 60
+  block_same_cycle_open_close: true
+  block_reverse_same_symbol_same_day: true
+  allow_early_close_reasons:
+    - hard_stop_hit
+    - take_profit_hit
+    - manual_kill
+    - broker_error_correction
+    - duplicate_order_correction
+    - emergency_risk_breach
+
+position_lifecycle:
+  require_exit_confirmation: true
+  stale_signal_is_exit_reason: false
+  unknown_signal_is_exit_reason: false
+  defensive_close_requires_loss_or_risk_breach: true
+
+rotation:
+  rotate_enabled: false
+
+same_day:
+  same_day_auto_execution: false
+  same_day_reversal_close: false
+
+extended_hours:
+  enabled: false

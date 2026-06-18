@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
+from stockml.autopilot.position_lifecycle_guard import evaluate_exit_request
 
 
 def _text(value: Any) -> str:
@@ -96,7 +97,19 @@ def classify_action_queue_item(
         if decision == "close" and status != "close_now":
             status = "close_candidate"
             out["position_health_status"] = status
-        if status == "close_now":
+        lifecycle_check = evaluate_exit_request(out, reason=reason) if decision == "close" else {"allowed": True, "reason": "allowed"}
+        if decision == "close" and not lifecycle_check["allowed"]:
+            out.update(
+                {
+                    "decision": "manual_review",
+                    "operator_call": "warning",
+                    "operator_call_label": "Manual review",
+                    "operator_call_reason": lifecycle_check["reason"],
+                    "operator_apply_enabled": False,
+                    "position_health_status": "manual_review",
+                }
+            )
+        elif status == "close_now":
             automatic = _close_is_automatic(close_automation_mode) and decision == "close"
             out.update(
                 {

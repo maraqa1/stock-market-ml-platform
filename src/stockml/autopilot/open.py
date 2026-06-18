@@ -20,6 +20,7 @@ from stockml.intraday import kill_switch
 from stockml.safety.paper_only_guard import paper_only_guard
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
+from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.execution_engine import submit_paper_order_payload
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.signal_alignment_gate import evaluate_entry_signal_alignment

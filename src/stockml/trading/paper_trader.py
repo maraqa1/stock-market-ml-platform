@@ -12,6 +12,7 @@ from stockml.decisions.reason_formatter import format_reasons
 from stockml.common.paths import MODEL_OUTPUTS_DIR, PORTAL_OUTPUTS_DIR, ensure_data_dirs, latest_file, timestamp
 from stockml.services.events import position_id_for_symbol, record_event_safely
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
+from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, autopilot_conflicting_symbols, reconcile_autopilot_state_from_tracking
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
@@ -240,6 +241,32 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
     stamp = timestamp()
     plan = _stamp_client_order_ids(plan, stamp)
     plan = _reject_autopilot_conflicts(plan)
+    if not plan.empty and "symbol" in plan.columns:
+        eligible_plan = plan[
+            plan.get("trade_quality_status", pd.Series("", index=plan.index)).astype(str).str.lower().isin({"approved", "reduced"})
+            & plan.get("order_eligible", pd.Series(False, index=plan.index)).astype(bool)
+        ]
+        actions = [
+            {"symbol": row.get("symbol"), "action": "open", "side": row.get("side")}
+            for row in eligible_plan.to_dict("records")
+        ]
+        _, anti_churn_report = guard_actions(
+            actions,
+            trade_history=load_recent_trade_history(),
+            now=pd.Timestamp.utcnow().to_pydatetime(),
+            cycle_id=f"paper_basket_{stamp}",
+        )
+        if not anti_churn_report.empty:
+            anti_path = write_anti_churn_report(anti_churn_report, stamp=stamp)
+            blocked_by_symbol = {str(row.get("symbol") or "").upper(): str(row.get("reason") or "anti_churn_blocked") for row in anti_churn_report.to_dict("records")}
+            mask = plan["symbol"].astype(str).str.upper().isin(blocked_by_symbol)
+            plan.loc[mask, "trade_quality_status"] = "rejected"
+            plan.loc[mask, "trade_quality_reason"] = plan.loc[mask].apply(lambda row: _append_reason(row.get("trade_quality_reason", ""), "anti_churn_" + blocked_by_symbol.get(str(row.get("symbol") or "").upper(), "blocked")), axis=1)
+            plan.loc[mask, "approved_notional"] = 0.0
+            plan.loc[mask, "notional"] = 0.0
+            plan.loc[mask, "suggested_quantity"] = 0
+            plan.loc[mask, "order_eligible"] = False
+            plan.loc[mask, "anti_churn_report_path"] = str(anti_path)
     candidate_pool_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_candidate_pool_{stamp}.csv"
     plan_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_plan_{stamp}.csv"
     result_path = PORTAL_OUTPUTS_DIR / f"08_alpaca_paper_order_results_{stamp}.csv"

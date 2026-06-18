@@ -29,6 +29,7 @@ from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
 from stockml.trading.alpaca_client import AlpacaPaperClient
 from stockml.trading.config import alpaca_config
+from stockml.trading.anti_churn_guard import enrich_open_positions_with_order_history, guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
@@ -683,6 +684,32 @@ def apply_paper_autopilot_decisions(
     opens remain delegated to the guarded auto-open path.
     """
     candidates = _auto_close_candidates(root, positions, state)
+    anti_churn_blocked = 0
+    anti_churn_path = ""
+    if not candidates.empty:
+        position_rows = positions.to_dict("records") if isinstance(positions, pd.DataFrame) else list(positions or [])
+        enriched_positions = enrich_open_positions_with_order_history(position_rows, root=root)
+        actions = [
+            {
+                "symbol": row.get("__symbol") or row.get("symbol"),
+                "action": "close",
+                "side": "sell",
+                "reason": row.get("__autopilot_close_reason") or row.get("decision_reason"),
+            }
+            for row in candidates.to_dict("records")
+        ]
+        allowed_actions, anti_churn_report = guard_actions(
+            actions,
+            open_positions=enriched_positions,
+            trade_history=load_recent_trade_history(root=root),
+            now=datetime.now(timezone.utc),
+            cycle_id=f"paper_autopilot_close_{timestamp()}",
+        )
+        if not anti_churn_report.empty:
+            anti_churn_blocked = len(anti_churn_report)
+            anti_churn_path = str(write_anti_churn_report(anti_churn_report, root=root))
+            allowed_symbols = {str(row.get("symbol") or "").upper() for row in allowed_actions}
+            candidates = candidates[candidates["__symbol"].astype(str).str.upper().isin(allowed_symbols)].copy()
     if candidates.empty:
         return {
             "autopilot_actions": 0,
@@ -697,6 +724,8 @@ def apply_paper_autopilot_decisions(
             "autopilot_open_submitted": 0,
             "autopilot_open_blocked": 0,
             "autopilot_open_notes": "",
+            "autopilot_anti_churn_blocked": anti_churn_blocked,
+            "autopilot_anti_churn_report_path": anti_churn_path,
         }
 
     apply_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
@@ -758,6 +787,8 @@ def apply_paper_autopilot_decisions(
         "autopilot_trailing_close_submitted": trailing_submitted,
         "autopilot_replace_close_submitted": replace_submitted,
         "autopilot_action_notes": "; ".join(notes[:10]),
+        "autopilot_anti_churn_blocked": anti_churn_blocked,
+        "autopilot_anti_churn_report_path": anti_churn_path,
     }
 
 
