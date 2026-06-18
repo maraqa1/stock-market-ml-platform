@@ -2,7 +2,7 @@
 Description=Run StockML synchronized intraday trading clock during market coverage
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 13..21:0/5:00 UTC
+OnCalendar=Mon..Fri *-*-* 00..23:0/5:00 UTC
 Persistent=true
 Unit=stockml-intraday-trading-clock.service
 

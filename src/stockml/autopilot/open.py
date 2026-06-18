@@ -22,8 +22,9 @@ from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.execution_engine import submit_paper_order_payload
-from stockml.trading.order_builder import validate_order_payload
+from stockml.trading.order_builder import extended_limit_price, validate_order_payload
 from stockml.trading.signal_alignment_gate import evaluate_entry_signal_alignment
+from stockml.trading.submission_guards import asset_is_overnight_tradable
 
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "autopilot.yaml"
@@ -1393,15 +1394,29 @@ def apply_auto_open(
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_shortable", details=asset_details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:asset_not_shortable")
             continue
+        extended = bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled)
+        if extended and not asset_is_overnight_tradable(asset):
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_overnight_tradable", details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:asset_not_overnight_tradable")
+            continue
+        current_price = _candidate_price(candidate, details)
+        limit_price = extended_limit_price(pd.Series({**candidate, **details, "current_price": current_price}), side, trade_cfg.overnight_limit_buffer_bps) if extended else None
+        if extended and limit_price is None:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="extended_hours_limit_price_missing", details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:extended_hours_limit_price_missing")
+            continue
         order = {
             "symbol": symbol,
             "side": side,
-            "type": "market",
+            "type": "limit" if extended else "market",
             "time_in_force": "day",
-            "extended_hours": False,
+            "extended_hours": extended,
             "client_order_id": f"stockml-autopilot-{stamp.strftime('%Y%m%d%H%M%S')}-{symbol}-{side}"[:48],
         }
-        current_price = _candidate_price(candidate, details)
+        if extended:
+            order["limit_price"] = limit_price
         qty = _whole_share_qty(order_size, current_price)
         if qty < 1 and current_price > 0:
             order_size = round(min(float(trade_cfg.max_notional_per_order), max(order_size, current_price)), 2)

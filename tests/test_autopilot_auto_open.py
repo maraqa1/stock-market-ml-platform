@@ -2059,3 +2059,45 @@ def test_paper_autopilot_tick_does_not_auto_open_during_eod(monkeypatch, tmp_pat
     assert state["phase"] == "monitoring_positions"
     assert state["autopilot_open_submitted"] == 0
     assert state["eod_state"] == "review"
+
+
+def test_auto_open_uses_overnight_limit_order_when_24_5_enabled():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True, "overnight_tradable": True})
+
+    result = apply_auto_open(
+        [_candidate("NVTS", 0.71)],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5),
+        alpaca_cfg=_trade_config(extended_hours=True, overnight_trading_enabled=True, overnight_limit_buffer_bps=50),
+        client=client,
+        now=datetime(2026, 6, 18, 10, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["type"] == "limit"
+    assert client.orders[0]["extended_hours"] is True
+    assert client.orders[0]["limit_price"] > 0
+
+
+def test_auto_open_blocks_24_5_order_when_asset_not_overnight_tradable():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True, "overnight_tradable": False})
+
+    result = apply_auto_open(
+        [_candidate("NVTS", 0.71)],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5),
+        alpaca_cfg=_trade_config(extended_hours=True, overnight_trading_enabled=True),
+        client=client,
+        now=datetime(2026, 6, 18, 10, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "asset_not_overnight_tradable" in result["autopilot_open_notes"]
+    assert client.orders == []

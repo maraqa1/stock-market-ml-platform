@@ -10,7 +10,7 @@ def test_intraday_trading_clock_systemd_units_are_utc_and_synchronized():
 
     assert "scripts/run_intraday_trading_clock.py" in service
     assert "Environment=PYTHONPATH=src" in service
-    assert "OnCalendar=Mon..Fri *-*-* 13..21:0/5:00 UTC" in timer
+    assert "OnCalendar=Mon..Fri *-*-* 00..23:0/5:00 UTC" in timer
     assert "Unit=stockml-intraday-trading-clock.service" in timer
 
 
@@ -27,10 +27,11 @@ def test_intraday_trading_clock_script_runs_pipeline_in_order():
     assert refresh_index < scoring_index < forecast_index < rotation_index < autopilot_index < snapshot_index
 
 
-def test_intraday_trading_clock_disables_auto_open_when_refresh_skips():
+def test_intraday_trading_clock_allows_overnight_auto_open_when_market_closed():
     script = (ROOT / "scripts" / "run_intraday_trading_clock.py").read_text(encoding="utf-8")
 
-    assert 'allow_auto_open = refresh.get("status") == "ok"' in script
+    assert "trading_cfg.overnight_trading_enabled" in script
+    assert "overnight_enabled_market_closed" in script
     assert "autopilot_tick(allow_auto_open=allow_auto_open)" in script
 
 
@@ -49,3 +50,9 @@ def test_intraday_trading_clock_rearms_benign_completed_autopilot():
     assert "paper_autopilot_rearm:" in script
     assert "autopilot_not_running" in script
     assert "autopilot_error" in script
+
+
+def test_intraday_clock_allows_overnight_auto_open_gate():
+    script = Path("scripts/run_intraday_trading_clock.py").read_text()
+    assert "overnight_enabled_market_closed" in script
+    assert "trading_cfg.overnight_trading_enabled" in script
