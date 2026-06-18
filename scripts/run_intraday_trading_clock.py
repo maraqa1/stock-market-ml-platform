@@ -21,6 +21,7 @@ from stockml.trading.paper_autopilot import tick as autopilot_tick
 from stockml.trading.intraday_handoff_trace import write_intraday_handoff_trace
 from stockml.trading.snapshot_export import export_trading_snapshot
 from stockml.trading.config import alpaca_config
+from stockml.trading.session_mode import classify_session_mode
 
 from scripts.run_rotation_recommendations import main as run_rotation_recommendations
 
@@ -60,8 +61,10 @@ def main() -> int:
     run_rotation_recommendations()
 
     trading_cfg = alpaca_config()
+    session_mode = classify_session_mode()
+    print("session_mode:", session_mode)
     market_closed = refresh.get("reason") == "market_closed" or refresh.get("status") == "market_closed"
-    overnight_auto_open = bool(trading_cfg.overnight_trading_enabled and market_closed)
+    overnight_auto_open = bool(trading_cfg.overnight_trading_enabled and market_closed and session_mode != "weekend_closed")
     allow_auto_open = refresh.get("status") == "ok" or overnight_auto_open
     if overnight_auto_open:
         print("auto_open_gate:", "overnight_enabled_market_closed")

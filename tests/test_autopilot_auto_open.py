@@ -2070,16 +2070,23 @@ def test_auto_open_uses_overnight_limit_order_when_24_5_enabled():
         [],
         mode="paper_autopilot",
         engine=engine,
-        config=AutoOpenConfig(open_enabled=True, max_positions=5),
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, min_position_value_usd=1),
         alpaca_cfg=_trade_config(extended_hours=True, overnight_trading_enabled=True, overnight_limit_buffer_bps=50),
         client=client,
-        now=datetime(2026, 6, 18, 10, 0, tzinfo=timezone.utc),
+        now=datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc),
     )
 
     assert result["autopilot_open_submitted"] == 1
     assert client.orders[0]["type"] == "limit"
     assert client.orders[0]["extended_hours"] is True
     assert client.orders[0]["limit_price"] > 0
+    assert client.orders[0]["qty"] == "1"
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["details"]["session_mode"] == "overnight_24_5"
+    assert row["details"]["order_policy"] == "overnight_24_5"
+    assert row["details"]["extended_hours"] is True
+    assert row["details"]["session_size_multiplier"] == 0.1
 
 
 def test_auto_open_blocks_24_5_order_when_asset_not_overnight_tradable():
@@ -2091,10 +2098,10 @@ def test_auto_open_blocks_24_5_order_when_asset_not_overnight_tradable():
         [],
         mode="paper_autopilot",
         engine=engine,
-        config=AutoOpenConfig(open_enabled=True, max_positions=5),
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, min_position_value_usd=1),
         alpaca_cfg=_trade_config(extended_hours=True, overnight_trading_enabled=True),
         client=client,
-        now=datetime(2026, 6, 18, 10, 0, tzinfo=timezone.utc),
+        now=datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc),
     )
 
     assert result["autopilot_open_submitted"] == 0

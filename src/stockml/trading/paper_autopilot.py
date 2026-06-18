@@ -34,6 +34,7 @@ from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.profit_taking import ProfitTakingRules, classify_profit_taking
+from stockml.trading.session_mode import classify_session_mode
 from stockml.trading.stale_entry_orders import cancel_stale_entry_orders
 
 
@@ -152,6 +153,7 @@ def _default_state() -> dict[str, Any]:
         "termination_reason": "",
         "last_tick_at": "",
         "last_error": "",
+        "session_mode": "",
         "open_orders": 0,
         "broker_open_orders": 0,
         "tracked_open_orders": 0,
@@ -1072,6 +1074,7 @@ def tick(
                 "last_tick_at": stamp,
                 "last_error": "",
                 "termination_reason": termination_reason,
+                "session_mode": classify_session_mode(),
                 "open_orders": open_orders,
                 "broker_open_orders": broker_open_orders,
                 "tracked_open_orders": tracked_open_orders,

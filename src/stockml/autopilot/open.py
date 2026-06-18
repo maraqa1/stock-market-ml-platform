@@ -25,6 +25,8 @@ from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_hi
 from stockml.trading.execution_engine import submit_paper_order_payload
 from stockml.trading.order_builder import extended_limit_price, validate_order_payload
 from stockml.trading.position_intent_guard import PositionIntentConfig, guard_order_submission, record_position_intent_block, write_position_intent_report
+from stockml.trading.session_mode import classify_session_mode
+from stockml.trading.session_order_policy import session_order_policy
 from stockml.trading.signal_alignment_gate import evaluate_entry_signal_alignment
 from stockml.trading.submission_guards import asset_is_overnight_tradable
 
@@ -1309,7 +1311,7 @@ def apply_auto_open(
                 "symbol": symbol,
                 "action": "open",
                 "candidate_source": details.get("fallback_reason") or details.get("model_evidence_source") or "paper_autopilot",
-                "session_mode": "24x5" if bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled) else "regular",
+                "session_mode": classify_session_mode(stamp),
                 "extended_hours": bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled),
             },
             event_key=scan_event_key,
@@ -1479,28 +1481,51 @@ def apply_auto_open(
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_shortable", details=asset_details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:asset_not_shortable")
             continue
-        extended = bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled)
-        if extended and not asset_is_overnight_tradable(asset):
-            blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_overnight_tradable", details=asset_details, engine=db, now=stamp)
-            notes.append(f"{symbol}:blocked:asset_not_overnight_tradable")
-            continue
         current_price = _candidate_price(candidate, details)
-        limit_price = extended_limit_price(pd.Series({**candidate, **details, "current_price": current_price}), side, trade_cfg.overnight_limit_buffer_bps) if extended else None
-        if extended and limit_price is None:
+        quote_data = {**candidate, **details, "current_price": current_price}
+        requested_order_type = "limit" if bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled) else "market"
+        policy = session_order_policy(now=stamp, asset=asset, quote=quote_data, requested_order_type=requested_order_type)
+        asset_details = {
+            **asset_details,
+            "session_mode": policy.session_mode,
+            "order_policy": policy.order_policy,
+            "extended_hours": policy.extended_hours,
+            "overnight_tradable": asset_is_overnight_tradable(asset),
+            "spread_bps": policy.spread_bps,
+            "quote_freshness_seconds": policy.quote_freshness_seconds,
+            "session_reject_reason": policy.session_reject_reason,
+            "session_max_spread_bps": policy.max_spread_bps,
+            "session_size_multiplier": policy.size_multiplier,
+        }
+        if not policy.allowed:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="extended_hours_limit_price_missing", details=asset_details, engine=db, now=stamp)
-            notes.append(f"{symbol}:blocked:extended_hours_limit_price_missing")
+            reason = policy.session_reject_reason or "session_policy_blocked"
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=reason, details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:{reason}")
+            continue
+        if policy.size_multiplier != 1.0:
+            order_size = round(order_size * policy.size_multiplier, 2)
+            asset_details["session_adjusted_size_usd"] = order_size
+        if order_size < float(cfg.min_position_value_usd):
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="session_size_below_min_position_value", details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:session_size_below_min_position_value")
+            continue
+        limit_price = extended_limit_price(pd.Series({**candidate, **details, "current_price": current_price}), side, trade_cfg.overnight_limit_buffer_bps) if policy.order_type == "limit" else None
+        if policy.order_type == "limit" and limit_price is None:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="session_limit_price_missing", details=asset_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:session_limit_price_missing")
             continue
         order = {
             "symbol": symbol,
             "side": side,
-            "type": "limit" if extended else "market",
+            "type": policy.order_type,
             "time_in_force": "day",
-            "extended_hours": extended,
+            "extended_hours": policy.extended_hours,
             "client_order_id": f"stockml-autopilot-{stamp.strftime('%Y%m%d%H%M%S')}-{symbol}-{side}"[:48],
         }
-        if extended:
+        if policy.order_type == "limit":
             order["limit_price"] = limit_price
         qty = _whole_share_qty(order_size, current_price)
         if qty < 1 and current_price > 0:
