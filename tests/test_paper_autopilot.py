@@ -703,3 +703,41 @@ def test_monitor_decision_summary_reads_latest_position_decisions(tmp_path):
     assert summary["monitor_watch"] == 1
     assert summary["monitor_close"] == 1
     assert summary["monitor_rotate"] == 1
+
+
+def test_paper_autopilot_appends_fallback_candidates_after_strong_candidate(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame(columns=["symbol", "alpaca_status"]).to_csv(tracking, index=False)
+    pd.DataFrame(columns=["symbol", "qty"]).to_csv(positions, index=False)
+    captured = {}
+
+    def apply_open(candidates, positions_records, mode):
+        captured["symbols"] = [candidate["symbol"] for candidate in candidates]
+        captured["mode"] = mode
+        return {
+            "autopilot_open_attempted": len(candidates),
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": len(candidates),
+            "autopilot_open_notes": "all_blocked_for_test",
+        }
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [{"symbol": "LPRO", "promotion_score": 1.0}],
+        per_symbol_forecast_candidate_loader=lambda: [{"symbol": "RXT", "promotion_score": 0.9}],
+        near_miss_candidate_loader=lambda: [{"symbol": "RXT", "promotion_score": 0.8}],
+        plan_candidate_loader=lambda: [{"symbol": "BNY", "promotion_score": 0.7}],
+        fallback_candidate_loader=lambda: [{"symbol": "FLAT", "promotion_score": 0.6}],
+        auto_open_applier=apply_open,
+    )
+
+    assert captured["mode"] == "paper_autopilot"
+    assert captured["symbols"] == ["LPRO", "RXT", "BNY"]
+    assert state["autopilot_open_attempted"] == 3
+    assert state["autopilot_open_blocked"] == 3
