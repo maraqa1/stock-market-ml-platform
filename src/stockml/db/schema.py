@@ -49,6 +49,7 @@ POSITION_EVENT_TYPES = (
     "candidate_skipped_anti_churn",
     "candidate_skipped_meta_label",
     "candidate_skipped_not_overnight_tradable",
+    "position_intent_blocked",
 )
 KILL_SWITCH_EVENT_TYPES = ("tripped", "resumed")
 INTRADAY_VERDICTS = ("allow_long", "allow_short", "hold", "block", "data_unavailable")

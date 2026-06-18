@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS position_events (
             'candidate_skipped_duplicate',
             'candidate_skipped_anti_churn',
             'candidate_skipped_meta_label',
-            'candidate_skipped_not_overnight_tradable'
+            'candidate_skipped_not_overnight_tradable',
+            'position_intent_blocked'
         )
     )
 );

@@ -24,6 +24,7 @@ from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.execution_engine import submit_paper_order_payload
 from stockml.trading.order_builder import extended_limit_price, validate_order_payload
+from stockml.trading.position_intent_guard import PositionIntentConfig, guard_order_submission, record_position_intent_block, write_position_intent_report
 from stockml.trading.signal_alignment_gate import evaluate_entry_signal_alignment
 from stockml.trading.submission_guards import asset_is_overnight_tradable
 
@@ -1231,6 +1232,7 @@ def apply_auto_open(
     held = {str(row.get("symbol") or "").upper() for row in open_positions if row.get("symbol")}
     opened = 0
     blocked = 0
+    position_intent_rows: list[dict[str, Any]] = []
     notes: list[str] = []
     holding_reviews = latest_holding_review_map(root) if cfg.holding_review_gate_enabled and root is not None else {}
 
@@ -1523,6 +1525,25 @@ def apply_auto_open(
             notes.append(f"{symbol}:blocked:submit_orders_disabled")
             continue
         try:
+            intent_decision, intent_row = guard_order_submission(
+                order,
+                client=broker,
+                config=PositionIntentConfig(
+                    minimum_hold_minutes=30,
+                    allow_short_selling=getattr(trade_cfg, "allow_short_selling", True),
+                ),
+                now=stamp,
+                cycle_id=stamp.strftime("%Y%m%d_%H%M%S"),
+                order_source="autopilot_open",
+            )
+            if not intent_decision.allowed:
+                blocked += 1
+                position_intent_rows.append(intent_row)
+                report_path = write_position_intent_report(position_intent_rows, stamp=stamp.strftime("%Y%m%d_%H%M%S"))
+                record_position_intent_block(intent_row, report_path=report_path)
+                _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=intent_decision.block_reason, details={**asset_details, "order": order, "position_intent": intent_row}, engine=db, now=stamp)
+                notes.append(f"{symbol}:blocked:{intent_decision.block_reason}")
+                continue
             paper_only_guard(live_trading_enabled=trade_cfg.live_trading_enabled)
             response = submit_paper_order_payload(order, config=trade_cfg, client=broker)
             order_id = str(response.get("id") or "")

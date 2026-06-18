@@ -17,6 +17,7 @@ from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, 
 from stockml.trading.config import alpaca_config
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, latest_signal_table
+from stockml.trading.position_intent_guard import PositionIntentConfig, guard_order_submission, record_position_intent_block, write_position_intent_report
 from stockml.trading.shortlist_snapshots import write_shortlist_snapshot
 from stockml.trading.submission_guards import asset_is_overnight_tradable, load_submission_context, validate_order
 
@@ -320,6 +321,7 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
             )
 
     result_rows = []
+    position_intent_rows = []
     can_submit = config.submit_orders and not plan_only and config.paper_trading_enabled and not config.live_trading_enabled
     if config.submit_orders and config.live_trading_enabled:
         raise RuntimeError("Live trading is disabled by policy for this platform")
@@ -370,6 +372,22 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
                         "paper_trader",
                         {"symbol": order.get("symbol", ""), "reason": guard_message, "stage": "submission_preflight"},
                     )
+                    continue
+                intent_decision, intent_row = guard_order_submission(
+                    {**order, **request},
+                    client=client,
+                    config=PositionIntentConfig(
+                        minimum_hold_minutes=30,
+                        allow_short_selling=getattr(config, "allow_short_selling", True),
+                    ),
+                    cycle_id=stamp,
+                    order_source="paper_trader",
+                )
+                if not intent_decision.allowed:
+                    position_intent_rows.append(intent_row)
+                    report_path = write_position_intent_report(position_intent_rows, stamp=stamp)
+                    record_position_intent_block(intent_row, report_path=report_path)
+                    result_rows.append(_result_row(order, "rejected", message=intent_decision.block_reason, diagnostics={"submitted_payload": str(request)}))
                     continue
                 paper_only_guard(live_trading_enabled=config.live_trading_enabled)
                 response = client.submit_order(request)
