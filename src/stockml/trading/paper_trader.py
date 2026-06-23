@@ -14,11 +14,13 @@ from stockml.services.events import position_id_for_symbol, record_event_once, r
 from stockml.db.connection import get_engine
 from stockml.db.schema import position_events
 from sqlalchemy import select
+from stockml.trading.activity_journal import enrich_activity_details
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, autopilot_conflicting_symbols, reconcile_autopilot_state_from_tracking
 from stockml.trading.config import alpaca_config
 from stockml.trading.execution_owner import LEGACY_BLOCK_REASON, legacy_paper_trader_can_submit
+from stockml.trading.lifecycle_ids import LINEAGE_FIELDS, candidate_lineage, fill_lineage, order_lineage
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, latest_signal_table
 from stockml.trading.position_intent_guard import PositionIntentConfig, guard_order_submission, record_position_intent_block, write_position_intent_report
@@ -45,11 +47,12 @@ def latest_model_freshness(signal_file: Optional[Path] = None) -> tuple[bool, st
 def _result_row(order: dict, status: str, order_id: str = "", message: str = "", response: Optional[dict] = None, diagnostics: Optional[dict] = None) -> dict:
     response = response or {}
     diagnostics = diagnostics or {}
-    return {
+    row = {
         "symbol": order.get("symbol", ""),
         "status": status,
         "alpaca_status": response.get("status", ""),
         "order_id": order_id,
+        "broker_order_id": order_id,
         "client_order_id": order.get("client_order_id", ""),
         "side": order.get("side", ""),
         "notional": order.get("notional", ""),
@@ -65,6 +68,14 @@ def _result_row(order: dict, status: str, order_id: str = "", message: str = "",
         "api_error": diagnostics.get("api_error", ""),
         "submitted_payload": diagnostics.get("submitted_payload", ""),
     }
+    for field in (*LINEAGE_FIELDS, "lineage_warning"):
+        if field not in row:
+            row[field] = order.get(field, "")
+    if order_id:
+        lineage = order_lineage({**order, **row}, broker_order_id=order_id)
+        row.update({key: value for key, value in lineage.values.items() if value not in (None, "")})
+        row["lineage_warning"] = lineage.values.get("lineage_warning", "")
+    return row
 
 
 def _clean_text(value: object) -> str:
@@ -168,30 +179,31 @@ def record_alpaca_fill_once(tracked: dict, *, tracking_path: Path) -> bool:
     fill_event_key = f"{broker_order_id}:filled:{status}:{filled_qty_text}:{filled_avg_price_text}"
     side = tracked.get("side", "")
     summary = f"{side} {filled_qty_text} {symbol} filled @ {filled_avg_price_text} · {broker_order_id}"
+    fill_payload = {
+        "event_key": fill_event_key,
+        "details_summary": summary,
+        "broker_order_id": broker_order_id,
+        "order_id": broker_order_id,
+        "client_order_id": tracked.get("client_order_id", ""),
+        "symbol": symbol,
+        "side": side,
+        "qty": tracked.get("suggested_quantity", tracked.get("qty", "")),
+        "filled_qty": tracked.get("filled_qty", ""),
+        "filled_avg_price": tracked.get("filled_avg_price", ""),
+        "order_type": tracked.get("type", tracked.get("order_type", "")),
+        "status": tracked.get("alpaca_status", ""),
+        "submitted_at": tracked.get("submitted_at", ""),
+        "filled_at": tracked.get("filled_at", tracked.get("updated_at", "")),
+        "open_or_close": tracked.get("open_or_close", "open"),
+        "session_mode": tracked.get("session_mode") or ("overnight_24_5" if _boolish(tracked.get("extended_hours"), False) else "regular_session"),
+        "extended_hours": tracked.get("extended_hours", ""),
+        "tracking_path": str(tracking_path),
+    }
     return record_event_once(
         position_id_for_symbol(symbol),
         "filled",
         "alpaca_tracking",
-        {
-            "event_key": fill_event_key,
-            "details_summary": summary,
-            "broker_order_id": broker_order_id,
-            "order_id": broker_order_id,
-            "client_order_id": tracked.get("client_order_id", ""),
-            "symbol": symbol,
-            "side": side,
-            "qty": tracked.get("suggested_quantity", tracked.get("qty", "")),
-            "filled_qty": tracked.get("filled_qty", ""),
-            "filled_avg_price": tracked.get("filled_avg_price", ""),
-            "order_type": tracked.get("type", tracked.get("order_type", "")),
-            "status": tracked.get("alpaca_status", ""),
-            "submitted_at": tracked.get("submitted_at", ""),
-            "filled_at": tracked.get("filled_at", tracked.get("updated_at", "")),
-            "open_or_close": tracked.get("open_or_close", "open"),
-            "session_mode": "24x5" if _boolish(tracked.get("extended_hours"), False) else "regular",
-            "extended_hours": tracked.get("extended_hours", ""),
-            "tracking_path": str(tracking_path),
-        },
+        enrich_activity_details(fill_payload, fill_lineage({**tracked, **fill_payload})),
         event_key=fill_event_key,
     )
 
@@ -229,6 +241,32 @@ def _mark_overnight_asset_eligibility(candidate_pool: pd.DataFrame, client: Alpa
             out.at[idx, "approved_notional"] = 0.0
             out.at[idx, "suggested_quantity"] = 0
             out.at[idx, "order_eligible"] = False
+    return out
+
+
+def _attach_plan_lineage(plan: pd.DataFrame, *, cycle_id: str, pipeline_run_id: str, model_version: str) -> pd.DataFrame:
+    if plan.empty or "symbol" not in plan.columns:
+        return plan
+    out = plan.copy()
+    for field in (*LINEAGE_FIELDS, "lineage_warning"):
+        if field not in out.columns:
+            out[field] = ""
+    for idx, row in out.iterrows():
+        session_mode = _clean_text(row.get("session_mode")) or ("overnight_24_5" if _boolish(row.get("extended_hours"), False) else "regular_session")
+        strategy_mode = _clean_text(row.get("strategy_mode")) or _clean_text(row.get("strategy_stream")) or _clean_text(row.get("trading_stream")) or "multi_day_forecast"
+        lineage = candidate_lineage(
+            symbol=row.get("symbol"),
+            cycle_id=cycle_id,
+            pipeline_run_id=pipeline_run_id,
+            candidate_source=row.get("candidate_source") or "paper_order_plan",
+            strategy_mode=strategy_mode,
+            session_mode=session_mode,
+            model_version=model_version,
+            side=row.get("side"),
+            client_order_id=row.get("client_order_id"),
+        )
+        for key, value in lineage.values.items():
+            out.at[idx, key] = "" if value is None else value
     return out
 
 
@@ -312,6 +350,9 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
         plan = build_order_plan(signals, config)
     stamp = timestamp()
     plan = _stamp_client_order_ids(plan, stamp)
+    pipeline_run_id = Path(model_signal_path).stem if model_signal_path else ""
+    model_version = pipeline_run_id
+    plan = _attach_plan_lineage(plan, cycle_id=stamp, pipeline_run_id=pipeline_run_id, model_version=model_version)
     plan = _reject_autopilot_conflicts(plan)
     if not plan.empty and "symbol" in plan.columns:
         eligible_plan = plan[
@@ -351,11 +392,19 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
             symbol = selected.get("symbol", "")
             cycle_id = stamp
             candidate_source = selected.get("candidate_source", "paper_order_plan")
-            selected_event_key = f"{cycle_id}:{str(symbol).upper()}:{candidate_source}:selected"
-            record_event_once(
-                position_id_for_symbol(symbol),
-                "selected",
-                "paper_order_plan",
+            selected_event_key = selected.get("event_key") or f"{cycle_id}:{str(symbol).upper()}:{candidate_source}:selected"
+            selected_lineage = candidate_lineage(
+                symbol=symbol,
+                cycle_id=cycle_id,
+                pipeline_run_id=selected.get("pipeline_run_id", pipeline_run_id),
+                candidate_source=candidate_source,
+                strategy_mode=selected.get("strategy_mode") or selected.get("strategy_stream") or "multi_day_forecast",
+                session_mode=selected.get("session_mode") or ("overnight_24_5" if _boolish(selected.get("extended_hours"), False) else "regular_session"),
+                model_version=selected.get("model_version", model_version),
+                side=selected.get("side", ""),
+                client_order_id=selected.get("client_order_id", ""),
+            )
+            selected_payload = enrich_activity_details(
                 {
                     "event_key": selected_event_key,
                     "cycle_id": cycle_id,
@@ -369,6 +418,14 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
                     "suggested_quantity": selected.get("suggested_quantity", ""),
                     "plan_path": str(plan_path),
                 },
+                selected_lineage,
+            )
+            selected_payload["event_key"] = selected_event_key
+            record_event_once(
+                position_id_for_symbol(symbol),
+                "selected",
+                "paper_order_plan",
+                selected_payload,
                 event_key=selected_event_key,
             )
 
@@ -459,18 +516,23 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
                 paper_only_guard(live_trading_enabled=config.live_trading_enabled)
                 response = client.submit_order(request)
                 result_rows.append(_result_row(order, "submitted", response.get("id", ""), response=response))
+                submitted_lineage = order_lineage(order, broker_order_id=response.get("id", ""))
                 record_event_safely(
                     position_id_for_symbol(order.get("symbol", "")),
                     "submitted",
                     "paper_trader",
-                    {
-                        "symbol": order.get("symbol", ""),
-                        "order_id": response.get("id", ""),
-                        "client_order_id": order.get("client_order_id", ""),
-                        "side": order.get("side", ""),
-                        "qty": order.get("suggested_quantity", ""),
-                        "alpaca_status": response.get("status", ""),
-                    },
+                    enrich_activity_details(
+                        {
+                            "symbol": order.get("symbol", ""),
+                            "order_id": response.get("id", ""),
+                            "broker_order_id": response.get("id", ""),
+                            "client_order_id": order.get("client_order_id", ""),
+                            "side": order.get("side", ""),
+                            "qty": order.get("suggested_quantity", ""),
+                            "alpaca_status": response.get("status", ""),
+                        },
+                        submitted_lineage,
+                    ),
                 )
             except AlpacaAPIError as exc:
                 result_rows.append(

@@ -97,3 +97,29 @@ def derive_order_intent(*, current_qty: Any, attempted_side: Any, attempted_qty:
         intent = "unknown"
 
     return OrderIntent(intent=intent, current_qty=qty, current_side=side, attempted_side=order_side, attempted_qty=order_qty)
+
+
+LINEAGE_ORDER_INTENTS = {
+    "open_long",
+    "close_long",
+    "reduce_long",
+    "open_short",
+    "cover_short",
+    "reduce_short",
+    "cancel_replace",
+    "manual_close",
+    "unknown",
+}
+
+
+def derive_lineage_intent(*, current_qty: Any, attempted_side: Any, attempted_qty: Any) -> str:
+    intent = derive_order_intent(current_qty=current_qty, attempted_side=attempted_side, attempted_qty=attempted_qty).intent
+    if intent == "increase_long":
+        return "open_long"
+    if intent == "increase_short":
+        return "open_short"
+    if intent == "close_long_then_reverse_short":
+        return "close_long"
+    if intent == "cover_short_then_reverse_long":
+        return "cover_short"
+    return intent if intent in LINEAGE_ORDER_INTENTS else "unknown"

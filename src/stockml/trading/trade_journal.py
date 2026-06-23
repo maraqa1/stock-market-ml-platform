@@ -64,6 +64,22 @@ def build_trade_journal(plan: pd.DataFrame, results: pd.DataFrame | None = None)
         "filled_qty",
         "filled_avg_price",
         "message",
+        "pipeline_run_id",
+        "cycle_id",
+        "signal_id",
+        "candidate_id",
+        "event_key",
+        "client_order_id",
+        "broker_order_id",
+        "position_id",
+        "trade_id",
+        "exit_decision_id",
+        "order_intent",
+        "strategy_mode",
+        "session_mode",
+        "candidate_source",
+        "model_version",
+        "lineage_warning",
     ]
     for col in columns:
         if col not in merged.columns:
