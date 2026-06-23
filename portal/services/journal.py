@@ -265,15 +265,20 @@ def query(filters: JournalFilters, cursor: str | None = None, limit: int = DEFAU
 
 
 def iter_csv(filters: JournalFilters, *, target: Engine | None = None, root: Path | None = None) -> Iterable[str]:
-    payload = query(filters, cursor=None, limit=CSV_LIMIT, target=target, root=root)
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=["id", "event_at", "symbol", "event_type", "source", "details_summary", "position_id"])
     writer.writeheader()
     yield output.getvalue()
     output.seek(0)
     output.truncate(0)
-    for event in payload["events"]:
-        writer.writerow({key: event.get(key, "") for key in writer.fieldnames})
-        yield output.getvalue()
-        output.seek(0)
-        output.truncate(0)
+    cursor = None
+    while True:
+        payload = query(filters, cursor=cursor, limit=MAX_LIMIT, target=target, root=root)
+        for event in payload["events"]:
+            writer.writerow({key: event.get(key, "") for key in writer.fieldnames})
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+        cursor = payload.get("next_cursor")
+        if not cursor:
+            break
