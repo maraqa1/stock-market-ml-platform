@@ -8,6 +8,7 @@ import pandas as pd
 
 from stockml.common.paths import OPERATOR_ACTIONS_DIR, ensure_data_dirs
 from stockml.services.events import position_id_for_symbol, record_event_safely
+from stockml.trading.activity_journal import enrich_exit_activity_details, enrich_monitor_activity_details
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.order_builder import extended_limit_price
@@ -192,16 +193,30 @@ def apply_manual_position_action(
                 position_id_for_symbol(clean_symbol),
                 event_type,
                 "manual_position_actions",
-                {
-                    "symbol": clean_symbol,
-                    "operator_action": clean_action,
-                    "status": result.get("status"),
-                    "final_outcome": result.get("message"),
-                    "order_id": result.get("order_id"),
-                    "client_order_id": result.get("client_order_id"),
-                    "alpaca_status": result.get("alpaca_status"),
-                    "action_path": str(path),
-                },
+                (
+                    enrich_monitor_activity_details(clean_symbol, {
+                        "symbol": clean_symbol,
+                        "operator_action": clean_action,
+                        "status": result.get("status"),
+                        "final_outcome": result.get("message"),
+                        "order_id": result.get("order_id"),
+                        "client_order_id": result.get("client_order_id"),
+                        "alpaca_status": result.get("alpaca_status"),
+                        "action_path": str(path),
+                    })
+                    if clean_action == "keep"
+                    else enrich_exit_activity_details(clean_symbol, {
+                        "symbol": clean_symbol,
+                        "operator_action": clean_action,
+                        "status": result.get("status"),
+                        "final_outcome": result.get("message"),
+                        "order_id": result.get("order_id"),
+                        "broker_order_id": result.get("order_id"),
+                        "client_order_id": result.get("client_order_id"),
+                        "alpaca_status": result.get("alpaca_status"),
+                        "action_path": str(path),
+                    }, reason="manual_close")
+                ),
             )
     result["action_path"] = str(path)
     return result

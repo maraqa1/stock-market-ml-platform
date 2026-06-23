@@ -13,11 +13,19 @@ from sqlalchemy.engine import Engine
 
 from stockml.db.connection import get_engine
 from stockml.db.schema import position_events
+from stockml.trading.lifecycle_ids import lifecycle_position_id_for, normalize_session_mode, trade_id_for
 
 
 LINEAGE_EXPORT_COLUMNS = ["pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "candidate_source", "model_version", "lineage_warning"]
 EXPORT_COLUMNS = ["id", "event_at", "symbol", "event_type", "source", "details_summary", *LINEAGE_EXPORT_COLUMNS]
 DEFAULT_BATCH_SIZE = 500
+
+CANDIDATE_EVENTS = {"selected", "candidate_scanned", "candidate_blocked", "candidate_submitted", "candidate_skipped_duplicate", "candidate_skipped_anti_churn", "candidate_skipped_meta_label", "candidate_skipped_not_overnight_tradable"}
+SUBMITTED_EVENTS = {"submitted", "order_submitted", "candidate_submitted"}
+FILL_EVENTS = {"filled", "close_filled"}
+MONITOR_EVENTS = {"monitor_safe", "monitor_watch", "monitor_rotate", "monitor_close"}
+EXIT_EVENTS = {"monitor_close", "operator_close", "close_submitted", "close_filled"}
+
 
 
 @dataclass(frozen=True)
@@ -139,6 +147,60 @@ def _lineage_value(row: dict[str, Any], field: str) -> Any:
     return "" if value is None else value
 
 
+
+def _append_warning(existing: Any, *warnings: str) -> str:
+    parts = [part for part in str(existing or "").split("|") if part]
+    for warning in warnings:
+        if warning and warning not in parts:
+            parts.append(warning)
+    return "|".join(parts)
+
+
+def _is_present(value: Any) -> bool:
+    return value not in (None, "") and str(value).strip().lower() not in {"nan", "none", "null", "<na>"}
+
+
+def _normalize_export_lineage(record: dict[str, Any]) -> dict[str, Any]:
+    event_type = str(record.get("event_type") or "")
+    session_mode, session_warning = normalize_session_mode(record.get("session_mode"))
+    if session_mode:
+        record["session_mode"] = session_mode
+    elif record.get("session_mode"):
+        record["session_mode"] = ""
+    if session_warning:
+        record["lineage_warning"] = _append_warning(record.get("lineage_warning"), session_warning)
+
+    symbol = record.get("symbol")
+    broker_order_id = record.get("broker_order_id")
+    client_order_id = record.get("client_order_id")
+    if event_type in SUBMITTED_EVENTS and _is_present(broker_order_id):
+        if not _is_present(record.get("position_id")) or str(record.get("position_id")).lower().startswith("paper:"):
+            record["position_id"] = lifecycle_position_id_for(symbol=symbol, broker_order_id=broker_order_id, client_order_id=client_order_id) or ""
+        if not _is_present(record.get("trade_id")):
+            record["trade_id"] = trade_id_for(symbol=symbol, broker_order_id=broker_order_id, client_order_id=client_order_id) or ""
+    elif event_type in CANDIDATE_EVENTS and str(record.get("position_id") or "").lower().startswith("paper:"):
+        record["position_id"] = ""
+
+    if event_type in CANDIDATE_EVENTS:
+        for field in ("cycle_id", "candidate_id"):
+            if not _is_present(record.get(field)):
+                record["lineage_warning"] = _append_warning(record.get("lineage_warning"), f"missing_{field}")
+    if event_type in SUBMITTED_EVENTS:
+        for field in ("candidate_id", "client_order_id"):
+            if not _is_present(record.get(field)):
+                record["lineage_warning"] = _append_warning(record.get("lineage_warning"), f"missing_{field}")
+    if event_type in FILL_EVENTS:
+        for field in ("client_order_id", "broker_order_id", "position_id", "trade_id"):
+            if not _is_present(record.get(field)):
+                record["lineage_warning"] = _append_warning(record.get("lineage_warning"), f"missing_{field}")
+    if event_type in MONITOR_EVENTS and not _is_present(record.get("trade_id")):
+        record["lineage_warning"] = _append_warning(record.get("lineage_warning"), "missing_trade_id")
+    if event_type in EXIT_EVENTS:
+        for field in ("trade_id", "exit_decision_id"):
+            if not _is_present(record.get(field)):
+                record["lineage_warning"] = _append_warning(record.get("lineage_warning"), f"missing_{field}")
+    return record
+
 def _event_record(row: dict[str, Any]) -> dict[str, Any]:
     event_type = str(row.get("event_type") or "")
     event_at = row.get("event_at")
@@ -160,7 +222,7 @@ def _event_record(row: dict[str, Any]) -> dict[str, Any]:
         details = row.get("details") if isinstance(row.get("details"), dict) else {}
         side = str(details.get("side") or "").lower()
         record["order_intent"] = "open_long" if side == "buy" else "open_short" if side == "sell" else ""
-    return record
+    return _normalize_export_lineage(record)
 
 
 def _base_conditions(request: ActivityJournalExportRequest) -> list[Any]:

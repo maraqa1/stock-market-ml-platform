@@ -53,7 +53,7 @@ def test_activity_lineage_coverage_reports_by_event_type(tmp_path):
     module = _load_script()
     request = request_for_date(date(2026, 6, 23))
     frame = module.build_lineage_coverage(request, target=_engine())
-    assert set(frame["event_type"]) == {"filled", "selected"}
+    assert set(frame["event_type"]) == {"ALL", "filled", "selected"}
     filled = frame[frame["event_type"].eq("filled")].iloc[0]
     assert filled["client_order_id_coverage"] == 1.0
     assert filled["trade_id_coverage"] == 1.0

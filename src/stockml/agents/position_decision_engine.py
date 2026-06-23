@@ -10,6 +10,7 @@ import yaml
 
 from stockml.common.paths import AGENT_DECISIONS_DIR, PROJECT_ROOT, ensure_data_dirs, timestamp
 from stockml.services.events import position_id_for_symbol, record_event_once, record_event_safely
+from stockml.trading.activity_journal import enrich_exit_activity_details, enrich_monitor_activity_details
 
 
 LOGGER = logging.getLogger(__name__)
@@ -667,7 +668,7 @@ def write_position_decisions(decisions: pd.DataFrame, stamp: str | None = None) 
                 position_id_for_symbol(symbol),
                 event_type,
                 "position_monitor",
-                details,
+                enrich_monitor_activity_details(symbol, details),
                 event_key=key,
                 cooldown_seconds=30 * 60,
             )
@@ -676,6 +677,6 @@ def write_position_decisions(decisions: pd.DataFrame, stamp: str | None = None) 
                 position_id_for_symbol(symbol),
                 event_type,
                 "position_monitor",
-                details,
+                enrich_exit_activity_details(symbol, details, reason=details.get("decision_reason") or details.get("recommended_action")) if event_type == "monitor_close" else enrich_monitor_activity_details(symbol, details),
             )
     return path

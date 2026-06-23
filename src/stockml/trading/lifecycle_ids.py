@@ -4,7 +4,6 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from stockml.services.events import position_id_for_symbol
 from stockml.trading.order_intent import derive_order_intent
 
 LINEAGE_FIELDS = (
@@ -40,6 +39,32 @@ ORDER_INTENT_VALUES = {
 OPEN_INTENTS = {"open_long", "open_short"}
 CLOSE_INTENTS = {"close_long", "reduce_long", "cover_short", "reduce_short", "manual_close"}
 
+SESSION_MODE_VALUES = {
+    "regular_session",
+    "pre_market",
+    "after_hours",
+    "overnight_24_5",
+    "weekend_closed",
+}
+
+SESSION_MODE_ALIASES = {
+    "regular": "regular_session",
+    "market": "regular_session",
+    "market_open": "regular_session",
+    "premarket": "pre_market",
+    "pre-market": "pre_market",
+    "post_market": "after_hours",
+    "post-market": "after_hours",
+    "afterhours": "after_hours",
+    "after-hours": "after_hours",
+    "overnight": "overnight_24_5",
+    "24x5": "overnight_24_5",
+    "24/5": "overnight_24_5",
+    "overnight_24x5": "overnight_24_5",
+    "closed": "weekend_closed",
+    "weekend": "weekend_closed",
+}
+
 
 @dataclass(frozen=True)
 class LineageResult:
@@ -65,6 +90,16 @@ def stable_id(prefix: str, *parts: Any) -> str | None:
     raw = "|".join(clean)
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
     return f"{prefix}-{digest}"
+
+
+def normalize_session_mode(value: Any) -> tuple[str, str]:
+    text = _text(value).lower().replace(" ", "_")
+    if not text:
+        return "", ""
+    normalized = SESSION_MODE_ALIASES.get(text, text)
+    if normalized in SESSION_MODE_VALUES:
+        return normalized, "" if normalized == text else "inconsistent_session_mode"
+    return "", "inconsistent_session_mode"
 
 
 def normalize_lineage_intent(intent: Any) -> str:
@@ -136,6 +171,13 @@ def lineage_warning_for(values: Mapping[str, Any], required: tuple[str, ...]) ->
 def normalize_lineage(values: Mapping[str, Any], *, required: tuple[str, ...] = ()) -> LineageResult:
     out = {field: values.get(field) for field in LINEAGE_FIELDS}
     warnings = lineage_warning_for(out, required)
+    session_mode, session_warning = normalize_session_mode(out.get("session_mode"))
+    if session_mode:
+        out["session_mode"] = session_mode
+    elif out.get("session_mode"):
+        out["session_mode"] = ""
+    if session_warning:
+        warnings.append(session_warning)
     existing_warning = _text(values.get("lineage_warning"))
     if existing_warning:
         warnings.extend(part for part in existing_warning.split("|") if part)
@@ -176,7 +218,7 @@ def candidate_lineage(
         "event_key": event_key,
         "client_order_id": _text(client_order_id) or None,
         "broker_order_id": None,
-        "position_id": position_id_for_symbol(symbol_text) if symbol_text else None,
+        "position_id": None,
         "trade_id": None,
         "exit_decision_id": None,
         "order_intent": intent,
@@ -196,10 +238,11 @@ def order_lineage(candidate: Mapping[str, Any], *, broker_order_id: Any = "", ev
         candidate_source=candidate.get("candidate_source") or "paper_order_plan",
     )
     client_order_id = candidate.get("client_order_id")
-    trade_id = trade_id_for(symbol=symbol, broker_order_id=broker_order_id, client_order_id=client_order_id)
+    broker_text = _text(broker_order_id) or _text(candidate.get("broker_order_id")) or _text(candidate.get("order_id"))
+    trade_id = trade_id_for(symbol=symbol, broker_order_id=broker_text, client_order_id=client_order_id, existing_trade_id=candidate.get("trade_id"))
     event_key = event_key_for(
         cycle_id=candidate.get("cycle_id"),
-        subject_id=_text(broker_order_id) or client_order_id or candidate_id,
+        subject_id=broker_text or client_order_id or candidate_id,
         event_type=event_type,
         source=candidate.get("candidate_source") or "paper_trader",
     )
@@ -209,13 +252,21 @@ def order_lineage(candidate: Mapping[str, Any], *, broker_order_id: Any = "", ev
             "candidate_id": candidate_id,
             "event_key": event_key,
             "client_order_id": _text(client_order_id) or None,
-            "broker_order_id": _text(broker_order_id) or _text(candidate.get("broker_order_id")) or None,
-            "position_id": candidate.get("position_id") or (position_id_for_symbol(symbol) if _text(symbol) else None),
+            "broker_order_id": broker_text or None,
+            "position_id": lifecycle_position_id_for(
+                symbol=symbol,
+                broker_order_id=broker_text,
+                client_order_id=client_order_id,
+                existing_position_id=candidate.get("position_id"),
+            ),
             "trade_id": trade_id,
             "order_intent": normalize_lineage_intent(candidate.get("order_intent")),
         }
     )
-    return normalize_lineage(values, required=("cycle_id", "candidate_id", "client_order_id"))
+    required = ("cycle_id", "candidate_id", "client_order_id")
+    if broker_text:
+        required = (*required, "broker_order_id", "position_id", "trade_id")
+    return normalize_lineage(values, required=required)
 
 
 def fill_lineage(tracked: Mapping[str, Any]) -> LineageResult:
@@ -236,6 +287,37 @@ def fill_lineage(tracked: Mapping[str, Any]) -> LineageResult:
         }
     )
     return normalize_lineage(values, required=("client_order_id", "broker_order_id", "position_id", "trade_id"))
+
+
+def exit_decision_id_for(*, symbol: Any, position_id: Any = "", trade_id: Any = "", reason: Any = "", cycle_id: Any = "", event_at: Any = "") -> str | None:
+    return stable_id("exit", _upper(symbol), position_id, trade_id, reason, cycle_id or event_at)
+
+
+def exit_lineage(details: Mapping[str, Any], *, reason: Any = "", event_type: Any = "exit_decision") -> LineageResult:
+    symbol = details.get("symbol") or details.get("ticker")
+    values = {field: details.get(field) for field in LINEAGE_FIELDS}
+    exit_reason = _text(reason) or _text(details.get("exit_reason")) or _text(details.get("reason")) or _text(details.get("decision_reason"))
+    existing_exit = _text(details.get("exit_decision_id"))
+    values.update(
+        {
+            "exit_decision_id": existing_exit
+            or exit_decision_id_for(
+                symbol=symbol,
+                position_id=details.get("position_id"),
+                trade_id=details.get("trade_id"),
+                reason=exit_reason or event_type,
+                cycle_id=details.get("cycle_id"),
+                event_at=details.get("event_at") or details.get("timestamp"),
+            ),
+            "order_intent": normalize_lineage_intent(details.get("order_intent")),
+        }
+    )
+    return normalize_lineage(values, required=("position_id", "trade_id", "exit_decision_id"))
+
+
+def monitor_lineage(details: Mapping[str, Any]) -> LineageResult:
+    values = {field: details.get(field) for field in LINEAGE_FIELDS}
+    return normalize_lineage(values, required=("position_id", "trade_id"))
 
 
 def merge_lineage(payload: Mapping[str, Any], lineage: LineageResult | Mapping[str, Any]) -> dict[str, Any]:
