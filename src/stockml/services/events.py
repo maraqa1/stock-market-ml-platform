@@ -12,6 +12,24 @@ from sqlalchemy.engine import Connection, Engine
 from stockml.db.connection import get_engine
 from stockml.db.schema import POSITION_EVENT_TYPES, position_events
 
+LINEAGE_EVENT_COLUMNS = (
+    "pipeline_run_id",
+    "cycle_id",
+    "signal_id",
+    "candidate_id",
+    "event_key",
+    "client_order_id",
+    "broker_order_id",
+    "trade_id",
+    "exit_decision_id",
+    "order_intent",
+    "strategy_mode",
+    "session_mode",
+    "candidate_source",
+    "model_version",
+    "lineage_warning",
+)
+
 
 def position_id_for_symbol(symbol: str) -> str:
     return f"paper:{str(symbol or '').strip().upper()}"
@@ -87,15 +105,21 @@ def record_event(
     with _connection(target, required=True) as conn:
         if conn is None:
             raise RuntimeError("Database engine is unavailable")
-        result = conn.execute(
-            insert(position_events).values(
-                position_id=clean_position_id,
-                event_at=event_at or _utc_now(),
-                event_type=event_type,
-                source=clean_source,
-                details=_json_ready(details or {}),
-            )
-        )
+        payload = _json_ready(details or {})
+        values = {
+            "position_id": clean_position_id,
+            "event_at": event_at or _utc_now(),
+            "event_type": event_type,
+            "source": clean_source,
+            "details": payload,
+        }
+        if isinstance(payload, dict):
+            table_columns = set(position_events.c.keys())
+            for column in LINEAGE_EVENT_COLUMNS:
+                if column in table_columns:
+                    value = payload.get(column)
+                    values[column] = None if value in ("", None) else str(value)
+        result = conn.execute(insert(position_events).values(**values))
         try:
             return result.inserted_primary_key[0]
         except Exception:

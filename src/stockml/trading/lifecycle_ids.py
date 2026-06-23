@@ -64,7 +64,7 @@ def stable_id(prefix: str, *parts: Any) -> str | None:
         return None
     raw = "|".join(clean)
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
-    return f"{prefix}_{digest}"
+    return f"{prefix}-{digest}"
 
 
 def normalize_lineage_intent(intent: Any) -> str:
@@ -106,9 +106,22 @@ def trade_id_for(*, symbol: Any, broker_order_id: Any = "", client_order_id: Any
     broker = _text(broker_order_id)
     client = _text(client_order_id)
     if broker:
-        return stable_id("trade", _upper(symbol), broker)
+        return f"trade-{broker}"
     if client:
         return stable_id("trade", _upper(symbol), client)
+    return None
+
+
+def lifecycle_position_id_for(*, symbol: Any, broker_order_id: Any = "", client_order_id: Any = "", existing_position_id: Any = "") -> str | None:
+    existing = _text(existing_position_id)
+    if existing and not existing.lower().startswith("paper:"):
+        return existing
+    broker = _text(broker_order_id)
+    if broker:
+        return f"position-{broker}"
+    client = _text(client_order_id)
+    if client:
+        return stable_id("position", _upper(symbol), client)
     return None
 
 
@@ -212,7 +225,7 @@ def fill_lineage(tracked: Mapping[str, Any]) -> LineageResult:
     values.update(
         {
             "broker_order_id": _text(broker_order_id) or None,
-            "position_id": tracked.get("position_id") or (position_id_for_symbol(symbol) if _text(symbol) else None),
+            "position_id": lifecycle_position_id_for(symbol=symbol, broker_order_id=broker_order_id, client_order_id=tracked.get("client_order_id"), existing_position_id=tracked.get("position_id")),
             "trade_id": trade_id_for(
                 symbol=symbol,
                 broker_order_id=broker_order_id,

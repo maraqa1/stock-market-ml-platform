@@ -98,6 +98,17 @@ def test_empty_range_produces_valid_empty_export(tmp_path):
     result = export_activity_journal(_request(symbol="ZZZ"), tmp_path, target=_engine_with_events(10))
     frame = pd.read_csv(result.csv_path)
     assert frame.empty
-    assert list(frame.columns) == ["id", "event_at", "symbol", "event_type", "source", "details_summary", "position_id"]
+    assert list(frame.columns) == ["id", "event_at", "symbol", "event_type", "source", "details_summary", "pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "candidate_source", "model_version", "lineage_warning"]
     assert result.metadata["total_rows"] == 0
     assert result.metadata["was_truncated"] is False
+
+
+def test_export_contains_all_lifecycle_columns(tmp_path):
+    result = export_activity_journal(_request(), tmp_path, target=_engine_with_events(2))
+    frame = pd.read_csv(result.csv_path)
+    expected = [
+        "pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "event_key", "client_order_id",
+        "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode",
+        "session_mode", "candidate_source", "model_version", "lineage_warning",
+    ]
+    assert expected == [column for column in expected if column in frame.columns]

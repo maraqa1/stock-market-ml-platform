@@ -50,3 +50,14 @@ def test_missing_evidence_produces_lineage_warning():
     lineage = candidate_lineage(symbol="", cycle_id="", candidate_source="scan")
     assert "missing_cycle_id" in lineage.values["lineage_warning"]
     assert "missing_candidate_id" in lineage.values["lineage_warning"]
+
+
+def test_two_apps_trades_receive_distinct_position_and_trade_ids():
+    first = fill_lineage({"symbol": "APPS", "client_order_id": "cid-1", "order_id": "oid-1", "order_intent": "open_long"})
+    second = fill_lineage({"symbol": "APPS", "client_order_id": "cid-2", "order_id": "oid-2", "order_intent": "open_long"})
+    assert first.values["position_id"] == "position-oid-1"
+    assert second.values["position_id"] == "position-oid-2"
+    assert first.values["trade_id"] == "trade-oid-1"
+    assert second.values["trade_id"] == "trade-oid-2"
+    assert first.values["position_id"] != second.values["position_id"]
+    assert not first.values["position_id"].startswith("paper:")

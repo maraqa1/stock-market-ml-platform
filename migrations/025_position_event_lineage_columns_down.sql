@@ -1,0 +1,15 @@
+ALTER TABLE position_events DROP COLUMN IF EXISTS lineage_warning;
+ALTER TABLE position_events DROP COLUMN IF EXISTS model_version;
+ALTER TABLE position_events DROP COLUMN IF EXISTS candidate_source;
+ALTER TABLE position_events DROP COLUMN IF EXISTS session_mode;
+ALTER TABLE position_events DROP COLUMN IF EXISTS strategy_mode;
+ALTER TABLE position_events DROP COLUMN IF EXISTS order_intent;
+ALTER TABLE position_events DROP COLUMN IF EXISTS exit_decision_id;
+ALTER TABLE position_events DROP COLUMN IF EXISTS trade_id;
+ALTER TABLE position_events DROP COLUMN IF EXISTS broker_order_id;
+ALTER TABLE position_events DROP COLUMN IF EXISTS client_order_id;
+ALTER TABLE position_events DROP COLUMN IF EXISTS event_key;
+ALTER TABLE position_events DROP COLUMN IF EXISTS candidate_id;
+ALTER TABLE position_events DROP COLUMN IF EXISTS signal_id;
+ALTER TABLE position_events DROP COLUMN IF EXISTS cycle_id;
+ALTER TABLE position_events DROP COLUMN IF EXISTS pipeline_run_id;

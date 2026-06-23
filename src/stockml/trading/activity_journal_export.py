@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -14,7 +15,8 @@ from stockml.db.connection import get_engine
 from stockml.db.schema import position_events
 
 
-EXPORT_COLUMNS = ["id", "event_at", "symbol", "event_type", "source", "details_summary", "position_id"]
+LINEAGE_EXPORT_COLUMNS = ["pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "candidate_source", "model_version", "lineage_warning"]
+EXPORT_COLUMNS = ["id", "event_at", "symbol", "event_type", "source", "details_summary", *LINEAGE_EXPORT_COLUMNS]
 DEFAULT_BATCH_SIZE = 500
 
 
@@ -118,18 +120,47 @@ def _details_summary(event_type: str, details: Any) -> str:
     return str(data.get("reason") or data.get("message") or data.get("decision") or event_type.replace("_", " "))
 
 
+def _stable_candidate_id(cycle_id: Any, symbol: Any, candidate_source: Any) -> str:
+    parts = [str(cycle_id or "").strip(), str(symbol or "").strip().upper(), str(candidate_source or "paper_order_plan").strip()]
+    if any(not part for part in parts):
+        return ""
+    return "cand-" + hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def _lineage_value(row: dict[str, Any], field: str) -> Any:
+    details = row.get("details") if isinstance(row.get("details"), dict) else {}
+    value = row.get(field)
+    if value in (None, ""):
+        value = details.get(field)
+    if field == "broker_order_id" and value in (None, ""):
+        value = details.get("order_id")
+    if field == "position_id":
+        value = details.get("position_id") or value or row.get("position_id")
+    return "" if value is None else value
+
+
 def _event_record(row: dict[str, Any]) -> dict[str, Any]:
     event_type = str(row.get("event_type") or "")
     event_at = row.get("event_at")
-    return {
+    record = {
         "id": int(row.get("id") or 0),
         "event_at": event_at.isoformat() if isinstance(event_at, datetime) else str(event_at or ""),
         "symbol": _symbol_from_event(row),
         "event_type": event_type,
         "source": str(row.get("source") or ""),
         "details_summary": _details_summary(event_type, row.get("details") or {}),
-        "position_id": row.get("position_id") or "",
     }
+    for field in LINEAGE_EXPORT_COLUMNS:
+        record[field] = _lineage_value(row, field)
+    if not record.get("candidate_id") and record.get("cycle_id") and record.get("symbol") and record.get("event_type") in {"selected", "candidate_scanned", "candidate_blocked", "candidate_submitted", "candidate_skipped_duplicate", "candidate_skipped_anti_churn", "candidate_skipped_meta_label", "candidate_skipped_not_overnight_tradable"}:
+        record["candidate_id"] = _stable_candidate_id(record.get("cycle_id"), record.get("symbol"), record.get("candidate_source") or record.get("source"))
+    if not record.get("session_mode") and record.get("event_type") in {"selected", "candidate_scanned", "candidate_blocked", "candidate_submitted", "candidate_skipped_duplicate", "candidate_skipped_anti_churn", "candidate_skipped_meta_label", "candidate_skipped_not_overnight_tradable"}:
+        record["session_mode"] = "regular_session"
+    if not record.get("order_intent") and record.get("event_type") in {"selected", "candidate_submitted"}:
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        side = str(details.get("side") or "").lower()
+        record["order_intent"] = "open_long" if side == "buy" else "open_short" if side == "sell" else ""
+    return record
 
 
 def _base_conditions(request: ActivityJournalExportRequest) -> list[Any]:

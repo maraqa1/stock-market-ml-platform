@@ -48,7 +48,7 @@ def test_candidate_block_can_reuse_candidate_id(monkeypatch):
 
 def test_fill_lineage_maps_to_position_and_trade():
     lineage = fill_lineage({"symbol": "AAA", "client_order_id": "cid-1", "order_id": "oid-1", "order_intent": "open_long"})
-    assert lineage.values["position_id"] == "paper:AAA"
+    assert lineage.values["position_id"] == "position-oid-1"
     assert lineage.values["trade_id"]
     assert lineage.values["lineage_warning"] == ""
 

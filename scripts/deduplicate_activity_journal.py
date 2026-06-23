@@ -1,114 +1,110 @@
-#!/opt/jupyter-env/bin/python3
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
-from datetime import datetime, timezone
+import json
+import shutil
+from datetime import date
 from pathlib import Path
-import sys
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import delete, select
+from sqlalchemy.engine import Engine
 
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
-
-from stockml.common.paths import TRADING_DIR, ensure_data_dirs
+from stockml.common.paths import timestamp
 from stockml.db.connection import get_engine
 from stockml.db.schema import position_events
+from stockml.trading.activity_journal_export import iter_activity_journal_rows, parse_utc_datetime, request_for_date, request_for_range
+
+DUPLICATE_KEY_FIELDS = ["broker_order_id", "event_type", "filled_qty", "filled_avg_price", "status"]
 
 
-def _clean(value: object) -> str:
-    if value is None:
-        return ""
-    try:
-        if pd.isna(value):
-            return ""
-    except Exception:
-        pass
-    text = str(value).strip()
-    return "" if text.lower() in {"nan", "none", "null"} else text
+def _details_value(row: dict[str, Any], field: str) -> str:
+    details = row.get("details") if isinstance(row.get("details"), dict) else {}
+    if field == "broker_order_id":
+        value = row.get("broker_order_id") or details.get("broker_order_id") or details.get("order_id")
+    else:
+        value = row.get(field) or details.get(field)
+    return str(value or "").strip()
 
 
-def _signature(details: object) -> tuple[str, str, str, str] | None:
-    if not isinstance(details, dict):
-        return None
-    order_id = _clean(details.get("broker_order_id") or details.get("order_id"))
-    status = _clean(details.get("status") or details.get("alpaca_status")).lower()
-    qty = _clean(details.get("filled_qty"))
-    price = _clean(details.get("filled_avg_price"))
-    if not order_id or not qty or not price:
-        return None
-    return order_id, status, qty, price
-
-
-def find_duplicate_fills() -> tuple[pd.DataFrame, list[int]]:
-    engine = get_engine(required=True)
+def duplicate_fill_report_rows(request, *, target: Engine | None = None) -> list[dict[str, Any]]:
+    engine = target or get_engine(required=True)
+    rows = []
     with engine.connect() as conn:
-        rows = conn.execute(
-            select(
-                position_events.c.id,
-                position_events.c.position_id,
-                position_events.c.event_at,
-                position_events.c.details,
-            ).where(position_events.c.event_type == "filled", position_events.c.source == "alpaca_tracking")
+        db_rows = conn.execute(
+            select(position_events)
+            .where(position_events.c.event_at >= request.start, position_events.c.event_at < request.end, position_events.c.event_type == "filled")
+            .order_by(position_events.c.event_at.asc(), position_events.c.id.asc())
         ).mappings().all()
-    groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
-    for row in rows:
-        sig = _signature(row["details"])
-        if sig is None:
+    seen: dict[tuple[str, str, str, str, str], int] = {}
+    for raw_row in db_rows:
+        row = dict(raw_row)
+        key = tuple(_details_value(row, field) for field in DUPLICATE_KEY_FIELDS)
+        if not key[0]:
             continue
-        groups[(row["position_id"], *sig)].append(dict(row))
+        first_id = seen.setdefault(key, int(row["id"]))
+        is_duplicate = first_id != int(row["id"])
+        rows.append({
+            "event_id": int(row["id"]),
+            "keep_event_id": first_id,
+            "is_duplicate": is_duplicate,
+            "broker_order_id": key[0],
+            "event_type": key[1],
+            "filled_qty": key[2],
+            "filled_avg_price": key[3],
+            "status": key[4],
+        })
+    return rows
 
-    report_rows: list[dict] = []
-    duplicate_ids: list[int] = []
-    for key, items in groups.items():
-        if len(items) <= 1:
-            continue
-        items.sort(key=lambda item: (item["event_at"], item["id"]))
-        keep = items[0]
-        for duplicate in items[1:]:
-            duplicate_ids.append(int(duplicate["id"]))
-            report_rows.append(
-                {
-                    "duplicate_event_id": duplicate["id"],
-                    "kept_event_id": keep["id"],
-                    "position_id": key[0],
-                    "broker_order_id": key[1],
-                    "status": key[2],
-                    "filled_qty": key[3],
-                    "filled_avg_price": key[4],
-                    "kept_event_at": keep["event_at"],
-                    "duplicate_event_at": duplicate["event_at"],
-                }
-            )
-    return pd.DataFrame(report_rows), duplicate_ids
+
+def write_duplicate_fill_report(request, output_dir: Path = Path("data/trading/diagnostics"), *, target: Engine | None = None, apply: bool = False) -> dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stamp = timestamp()
+    rows = duplicate_fill_report_rows(request, target=target)
+    frame = pd.DataFrame(rows, columns=["event_id", "keep_event_id", "is_duplicate", "broker_order_id", "event_type", "filled_qty", "filled_avg_price", "status"])
+    path = output_dir / f"activity_journal_duplicate_fills_{stamp}.csv"
+    frame.to_csv(path, index=False)
+    removed = 0
+    backup_path = None
+    if apply and not frame.empty:
+        engine = target or get_engine(required=True)
+        duplicate_ids = [int(value) for value in frame.loc[frame["is_duplicate"], "event_id"].tolist()]
+        backup_path = output_dir / f"activity_journal_duplicate_fills_backup_{stamp}.json"
+        with engine.begin() as conn:
+            backup = [dict(row) for row in conn.execute(select(position_events).where(position_events.c.id.in_(duplicate_ids))).mappings().all()] if duplicate_ids else []
+            backup_path.write_text(json.dumps(backup, default=str, indent=2), encoding="utf-8")
+            if duplicate_ids:
+                result = conn.execute(delete(position_events).where(position_events.c.id.in_(duplicate_ids)))
+                removed = int(result.rowcount or 0)
+    return {"report_path": path, "duplicate_rows": int(frame["is_duplicate"].sum()) if not frame.empty else 0, "removed_rows": removed, "backup_path": backup_path}
+
+
+def _args():
+    parser = argparse.ArgumentParser(description="Report or remove duplicate historical filled activity events.")
+    parser.add_argument("--date")
+    parser.add_argument("--start")
+    parser.add_argument("--end")
+    parser.add_argument("--output", default="data/trading/diagnostics")
+    parser.add_argument("--apply", action="store_true")
+    return parser.parse_args()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--apply", action="store_true", help="delete duplicate fill rows after writing the report")
-    args = parser.parse_args()
-    ensure_data_dirs()
-    out_dir = TRADING_DIR / "diagnostics"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    report, duplicate_ids = find_duplicate_fills()
-    path = out_dir / f"activity_journal_duplicate_fills_{stamp}.csv"
-    report.to_csv(path, index=False)
-    deleted = 0
-    if args.apply and duplicate_ids:
-        engine = get_engine(required=True)
-        with engine.begin() as conn:
-            result = conn.execute(delete(position_events).where(position_events.c.id.in_(duplicate_ids)))
-            deleted = int(result.rowcount or 0)
-    print(f"duplicate_fill_rows: {len(report)}")
-    print(f"duplicates_deleted: {deleted}")
-    print(f"duplicate_report_path: {path}")
+    args = _args()
+    if args.date:
+        request = request_for_date(date.fromisoformat(args.date))
+    elif args.start and args.end:
+        request = request_for_range(parse_utc_datetime(args.start), parse_utc_datetime(args.end))
+    else:
+        raise SystemExit("Provide --date or both --start and --end")
+    result = write_duplicate_fill_report(request, Path(args.output), apply=args.apply)
+    print("activity_journal_duplicate_fill_status: ok")
+    print(f"duplicate_rows: {result['duplicate_rows']}")
+    print(f"removed_rows: {result['removed_rows']}")
+    print(f"report_path: {Path(result['report_path']).resolve()}")
+    if result.get("backup_path"):
+        print(f"backup_path: {Path(result['backup_path']).resolve()}")
     return 0
 
 

@@ -5,7 +5,7 @@ from typing import Iterable
 
 from sqlalchemy.engine import Engine
 
-from portal.services.journal import JournalFilters, iter_csv, query
+from portal.services.journal import JournalFilters, LINEAGE_EXPORT_COLUMNS, iter_csv, query
 
 
 def query_activity_journal(filters: JournalFilters, *, target: Engine | None = None, root: Path | None = None) -> dict:

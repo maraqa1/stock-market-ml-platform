@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import hashlib
 import io
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -19,6 +20,7 @@ from stockml.db.schema import POSITION_EVENT_TYPES, position_events
 DEFAULT_LIMIT = 200
 MAX_LIMIT = 500
 CSV_LIMIT = 50_000
+LINEAGE_EXPORT_COLUMNS = ["pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "candidate_source", "model_version", "lineage_warning"]
 
 
 @dataclass
@@ -119,11 +121,30 @@ def _details_summary(event_type: str, details: Any) -> str:
     return str(data.get("reason") or data.get("message") or data.get("decision") or event_type.replace("_", " "))
 
 
+def _stable_candidate_id(cycle_id: Any, symbol: Any, candidate_source: Any) -> str:
+    parts = [str(cycle_id or "").strip(), str(symbol or "").strip().upper(), str(candidate_source or "paper_order_plan").strip()]
+    if any(not part for part in parts):
+        return ""
+    return "cand-" + hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def _lineage_value(row: dict[str, Any], field: str) -> Any:
+    details = row.get("details") if isinstance(row.get("details"), dict) else {}
+    value = row.get(field)
+    if value in (None, ""):
+        value = details.get(field)
+    if field == "broker_order_id" and value in (None, ""):
+        value = details.get("order_id")
+    if field == "position_id":
+        value = details.get("position_id") or value or row.get("position_id")
+    return "" if value is None else value
+
+
 def _event_record(row: dict[str, Any]) -> dict[str, Any]:
     symbol = _symbol_from_event(row)
     event_type = str(row.get("event_type") or "")
     details = row.get("details") or {}
-    return {
+    record = {
         "id": int(row.get("id") or 0),
         "event_at": row.get("event_at").isoformat() if isinstance(row.get("event_at"), datetime) else str(row.get("event_at") or ""),
         "symbol": symbol,
@@ -132,8 +153,18 @@ def _event_record(row: dict[str, Any]) -> dict[str, Any]:
         "source": str(row.get("source") or ""),
         "details_summary": _details_summary(event_type, details),
         "details": details,
-        "position_id": row.get("position_id") or "",
     }
+    for field in LINEAGE_EXPORT_COLUMNS:
+        record[field] = _lineage_value(row, field)
+    if not record.get("candidate_id") and record.get("cycle_id") and record.get("symbol") and record.get("event_type") in {"selected", "candidate_scanned", "candidate_blocked", "candidate_submitted", "candidate_skipped_duplicate", "candidate_skipped_anti_churn", "candidate_skipped_meta_label", "candidate_skipped_not_overnight_tradable"}:
+        record["candidate_id"] = _stable_candidate_id(record.get("cycle_id"), record.get("symbol"), record.get("candidate_source") or record.get("source"))
+    if not record.get("session_mode") and record.get("event_type") in {"selected", "candidate_scanned", "candidate_blocked", "candidate_submitted", "candidate_skipped_duplicate", "candidate_skipped_anti_churn", "candidate_skipped_meta_label", "candidate_skipped_not_overnight_tradable"}:
+        record["session_mode"] = "regular_session"
+    if not record.get("order_intent") and record.get("event_type") in {"selected", "candidate_submitted"}:
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        side = str(details.get("side") or "").lower()
+        record["order_intent"] = "open_long" if side == "buy" else "open_short" if side == "sell" else ""
+    return record
 
 
 def _window(filters: JournalFilters) -> tuple[datetime, datetime]:
@@ -266,7 +297,7 @@ def query(filters: JournalFilters, cursor: str | None = None, limit: int = DEFAU
 
 def iter_csv(filters: JournalFilters, *, target: Engine | None = None, root: Path | None = None) -> Iterable[str]:
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["id", "event_at", "symbol", "event_type", "source", "details_summary", "position_id"])
+    writer = csv.DictWriter(output, fieldnames=["id", "event_at", "symbol", "event_type", "source", "details_summary", *LINEAGE_EXPORT_COLUMNS])
     writer.writeheader()
     yield output.getvalue()
     output.seek(0)
