@@ -8,12 +8,12 @@ def test_candidate_lineage_does_not_use_symbol_as_position_identity():
     assert lineage.values["trade_id"] is None
 
 
-def test_submitted_order_uses_opening_broker_order_for_position_and_trade_ids():
+def test_submitted_order_preserves_order_ids_without_position_or_trade_ids():
     candidate = candidate_lineage(symbol="AAPL", cycle_id="cycle-1", side="buy", client_order_id="cid-1").values
     submitted = order_lineage({**candidate, "symbol": "AAPL"}, broker_order_id="oid-1")
     assert submitted.values["broker_order_id"] == "oid-1"
-    assert submitted.values["position_id"] == "position-oid-1"
-    assert submitted.values["trade_id"] == "trade-oid-1"
+    assert submitted.values["position_id"] is None
+    assert submitted.values["trade_id"] is None
     assert submitted.values["lineage_warning"] == ""
 
 
@@ -32,3 +32,12 @@ def test_fill_retains_submitted_position_and_trade_identity():
     assert filled.values["trade_id"] == "trade-oid-1"
     assert filled.values["session_mode"] == "regular_session"
     assert "inconsistent_session_mode" in filled.values["lineage_warning"]
+
+
+def test_submitted_order_does_not_create_position_or_trade_before_fill():
+    candidate = candidate_lineage(symbol="AAPL", cycle_id="cycle-2", side="buy", client_order_id="cid-2").values
+    submitted = order_lineage({**candidate, "symbol": "AAPL"}, broker_order_id="oid-2")
+    assert submitted.values["broker_order_id"] == "oid-2"
+    assert submitted.values["position_id"] is None
+    assert submitted.values["trade_id"] is None
+    assert submitted.values["lineage_warning"] == ""

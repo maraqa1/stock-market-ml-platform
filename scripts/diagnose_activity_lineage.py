@@ -14,6 +14,8 @@ from stockml.trading.activity_journal_export import iter_activity_journal_rows, 
 COVERAGE_FIELDS = [
     "cycle_id",
     "candidate_id",
+    "scan_candidate_id",
+    "parent_candidate_id",
     "event_key",
     "client_order_id",
     "broker_order_id",
@@ -22,67 +24,114 @@ COVERAGE_FIELDS = [
     "exit_decision_id",
     "order_intent",
     "session_mode",
+    "event_session_mode",
+    "planned_execution_session_mode",
+    "actual_submission_session_mode",
     "lineage_warning",
 ]
 
+SCAN_EVENTS = {"candidate_scanned"}
 SUBMIT_EVENTS = {"submitted", "order_submitted", "candidate_submitted"}
 FILL_EVENTS = {"filled", "close_filled"}
 MONITOR_EVENTS = {"monitor_safe", "monitor_watch", "monitor_rotate", "monitor_close"}
 EXIT_EVENTS = {"monitor_close", "operator_close", "close_submitted", "close_filled"}
-PNL_EVENTS = {"pnl_recorded", "monitor_safe"}
+CLOSE_EVENTS = {"operator_close", "close_submitted", "close_filled", "monitor_close"}
 
 
 def _present(value: Any) -> bool:
     return value not in (None, "") and str(value).strip().lower() not in {"nan", "none", "null", "<na>"}
 
 
-def _has_link(value: Any, linked: set[str]) -> bool:
-    return _present(value) and str(value) in linked
+def _links(series: pd.Series) -> set[str]:
+    return {str(value) for value in series.dropna().tolist() if _present(value)}
 
 
 def _broken_chain_counts(frame: pd.DataFrame, group: pd.DataFrame) -> dict[str, int]:
-    submitted_candidates = set(frame.loc[frame["event_type"].isin(SUBMIT_EVENTS), "candidate_id"].dropna().astype(str)) if "candidate_id" in frame else set()
-    filled_clients = set(frame.loc[frame["event_type"].isin(FILL_EVENTS), "client_order_id"].dropna().astype(str)) if "client_order_id" in frame else set()
-    filled_brokers = set(frame.loc[frame["event_type"].isin(FILL_EVENTS), "broker_order_id"].dropna().astype(str)) if "broker_order_id" in frame else set()
+    empty = pd.Series("", index=group.index)
+    scanned_ids = _links(frame.loc[frame["event_type"].isin(SCAN_EVENTS), "candidate_id"]) if "candidate_id" in frame else set()
+    scanned_ids |= _links(frame.loc[frame["event_type"].isin(SCAN_EVENTS), "parent_candidate_id"]) if "parent_candidate_id" in frame else set()
+    submitted_ids = _links(frame.loc[frame["event_type"].isin(SUBMIT_EVENTS), "candidate_id"]) if "candidate_id" in frame else set()
+    submitted_ids |= _links(frame.loc[frame["event_type"].isin(SUBMIT_EVENTS), "parent_candidate_id"]) if "parent_candidate_id" in frame else set()
 
-    selected_without_submit_link = group["event_type"].eq("selected") & ~group.get("candidate_id", pd.Series("", index=group.index)).apply(lambda value: _has_link(value, submitted_candidates))
+    candidate_ids = group.get("candidate_id", empty).astype(str)
+    selected_mask = group["event_type"].eq("selected")
     submit_mask = group["event_type"].isin(SUBMIT_EVENTS)
-    submitted_without_fill_link = submit_mask & ~(
-        group.get("client_order_id", pd.Series("", index=group.index)).apply(lambda value: _has_link(value, filled_clients))
-        | group.get("broker_order_id", pd.Series("", index=group.index)).apply(lambda value: _has_link(value, filled_brokers))
-    )
     fill_mask = group["event_type"].isin(FILL_EVENTS)
     monitor_mask = group["event_type"].isin(MONITOR_EVENTS)
     exit_mask = group["event_type"].isin(EXIT_EVENTS)
-    pnl_mask = group["event_type"].isin(PNL_EVENTS) | group.get("source", pd.Series("", index=group.index)).astype(str).str.contains("pnl", case=False, na=False)
+    close_mask = group["event_type"].isin(CLOSE_EVENTS)
+
+    details_summary = group.get("details_summary", empty).astype(str).str.lower()
+    session_mode = group.get("session_mode", empty).astype(str)
+    event_session_mode = group.get("event_session_mode", empty).astype(str)
+    actual_session_mode = group.get("actual_submission_session_mode", empty).astype(str)
+
+    duplicate_submissions = 0
+    cycle_cap_violations = 0
+    if {"cycle_id", "symbol", "event_type"}.issubset(frame.columns):
+        submissions = frame[frame["event_type"].isin(SUBMIT_EVENTS)].copy()
+        if not submissions.empty:
+            grouped = submissions.groupby(["cycle_id", "symbol"], dropna=False).size()
+            duplicate_submissions = int((grouped > 1).sum())
+            cycle_counts = submissions.groupby("cycle_id", dropna=False).size()
+            cycle_cap_violations = int((cycle_counts > 1).sum())
+
+    submitted_marked_open = submit_mask & (
+        group.get("position_id", empty).apply(_present)
+        | group.get("trade_id", empty).apply(_present)
+        | details_summary.str.contains("opened", na=False)
+    )
+    session_mismatch = (
+        group.get("event_session_mode", empty).apply(_present)
+        & group.get("actual_submission_session_mode", empty).apply(_present)
+        & event_session_mode.ne(actual_session_mode)
+    ) | (
+        group.get("session_mode", empty).apply(_present)
+        & group.get("event_session_mode", empty).apply(_present)
+        & group["event_type"].isin({"selected", "candidate_scanned", "candidate_blocked"})
+        & session_mode.ne(event_session_mode)
+    )
 
     return {
-        "selected_without_submit_link": int(selected_without_submit_link.sum()),
-        "submitted_without_fill_link": int(submitted_without_fill_link.sum()),
-        "fill_without_position": int((fill_mask & ~group.get("position_id", pd.Series("", index=group.index)).apply(_present)).sum()),
-        "fill_without_trade_id": int((fill_mask & ~group.get("trade_id", pd.Series("", index=group.index)).apply(_present)).sum()),
-        "monitor_without_trade_id": int((monitor_mask & ~group.get("trade_id", pd.Series("", index=group.index)).apply(_present)).sum()),
-        "exit_without_trade_id": int((exit_mask & ~group.get("trade_id", pd.Series("", index=group.index)).apply(_present)).sum()),
-        "close_without_exit_decision": int((exit_mask & ~group.get("exit_decision_id", pd.Series("", index=group.index)).apply(_present)).sum()),
-        "pnl_without_trade_id": int((pnl_mask & ~group.get("trade_id", pd.Series("", index=group.index)).apply(_present)).sum()),
+        "selected_without_scan_link": int((selected_mask & ~candidate_ids.isin(scanned_ids)).sum()),
+        "selected_without_submit_link": int((selected_mask & ~candidate_ids.isin(submitted_ids)).sum()),
+        "submit_without_client_order_id": int((submit_mask & ~group.get("client_order_id", empty).apply(_present)).sum()),
+        "submit_without_broker_order_id": int((submit_mask & ~group.get("broker_order_id", empty).apply(_present)).sum()),
+        "submitted_marked_open_before_fill": int(submitted_marked_open.sum()),
+        "fill_without_position_id": int((fill_mask & ~group.get("position_id", empty).apply(_present)).sum()),
+        "fill_without_trade_id": int((fill_mask & ~group.get("trade_id", empty).apply(_present)).sum()),
+        "monitor_without_trade_id": int((monitor_mask & ~group.get("trade_id", empty).apply(_present)).sum()),
+        "exit_without_exit_decision_id": int((exit_mask & ~group.get("exit_decision_id", empty).apply(_present)).sum()),
+        "close_without_original_trade_id": int((close_mask & ~group.get("trade_id", empty).apply(_present)).sum()),
+        "session_mode_mismatch": int(session_mismatch.sum()),
+        "duplicate_submission_same_symbol": duplicate_submissions if group is frame else 0,
+        "cycle_submission_cap_violation": cycle_cap_violations if group is frame else 0,
+    }
+
+
+def _zero_metrics() -> dict[str, int]:
+    return {
+        "selected_without_scan_link": 0,
+        "selected_without_submit_link": 0,
+        "submit_without_client_order_id": 0,
+        "submit_without_broker_order_id": 0,
+        "submitted_marked_open_before_fill": 0,
+        "fill_without_position_id": 0,
+        "fill_without_trade_id": 0,
+        "monitor_without_trade_id": 0,
+        "exit_without_exit_decision_id": 0,
+        "close_without_original_trade_id": 0,
+        "session_mode_mismatch": 0,
+        "duplicate_submission_same_symbol": 0,
+        "cycle_submission_cap_violation": 0,
     }
 
 
 def build_lineage_coverage(request, *, target: Engine | None = None) -> pd.DataFrame:
     rows = list(iter_activity_journal_rows(request, target=target))
     base = {f"{field}_coverage": 0.0 for field in COVERAGE_FIELDS}
-    broken_zero = {
-        "selected_without_submit_link": 0,
-        "submitted_without_fill_link": 0,
-        "fill_without_position": 0,
-        "fill_without_trade_id": 0,
-        "monitor_without_trade_id": 0,
-        "exit_without_trade_id": 0,
-        "close_without_exit_decision": 0,
-        "pnl_without_trade_id": 0,
-    }
     if not rows:
-        return pd.DataFrame([{ "event_type": "ALL", "total_rows": 0, **base, "rows_with_lineage_warning": 0, **broken_zero }])
+        return pd.DataFrame([{"event_type": "ALL", "total_rows": 0, **base, "rows_with_lineage_warning": 0, **_zero_metrics()}])
     frame = pd.DataFrame(rows)
     out = []
     for event_type, group in frame.groupby("event_type", dropna=False):

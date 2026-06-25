@@ -65,6 +65,10 @@ autopilot:
   max_short_positions: 15
   near_miss_entries_with_open_positions: true
   close_automation_mode: automatic
+  validation_mode: true
+  validation_max_new_orders_per_cycle: 1
+  validation_max_new_orders_per_day: 2
+  validation_max_open_positions_total: 3
 basket_risk:
   pause_new_entries_if_red_position_pct_above: 0.70
   pause_new_entries_if_basket_return_below: -0.0075

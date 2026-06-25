@@ -16,6 +16,7 @@ from portal.services.latest_file_reader import latest_file, safe_read_csv
 from stockml.db.connection import get_engine
 from stockml.db.schema import POSITION_EVENT_TYPES, position_events
 from stockml.trading.lifecycle_ids import lifecycle_position_id_for, normalize_session_mode, trade_id_for
+from stockml.trading.session_mode import classify_session_mode
 
 
 DEFAULT_LIMIT = 200
@@ -27,7 +28,7 @@ SUBMITTED_EVENTS = {"submitted", "order_submitted", "candidate_submitted"}
 FILL_EVENTS = {"filled", "close_filled"}
 MONITOR_EVENTS = {"monitor_safe", "monitor_watch", "monitor_rotate", "monitor_close"}
 EXIT_EVENTS = {"monitor_close", "operator_close", "close_submitted", "close_filled"}
-LINEAGE_EXPORT_COLUMNS = ["pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "candidate_source", "model_version", "lineage_warning"]
+LINEAGE_EXPORT_COLUMNS = ["pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "scan_candidate_id", "parent_candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "event_session_mode", "planned_execution_session_mode", "actual_submission_session_mode", "candidate_source", "model_version", "lineage_warning"]
 
 
 @dataclass
@@ -148,6 +149,35 @@ def _lineage_value(row: dict[str, Any], field: str) -> Any:
 
 
 
+
+
+def _event_session_mode(value: Any) -> str:
+    if isinstance(value, datetime):
+        try:
+            return classify_session_mode(value)
+        except Exception:
+            return ""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return classify_session_mode(parsed)
+    except Exception:
+        return ""
+
+
+def _normalize_session_field(record: dict[str, Any], field: str) -> None:
+    session_mode, session_warning = normalize_session_mode(record.get(field))
+    if session_mode:
+        record[field] = session_mode
+    elif record.get(field):
+        record[field] = ""
+    if session_warning:
+        record["lineage_warning"] = _append_warning(record.get("lineage_warning"), f"{field}:{session_warning}")
+
 def _append_warning(existing: Any, *warnings: str) -> str:
     parts = [part for part in str(existing or "").split("|") if part]
     for warning in warnings:
@@ -162,18 +192,29 @@ def _is_present(value: Any) -> bool:
 
 def _normalize_export_lineage(record: dict[str, Any]) -> dict[str, Any]:
     event_type = str(record.get("event_type") or "")
-    session_mode, session_warning = normalize_session_mode(record.get("session_mode"))
-    if session_mode:
-        record["session_mode"] = session_mode
-    elif record.get("session_mode"):
-        record["session_mode"] = ""
-    if session_warning:
-        record["lineage_warning"] = _append_warning(record.get("lineage_warning"), session_warning)
+    details = record.get("details") if isinstance(record.get("details"), dict) else {}
+    if not record.get("event_session_mode"):
+        record["event_session_mode"] = _event_session_mode(record.get("event_at_raw") or record.get("event_at"))
+    if not record.get("planned_execution_session_mode"):
+        record["planned_execution_session_mode"] = details.get("planned_execution_session_mode") or details.get("session_mode") or record.get("session_mode")
+    if not record.get("actual_submission_session_mode") and event_type in SUBMITTED_EVENTS | FILL_EVENTS:
+        record["actual_submission_session_mode"] = details.get("actual_submission_session_mode") or record.get("event_session_mode")
+    for field in ("session_mode", "event_session_mode", "planned_execution_session_mode", "actual_submission_session_mode"):
+        _normalize_session_field(record, field)
 
     symbol = record.get("symbol")
     broker_order_id = record.get("broker_order_id")
     client_order_id = record.get("client_order_id")
-    if event_type in SUBMITTED_EVENTS and _is_present(broker_order_id):
+    if event_type in SUBMITTED_EVENTS:
+        if str(record.get("position_id") or "").lower().startswith("paper:"):
+            record["position_id"] = ""
+        if _is_present(record.get("position_id")) or _is_present(record.get("trade_id")):
+            record["lineage_warning"] = _append_warning(record.get("lineage_warning"), "submitted_marked_open_before_fill")
+            if str(record.get("position_id") or "").lower().startswith("position-"):
+                record["position_id"] = ""
+            if str(record.get("trade_id") or "").lower().startswith("trade-"):
+                record["trade_id"] = ""
+    elif event_type in FILL_EVENTS and _is_present(broker_order_id):
         if not _is_present(record.get("position_id")) or str(record.get("position_id")).lower().startswith("paper:"):
             record["position_id"] = lifecycle_position_id_for(symbol=symbol, broker_order_id=broker_order_id, client_order_id=client_order_id) or ""
         if not _is_present(record.get("trade_id")):
@@ -186,7 +227,7 @@ def _normalize_export_lineage(record: dict[str, Any]) -> dict[str, Any]:
             if not _is_present(record.get(field)):
                 record["lineage_warning"] = _append_warning(record.get("lineage_warning"), f"missing_{field}")
     if event_type in SUBMITTED_EVENTS:
-        for field in ("candidate_id", "client_order_id"):
+        for field in ("candidate_id", "client_order_id", "broker_order_id"):
             if not _is_present(record.get(field)):
                 record["lineage_warning"] = _append_warning(record.get("lineage_warning"), f"missing_{field}")
     if event_type in FILL_EVENTS:
@@ -208,6 +249,7 @@ def _event_record(row: dict[str, Any]) -> dict[str, Any]:
     record = {
         "id": int(row.get("id") or 0),
         "event_at": row.get("event_at").isoformat() if isinstance(row.get("event_at"), datetime) else str(row.get("event_at") or ""),
+        "event_at_raw": row.get("event_at"),
         "symbol": symbol,
         "name": symbol,
         "event_type": event_type,

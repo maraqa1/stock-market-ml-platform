@@ -5,12 +5,15 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from stockml.trading.order_intent import derive_order_intent
+from stockml.trading.session_mode import classify_session_mode
 
 LINEAGE_FIELDS = (
     "pipeline_run_id",
     "cycle_id",
     "signal_id",
     "candidate_id",
+    "scan_candidate_id",
+    "parent_candidate_id",
     "event_key",
     "client_order_id",
     "broker_order_id",
@@ -20,6 +23,9 @@ LINEAGE_FIELDS = (
     "order_intent",
     "strategy_mode",
     "session_mode",
+    "event_session_mode",
+    "planned_execution_session_mode",
+    "actual_submission_session_mode",
     "candidate_source",
     "model_version",
 )
@@ -168,16 +174,36 @@ def lineage_warning_for(values: Mapping[str, Any], required: tuple[str, ...]) ->
     return [f"missing_{field}" for field in required if not _text(values.get(field))]
 
 
+def _session_mode_from_event_at(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    try:
+        from datetime import datetime, timezone
+
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return classify_session_mode(parsed)
+    except Exception:
+        return ""
+
+
 def normalize_lineage(values: Mapping[str, Any], *, required: tuple[str, ...] = ()) -> LineageResult:
     out = {field: values.get(field) for field in LINEAGE_FIELDS}
     warnings = lineage_warning_for(out, required)
-    session_mode, session_warning = normalize_session_mode(out.get("session_mode"))
-    if session_mode:
-        out["session_mode"] = session_mode
-    elif out.get("session_mode"):
-        out["session_mode"] = ""
-    if session_warning:
-        warnings.append(session_warning)
+    for field in ("session_mode", "event_session_mode", "planned_execution_session_mode", "actual_submission_session_mode"):
+        session_mode, session_warning = normalize_session_mode(out.get(field))
+        if session_mode:
+            out[field] = session_mode
+        elif out.get(field):
+            out[field] = ""
+        if session_warning:
+            warnings.append(f"{field}:{session_warning}")
+    if not _text(out.get("event_session_mode")):
+        derived = _session_mode_from_event_at(values.get("event_at") or values.get("timestamp"))
+        if derived:
+            out["event_session_mode"] = derived
     existing_warning = _text(values.get("lineage_warning"))
     if existing_warning:
         warnings.extend(part for part in existing_warning.split("|") if part)
@@ -193,9 +219,15 @@ def candidate_lineage(
     candidate_source: Any = "paper_order_plan",
     strategy_mode: Any = "multi_day_forecast",
     session_mode: Any = "regular_session",
+    event_session_mode: Any = "",
+    planned_execution_session_mode: Any = "",
+    actual_submission_session_mode: Any = "",
     model_version: Any = "",
     side: Any = "",
     client_order_id: Any = "",
+    candidate_id: Any = "",
+    scan_candidate_id: Any = "",
+    parent_candidate_id: Any = "",
 ) -> LineageResult:
     symbol_text = _upper(symbol)
     candidate_source_text = _text(candidate_source) or "paper_order_plan"
@@ -207,7 +239,9 @@ def candidate_lineage(
         strategy_mode=strategy_text,
         model_version=model_text,
     )
-    candidate_id = candidate_id_for(cycle_id=cycle_id, symbol=symbol_text, candidate_source=candidate_source_text)
+    candidate_id = _text(candidate_id) or candidate_id_for(cycle_id=cycle_id, symbol=symbol_text, candidate_source=candidate_source_text)
+    scan_candidate_id = _text(scan_candidate_id) or None
+    parent_candidate_id = _text(parent_candidate_id) or None
     event_key = event_key_for(cycle_id=cycle_id, subject_id=candidate_id, event_type="selected", source=candidate_source_text)
     intent = derive_lineage_order_intent(current_qty=0, attempted_side=side, attempted_qty=1)
     values = {
@@ -215,6 +249,8 @@ def candidate_lineage(
         "cycle_id": _text(cycle_id) or None,
         "signal_id": signal_id,
         "candidate_id": candidate_id,
+        "scan_candidate_id": scan_candidate_id,
+        "parent_candidate_id": parent_candidate_id,
         "event_key": event_key,
         "client_order_id": _text(client_order_id) or None,
         "broker_order_id": None,
@@ -224,6 +260,9 @@ def candidate_lineage(
         "order_intent": intent,
         "strategy_mode": strategy_text,
         "session_mode": _text(session_mode) or "regular_session",
+        "event_session_mode": _text(event_session_mode) or None,
+        "planned_execution_session_mode": _text(planned_execution_session_mode) or None,
+        "actual_submission_session_mode": _text(actual_submission_session_mode) or None,
         "candidate_source": candidate_source_text,
         "model_version": model_text or None,
     }
@@ -239,7 +278,10 @@ def order_lineage(candidate: Mapping[str, Any], *, broker_order_id: Any = "", ev
     )
     client_order_id = candidate.get("client_order_id")
     broker_text = _text(broker_order_id) or _text(candidate.get("broker_order_id")) or _text(candidate.get("order_id"))
-    trade_id = trade_id_for(symbol=symbol, broker_order_id=broker_text, client_order_id=client_order_id, existing_trade_id=candidate.get("trade_id"))
+    existing_position_id = _text(candidate.get("position_id"))
+    existing_trade_id = _text(candidate.get("trade_id"))
+    if existing_position_id.lower().startswith("paper:"):
+        existing_position_id = ""
     event_key = event_key_for(
         cycle_id=candidate.get("cycle_id"),
         subject_id=broker_text or client_order_id or candidate_id,
@@ -253,19 +295,14 @@ def order_lineage(candidate: Mapping[str, Any], *, broker_order_id: Any = "", ev
             "event_key": event_key,
             "client_order_id": _text(client_order_id) or None,
             "broker_order_id": broker_text or None,
-            "position_id": lifecycle_position_id_for(
-                symbol=symbol,
-                broker_order_id=broker_text,
-                client_order_id=client_order_id,
-                existing_position_id=candidate.get("position_id"),
-            ),
-            "trade_id": trade_id,
+            "position_id": existing_position_id or None,
+            "trade_id": existing_trade_id or None,
             "order_intent": normalize_lineage_intent(candidate.get("order_intent")),
         }
     )
     required = ("cycle_id", "candidate_id", "client_order_id")
     if broker_text:
-        required = (*required, "broker_order_id", "position_id", "trade_id")
+        required = (*required, "broker_order_id")
     return normalize_lineage(values, required=required)
 
 

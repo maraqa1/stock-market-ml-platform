@@ -22,7 +22,9 @@ from stockml.safety.paper_only_guard import paper_only_guard
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
+from stockml.trading.activity_journal import enrich_activity_details
 from stockml.trading.execution_engine import submit_paper_order_payload
+from stockml.trading.lifecycle_ids import LINEAGE_FIELDS, candidate_lineage, order_lineage, stable_id
 from stockml.trading.order_builder import extended_limit_price, validate_order_payload
 from stockml.trading.position_intent_guard import PositionIntentConfig, guard_order_submission, record_position_intent_block, write_position_intent_report
 from stockml.trading.session_mode import classify_session_mode
@@ -118,6 +120,10 @@ class AutoOpenConfig:
     max_short_positions: int = 15
     near_miss_entries_with_open_positions: bool = False
     close_automation_mode: str = "automatic"
+    validation_mode: bool = False
+    validation_max_new_orders_per_cycle: int = 1
+    validation_max_new_orders_per_day: int = 2
+    validation_max_open_positions_total: int = 3
 
 
 def _aware(value: datetime | None = None) -> datetime:
@@ -457,6 +463,10 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         max_short_positions=int(section.get("max_short_positions", 15)),
         near_miss_entries_with_open_positions=bool(section.get("near_miss_entries_with_open_positions", True)),
         close_automation_mode=str(section.get("close_automation_mode", "automatic") or "automatic"),
+        validation_mode=bool(section.get("validation_mode", True)),
+        validation_max_new_orders_per_cycle=int(section.get("validation_max_new_orders_per_cycle", 1)),
+        validation_max_new_orders_per_day=int(section.get("validation_max_new_orders_per_day", 2)),
+        validation_max_open_positions_total=int(section.get("validation_max_open_positions_total", 3)),
     )
 
 
@@ -1117,28 +1127,69 @@ def _record_candidate_lifecycle_event(
     order = payload.get("order") if isinstance(payload.get("order"), dict) else {}
     event_type = _candidate_event_type(verdict, block_reason)
     cycle_id = str(payload.get("cycle_id") or now.strftime("%Y%m%d_%H%M%S"))
+    event_session = classify_session_mode(now)
+    candidate_source = payload.get("candidate_source") or payload.get("fallback_reason") or payload.get("model_evidence_source") or "paper_autopilot"
+    client_order_id = payload.get("client_order_id") or order.get("client_order_id") or ""
+    base_lineage = candidate_lineage(
+        symbol=symbol,
+        cycle_id=cycle_id,
+        pipeline_run_id=payload.get("pipeline_run_id", ""),
+        candidate_source=candidate_source,
+        strategy_mode=payload.get("strategy_mode") or payload.get("strategy_stream") or payload.get("trading_stream") or "paper_autopilot",
+        session_mode=payload.get("session_mode") or event_session,
+        event_session_mode=event_session,
+        planned_execution_session_mode=payload.get("planned_execution_session_mode") or payload.get("session_mode") or event_session,
+        actual_submission_session_mode=event_session if event_type == "candidate_submitted" else "",
+        model_version=payload.get("model_version", ""),
+        side=order.get("side") or payload.get("side"),
+        client_order_id=client_order_id,
+        candidate_id=payload.get("candidate_id", ""),
+        scan_candidate_id=payload.get("scan_candidate_id", ""),
+        parent_candidate_id=payload.get("parent_candidate_id", ""),
+    )
+    lineage_seed = enrich_activity_details({**payload, **base_lineage.values, "symbol": symbol, "client_order_id": client_order_id}, base_lineage)
+    if event_type == "candidate_submitted":
+        lineage_seed["position_id"] = None
+        lineage_seed["trade_id"] = None
+        lineage = order_lineage(lineage_seed, broker_order_id=order_id, event_type=event_type)
+        details_summary = f"order submitted · {symbol} · {order_id or client_order_id}"
+    else:
+        lineage = base_lineage
+        details_summary = f"{event_type.replace('_', ' ')} · {symbol} · {block_reason or verdict}"
     extended = bool(order.get("extended_hours", payload.get("extended_hours", False)))
-    event_key = f"{cycle_id}:{symbol}:{event_type}:{block_reason}:{order_id}"
+    event_key = lineage.values.get("event_key") or f"{cycle_id}:{symbol}:{event_type}:{block_reason}:{order_id}"
     record_event_once(
         position_id_for_symbol(symbol),
         event_type,
         "paper_autopilot",
-        {
-            "event_key": event_key,
-            "cycle_id": cycle_id,
-            "symbol": symbol,
-            "action": "open",
-            "candidate_source": payload.get("fallback_reason") or payload.get("model_evidence_source") or "paper_autopilot",
-            "session_mode": "24x5" if extended else "regular",
-            "extended_hours": extended,
-            "overnight_tradable": payload.get("asset_overnight_tradable", ""),
-            "order_type": order.get("type", payload.get("order_type", "")),
-            "limit_price": order.get("limit_price", payload.get("limit_price", "")),
-            "block_reason": block_reason,
-            "verdict": verdict,
-            "order_id": order_id,
-            "size_usd": size_usd,
-        },
+        enrich_activity_details(
+            {
+                **payload,
+                "event_key": event_key,
+                "cycle_id": cycle_id,
+                "symbol": symbol,
+                "action": "open",
+                "candidate_source": candidate_source,
+                "session_mode": payload.get("session_mode") or event_session,
+                "event_session_mode": event_session,
+                "planned_execution_session_mode": payload.get("planned_execution_session_mode") or payload.get("session_mode") or event_session,
+                "actual_submission_session_mode": event_session if event_type == "candidate_submitted" else "",
+                "extended_hours": extended,
+                "overnight_tradable": payload.get("asset_overnight_tradable", payload.get("overnight_tradable", "")),
+                "order_type": order.get("type", payload.get("order_type", "")),
+                "limit_price": order.get("limit_price", payload.get("limit_price", "")),
+                "block_reason": block_reason,
+                "verdict": verdict,
+                "order_id": order_id,
+                "broker_order_id": order_id,
+                "client_order_id": client_order_id,
+                "size_usd": size_usd,
+                "details_summary": details_summary,
+                "position_id": None if event_type == "candidate_submitted" else payload.get("position_id"),
+                "trade_id": None if event_type == "candidate_submitted" else payload.get("trade_id"),
+            },
+            lineage,
+        ),
         event_key=event_key,
     )
 
@@ -1280,6 +1331,10 @@ def apply_auto_open(
     remaining_slots = max(0, cfg.max_positions - len(held))
     daily_remaining = max(0, cfg.max_auto_opens_per_day - _todays_open_count(db, stamp))
     slots = len(candidates) if rotation_candidates else min(remaining_slots, daily_remaining)
+    if cfg.validation_mode:
+        validation_remaining_positions = max(0, cfg.validation_max_open_positions_total - len(open_positions))
+        validation_daily_remaining = max(0, cfg.validation_max_new_orders_per_day - _todays_open_count(db, stamp))
+        slots = min(slots, max(0, cfg.validation_max_new_orders_per_cycle), validation_remaining_positions, validation_daily_remaining)
     if slots <= 0:
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "auto_open_cap_or_basket_full"}
 
@@ -1299,21 +1354,52 @@ def apply_auto_open(
         if candidate.get("nightly_bias") and not details.get("nightly_bias"):
             details["nightly_bias"] = candidate.get("nightly_bias")
         cycle_id = stamp.strftime("%Y%m%d_%H%M%S")
+        for field in LINEAGE_FIELDS:
+            if candidate.get(field) not in (None, "") and not details.get(field):
+                details[field] = candidate.get(field)
         details.setdefault("cycle_id", cycle_id)
+        event_session = classify_session_mode(stamp)
+        candidate_source = details.get("candidate_source") or details.get("fallback_reason") or details.get("model_evidence_source") or "paper_autopilot"
+        if not details.get("candidate_id"):
+            lineage = candidate_lineage(
+                symbol=symbol,
+                cycle_id=cycle_id,
+                pipeline_run_id=details.get("pipeline_run_id", ""),
+                candidate_source=candidate_source,
+                strategy_mode=details.get("strategy_mode") or details.get("strategy_stream") or details.get("trading_stream") or "paper_autopilot",
+                session_mode=details.get("session_mode") or event_session,
+                event_session_mode=event_session,
+                planned_execution_session_mode=details.get("session_mode") or event_session,
+                model_version=details.get("model_version", ""),
+                side=details.get("side") or candidate.get("side"),
+                client_order_id=details.get("client_order_id", ""),
+            )
+            details.update({key: value for key, value in lineage.values.items() if value not in (None, "")})
+        scan_candidate_id = stable_id("scan", cycle_id, symbol, candidate_source)
+        if scan_candidate_id and not details.get("scan_candidate_id"):
+            details["scan_candidate_id"] = scan_candidate_id
+            if details.get("candidate_id") and details.get("candidate_id") != scan_candidate_id:
+                details.setdefault("parent_candidate_id", details.get("candidate_id"))
+        details.setdefault("event_session_mode", event_session)
+        details.setdefault("planned_execution_session_mode", details.get("session_mode") or event_session)
         scan_event_key = f"{cycle_id}:{symbol}:candidate_scanned"
+        scan_payload = {
+            **details,
+            "event_key": scan_event_key,
+            "cycle_id": cycle_id,
+            "symbol": symbol,
+            "action": "open",
+            "candidate_source": candidate_source,
+            "session_mode": details.get("session_mode") or event_session,
+            "event_session_mode": event_session,
+            "extended_hours": bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled),
+            "details_summary": f"candidate scanned · {symbol}",
+        }
         record_event_once(
             position_id_for_symbol(symbol),
             "candidate_scanned",
             "paper_autopilot",
-            {
-                "event_key": scan_event_key,
-                "cycle_id": cycle_id,
-                "symbol": symbol,
-                "action": "open",
-                "candidate_source": details.get("fallback_reason") or details.get("model_evidence_source") or "paper_autopilot",
-                "session_mode": classify_session_mode(stamp),
-                "extended_hours": bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled),
-            },
+            scan_payload,
             event_key=scan_event_key,
         )
         if _is_same_day_momentum_candidate(details):

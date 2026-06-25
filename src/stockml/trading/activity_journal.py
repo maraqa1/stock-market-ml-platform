@@ -39,34 +39,62 @@ def latest_trade_lineage_for_symbol(symbol: Any) -> dict[str, Any]:
     if engine is None:
         return {"lineage_warning": "missing_trade_id"}
     with engine.connect() as conn:
-        row = (
+        rows = (
             conn.execute(
                 select(position_events)
-                .where(position_events.c.position_id == position_id_for_symbol(clean_symbol), position_events.c.trade_id.is_not(None))
+                .where(position_events.c.trade_id.is_not(None))
                 .order_by(desc(position_events.c.event_at), desc(position_events.c.id))
-                .limit(1)
+                .limit(5000)
             )
             .mappings()
-            .first()
+            .all()
         )
-    if row is None:
-        return {"lineage_warning": "missing_opening_fill|missing_trade_id"}
-    data = dict(row)
-    details = data.get("details") if isinstance(data.get("details"), dict) else {}
-    lineage = {field: data.get(field) or details.get(field) for field in LINEAGE_FIELDS}
-    warnings = _clean_text(data.get("lineage_warning") or details.get("lineage_warning"))
-    if warnings:
-        lineage["lineage_warning"] = warnings
-    return lineage
+    for row in rows:
+        data = dict(row)
+        details = data.get("details") if isinstance(data.get("details"), dict) else {}
+        row_symbol = _clean_text(details.get("symbol") or details.get("ticker")).upper()
+        if not row_symbol:
+            position_id = _clean_text(data.get("position_id") or details.get("position_id"))
+            if ":" in position_id:
+                row_symbol = position_id.rsplit(":", 1)[-1].upper()
+        if row_symbol != clean_symbol:
+            continue
+        lineage = {field: data.get(field) or details.get(field) for field in LINEAGE_FIELDS}
+        warnings = _clean_text(data.get("lineage_warning") or details.get("lineage_warning"))
+        if warnings:
+            lineage["lineage_warning"] = warnings
+        return lineage
+    return {"lineage_warning": "ambiguous_symbol_position|missing_trade_id"}
+
+def _append_warning(existing: Any, warning: Any) -> str:
+    parts = [part for part in _clean_text(existing).split("|") if part]
+    for part in _clean_text(warning).split("|"):
+        if part and part not in parts:
+            parts.append(part)
+    return "|".join(parts)
 
 
 def enrich_monitor_activity_details(symbol: Any, details: Mapping[str, Any] | None) -> dict[str, Any]:
     payload = dict(details or {})
-    payload.update({k: v for k, v in latest_trade_lineage_for_symbol(symbol).items() if v not in (None, "") and not payload.get(k)})
-    return enrich_activity_details(payload, monitor_lineage(payload))
+    latest = latest_trade_lineage_for_symbol(symbol)
+    latest_warning = latest.get("lineage_warning")
+    payload.update({k: v for k, v in latest.items() if k != "lineage_warning" and v not in (None, "") and not payload.get(k)})
+    if latest_warning:
+        payload["lineage_warning"] = _append_warning(payload.get("lineage_warning"), latest_warning)
+    out = enrich_activity_details(payload, monitor_lineage(payload))
+    if latest_warning:
+        out["lineage_warning"] = _append_warning(out.get("lineage_warning"), latest_warning)
+    return out
 
 
 def enrich_exit_activity_details(symbol: Any, details: Mapping[str, Any] | None, *, reason: Any = "") -> dict[str, Any]:
     payload = dict(details or {})
-    payload.update({k: v for k, v in latest_trade_lineage_for_symbol(symbol).items() if v not in (None, "") and not payload.get(k)})
-    return enrich_activity_details(payload, exit_lineage(payload, reason=reason))
+    latest = latest_trade_lineage_for_symbol(symbol)
+    latest_warning = latest.get("lineage_warning")
+    payload.update({k: v for k, v in latest.items() if k != "lineage_warning" and v not in (None, "") and not payload.get(k)})
+    if latest_warning:
+        payload["lineage_warning"] = _append_warning(payload.get("lineage_warning"), latest_warning)
+    out = enrich_activity_details(payload, exit_lineage(payload, reason=reason))
+    if latest_warning:
+        out["lineage_warning"] = _append_warning(out.get("lineage_warning"), latest_warning)
+    return out
