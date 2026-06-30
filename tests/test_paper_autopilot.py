@@ -741,3 +741,45 @@ def test_paper_autopilot_appends_fallback_candidates_after_strong_candidate(monk
     assert captured["symbols"] == ["LPRO", "RXT", "BNY"]
     assert state["autopilot_open_attempted"] == 3
     assert state["autopilot_open_blocked"] == 3
+
+
+def test_paper_autopilot_clears_stale_basket_pause_when_auto_open_hits_cap(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    state = paper_autopilot.start(tmp_path)
+    state.update(
+        {
+            "mode": "paper_autopilot",
+            "basket_state": "new_entries_paused",
+            "new_entries_paused": True,
+            "basket_risk_reason": "small_book_basket_return_pause",
+            "basket_risk_reason_text": "stale pause",
+        }
+    )
+    paper_autopilot.save_state(state, tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame(columns=["symbol", "alpaca_status"]).to_csv(tracking, index=False)
+    pd.DataFrame(columns=["symbol", "qty"]).to_csv(positions, index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [{"symbol": "BNY", "promotion_score": 1.0}],
+        per_symbol_forecast_candidate_loader=lambda: [],
+        near_miss_candidate_loader=lambda: [],
+        plan_candidate_loader=lambda: [],
+        fallback_candidate_loader=lambda: [],
+        auto_open_applier=lambda candidates, positions, mode: {
+            "autopilot_open_attempted": 0,
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "validation_daily_auto_open_cap_reached",
+        },
+    )
+
+    assert state["basket_state"] == "normal"
+    assert state["new_entries_paused"] is False
+    assert state["basket_risk_reason"] == ""
+    assert state["basket_risk_reason_text"] == ""
+    assert state["autopilot_open_notes"] == "validation_daily_auto_open_cap_reached"

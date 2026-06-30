@@ -1330,13 +1330,25 @@ def apply_auto_open(
 
     remaining_slots = max(0, cfg.max_positions - len(held))
     daily_remaining = max(0, cfg.max_auto_opens_per_day - _todays_open_count(db, stamp))
+    capacity_note = ""
+    if remaining_slots <= 0:
+        capacity_note = "max_positions_reached"
+    elif daily_remaining <= 0:
+        capacity_note = "daily_auto_open_cap_reached"
     slots = len(candidates) if rotation_candidates else min(remaining_slots, daily_remaining)
     if cfg.validation_mode:
         validation_remaining_positions = max(0, cfg.validation_max_open_positions_total - len(open_positions))
         validation_daily_remaining = max(0, cfg.validation_max_new_orders_per_day - _todays_open_count(db, stamp))
-        slots = min(slots, max(0, cfg.validation_max_new_orders_per_cycle), validation_remaining_positions, validation_daily_remaining)
+        validation_cycle_remaining = max(0, cfg.validation_max_new_orders_per_cycle)
+        if validation_remaining_positions <= 0:
+            capacity_note = "validation_open_position_cap_reached"
+        elif validation_daily_remaining <= 0:
+            capacity_note = "validation_daily_auto_open_cap_reached"
+        elif validation_cycle_remaining <= 0:
+            capacity_note = "validation_cycle_auto_open_cap_reached"
+        slots = min(slots, validation_cycle_remaining, validation_remaining_positions, validation_daily_remaining)
     if slots <= 0:
-        return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "auto_open_cap_or_basket_full"}
+        return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": capacity_note or "auto_open_cap_or_basket_full"}
 
     broker = client or AlpacaPaperClient(trade_cfg)
     for candidate in candidates:

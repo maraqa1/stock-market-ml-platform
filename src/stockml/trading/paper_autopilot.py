@@ -1013,9 +1013,10 @@ def tick(
             if not candidates and open_positions == 0:
                 candidates = fallback_candidate_loader()
             if auto_open_applier is not None:
-                auto_open_result = auto_open_applier(candidates, positions_records, str(state.get("mode") or "observe"))
+                open_result = auto_open_applier(candidates, positions_records, str(state.get("mode") or "observe"))
             else:
-                auto_open_result = apply_auto_open(candidates, positions_records, mode=str(state.get("mode") or "observe"), root=root)
+                open_result = apply_auto_open(candidates, positions_records, mode=str(state.get("mode") or "observe"), root=root)
+            auto_open_result.update(open_result)
             if int(auto_open_result.get("autopilot_open_submitted") or 0) > 0:
                 submitted_opens = int(auto_open_result.get("autopilot_open_submitted") or 0)
                 open_orders = max(open_orders, submitted_opens)

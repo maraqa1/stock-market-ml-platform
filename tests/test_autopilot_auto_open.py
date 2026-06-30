@@ -1602,7 +1602,7 @@ def test_auto_open_respects_daily_cap():
     )
 
     assert result["autopilot_open_submitted"] == 0
-    assert result["autopilot_open_notes"] == "auto_open_cap_or_basket_full"
+    assert result["autopilot_open_notes"] == "daily_auto_open_cap_reached"
 
 
 def test_auto_open_blocks_when_kill_switch_active():
