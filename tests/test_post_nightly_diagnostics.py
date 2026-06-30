@@ -41,6 +41,30 @@ def test_main_runs_selected_steps_after_ok_doctor(monkeypatch):
     code = post.main(["--skip-wait", "--skip-promotion-replay"])
 
     assert code == 0
+    assert ran == [
+        ("trade_ledger", "build_trade_ledger.py"),
+        ("profitability_attribution", "build_profitability_attribution.py"),
+        ("strategy_diagnostics", "run_strategy_diagnostics.py"),
+    ]
+
+
+def test_main_can_skip_trade_ledger_and_attribution(monkeypatch):
+    ran = []
+    monkeypatch.setattr(
+        post,
+        "audit_latest_pipeline",
+        lambda *args, **kwargs: {"status": "ok", "reason": "", "missing_stages": []},
+    )
+    monkeypatch.setattr(post, "run_step", lambda name, script, extra_args=None: ran.append((name, Path(script).name)))
+
+    code = post.main([
+        "--skip-wait",
+        "--skip-trade-ledger",
+        "--skip-profitability-attribution",
+        "--skip-promotion-replay",
+    ])
+
+    assert code == 0
     assert ran == [("strategy_diagnostics", "run_strategy_diagnostics.py")]
 
 

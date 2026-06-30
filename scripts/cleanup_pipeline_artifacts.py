@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,6 +62,44 @@ PROTECTED_NAMES = {
 STAMP_PATTERN = re.compile(r"(20\d{6}_\d{6})")
 
 
+ARTIFACT_SUFFIXES = {".csv", ".json", ".md", ".parquet"}
+
+
+def _walk_manifest_values(value: Any) -> Iterable[str]:
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _walk_manifest_values(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_manifest_values(item)
+    elif isinstance(value, str):
+        yield value
+
+
+def manifest_referenced_paths(root: Path = ROOT, *, keep_manifests: int = 5) -> set[Path]:
+    runs_dir = root / "data" / "pipeline_runs"
+    if not runs_dir.exists():
+        return set()
+    manifests = sorted(runs_dir.glob("*/manifest.json"), key=lambda path: path.stat().st_mtime, reverse=True)[:keep_manifests]
+    protected: set[Path] = set()
+    for manifest in manifests:
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for raw in _walk_manifest_values(payload):
+            candidate = Path(raw)
+            if candidate.suffix.lower() not in ARTIFACT_SUFFIXES:
+                continue
+            path = candidate if candidate.is_absolute() else root / candidate
+            try:
+                resolved = path.resolve()
+            except Exception:
+                resolved = path
+            protected.add(resolved)
+    return protected
+
+
 def _artifact_sort_key(path: Path) -> tuple[str, float, str]:
     match = STAMP_PATTERN.search(path.name)
     stamp = match.group(1) if match else ""
@@ -87,7 +126,10 @@ def _family_key(path: Path) -> str:
     return f"{path.parent}:{stem}{path.suffix}"
 
 
-def stale_files(patterns: Iterable[RetentionPattern], root: Path = ROOT) -> list[Path]:
+def stale_files(patterns: Iterable[RetentionPattern], root: Path = ROOT, protected_paths: set[Path] | None = None) -> list[Path]:
+    root = root.resolve()
+    protected = protected_paths if protected_paths is not None else manifest_referenced_paths(root)
+    protected = {path.resolve() for path in protected}
     stale: dict[Path, None] = {}
     for pattern in patterns:
         files = _files_for(pattern, root)
@@ -97,10 +139,12 @@ def stale_files(patterns: Iterable[RetentionPattern], root: Path = ROOT) -> list
                 families.setdefault(_family_key(path), []).append(path)
             for family_files in families.values():
                 for path in family_files[max(pattern.keep, 0):]:
-                    stale[path] = None
+                    if path.resolve() not in protected:
+                        stale[path] = None
         else:
             for path in files[max(pattern.keep, 0):]:
-                stale[path] = None
+                if path.resolve() not in protected:
+                    stale[path] = None
     return sorted(stale, key=lambda path: path.stat().st_size, reverse=True)
 
 

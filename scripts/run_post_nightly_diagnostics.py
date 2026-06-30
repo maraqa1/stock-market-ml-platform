@@ -16,6 +16,8 @@ from stockml.pipeline.doctor import audit_latest_pipeline
 
 
 DEFAULT_STEPS = (
+    ("trade_ledger", ROOT / "scripts" / "build_trade_ledger.py"),
+    ("profitability_attribution", ROOT / "scripts" / "build_profitability_attribution.py"),
     ("strategy_diagnostics", ROOT / "scripts" / "run_strategy_diagnostics.py"),
     ("intraday_promotion_replay", ROOT / "scripts" / "run_intraday_promotion_replay.py"),
 )
@@ -73,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-wait-minutes", type=int, default=180)
     parser.add_argument("--poll-seconds", type=int, default=300)
     parser.add_argument("--skip-wait", action="store_true", help="Run one doctor check and fail if it is not ok.")
+    parser.add_argument("--skip-trade-ledger", action="store_true")
+    parser.add_argument("--skip-profitability-attribution", action="store_true")
     parser.add_argument("--skip-strategy-diagnostics", action="store_true")
     parser.add_argument("--skip-promotion-replay", action="store_true")
     args = parser.parse_args(argv)
@@ -92,10 +96,14 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     steps = []
-    if not args.skip_strategy_diagnostics:
+    if not args.skip_trade_ledger:
         steps.append(DEFAULT_STEPS[0])
-    if not args.skip_promotion_replay:
+    if not args.skip_profitability_attribution:
         steps.append(DEFAULT_STEPS[1])
+    if not args.skip_strategy_diagnostics:
+        steps.append(DEFAULT_STEPS[2])
+    if not args.skip_promotion_replay:
+        steps.append(DEFAULT_STEPS[3])
 
     for name, script in steps:
         run_step(name, script)

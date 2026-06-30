@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from scripts.cleanup_pipeline_artifacts import PROTECTED_NAMES, RetentionPattern, stale_files
@@ -123,3 +124,23 @@ def test_cleanup_retains_critical_interim_families_independently(tmp_path):
     assert sum(name.startswith("03_us_price_validated_universe_") for name in names) == 3
     assert sum(name.startswith("04_us_metadata_enriched_") for name in names) == 3
     assert not any(name.startswith("00_candidate_funnel_summary_") for name in names)
+
+
+def test_cleanup_preserves_manifest_referenced_trading_artifacts(tmp_path):
+    referenced = tmp_path / "data" / "trading" / "holding_period" / "holding_review_20260630_094350.csv"
+    _write(referenced, "manifest-ref")
+    for idx in range(12):
+        _write(
+            tmp_path / "data" / "trading" / "holding_period" / f"holding_review_20260630_10{idx:02d}00.csv",
+            str(idx),
+        )
+    manifest = tmp_path / "data" / "pipeline_runs" / "20260630_043001" / "manifest.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        json.dumps({"stages": {"trading_day_readiness": {"outputs": {"holding_review_path": str(referenced)}}}}),
+        encoding="utf-8",
+    )
+
+    selected = stale_files([RetentionPattern("data/trading", "*.csv", keep=2, recursive=True)], root=tmp_path)
+
+    assert referenced not in selected

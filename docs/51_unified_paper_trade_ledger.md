@@ -1,4 +1,4 @@
-﻿# Unified Paper Trade Ledger
+# Unified Paper Trade Ledger
 
 The unified paper trade ledger is a read-only diagnostic artifact that joins paper activity journal events into trade-level rows.
 
@@ -23,6 +23,10 @@ Submitted orders do not create trades. Opening fills create trade rows. Closing 
 - `data/trading/diagnostics/trade_ledger_YYYYMMDD_HHMMSS.csv`
 - `data/trading/diagnostics/unmatched_lifecycle_events_YYYYMMDD_HHMMSS.csv`
 - `data/trading/diagnostics/trade_ledger_summary_YYYYMMDD_HHMMSS.md`
+
+## Automation
+
+The post-nightly diagnostic job runs `scripts/build_trade_ledger.py` after the full nightly pipeline is healthy. It then runs `scripts/build_profitability_attribution.py` so the portal Trade Ledger Diagnostics panel has fresh read-only CSV downloads each trading day.
 
 ## Fit for Attribution
 
