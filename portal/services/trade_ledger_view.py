@@ -80,22 +80,34 @@ def _read_csv(path: Path | None) -> pd.DataFrame:
 
 
 def _summary(ledger: pd.DataFrame, unmatched: pd.DataFrame, attribution: pd.DataFrame) -> dict[str, Any]:
-    status_counts = _counts(ledger, "trade_status")
-    pnl_col = "total_pnl_usd" if "total_pnl_usd" in attribution.columns else "realized_pnl_usd"
+    status_col = _first_existing(ledger, ["trade_status", "position_status"])
+    status_counts = _counts(ledger, status_col) if status_col else {}
+    pnl_col = _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"])
+    pnl_source = ledger
+    if pnl_col is None:
+        pnl_col = _first_existing(attribution, ["total_pnl_usd", "total_pnl", "realized_pnl_usd", "realised_pnl"])
+        pnl_source = attribution
     return {
         "trade_count": int(len(ledger)),
         "open_trades": int(status_counts.get("open", 0)),
         "closed_trades": int(status_counts.get("closed", 0)),
         "unmatched_events": int(len(unmatched)),
         "attribution_rows": int(len(attribution)),
-        "total_pnl_usd": _sum(attribution, pnl_col),
-        "winner_count": _positive_count(attribution, pnl_col),
-        "loser_count": _negative_count(attribution, pnl_col),
+        "total_pnl_usd": _sum(pnl_source, pnl_col) if pnl_col else 0.0,
+        "winner_count": _positive_count(ledger, _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"]) or ""),
+        "loser_count": _negative_count(ledger, _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"]) or ""),
     }
 
 
-def _counts(frame: pd.DataFrame, column: str) -> dict[str, int]:
-    if frame.empty or column not in frame.columns:
+def _first_existing(frame: pd.DataFrame, columns: list[str]) -> str | None:
+    for column in columns:
+        if column in frame.columns:
+            return column
+    return None
+
+
+def _counts(frame: pd.DataFrame, column: str | None) -> dict[str, int]:
+    if frame.empty or not column or column not in frame.columns:
         return {}
     counts = frame[column].fillna("").astype(str).str.lower().value_counts()
     return {str(key): int(value) for key, value in counts.items()}
@@ -125,7 +137,7 @@ def _records(frame: pd.DataFrame, preferred: list[str], limit: int) -> list[dict
     cols = [col for col in preferred if col in frame.columns]
     if not cols:
         cols = list(frame.columns[:12])
-    sort_cols = [col for col in ["closed_at", "opened_at", "event_at", "symbol"] if col in frame.columns]
+    sort_cols = [col for col in ["exit_time", "closed_at", "entry_time", "opened_at", "event_at", "symbol"] if col in frame.columns]
     source = frame.sort_values(sort_cols, ascending=False, kind="stable") if sort_cols else frame
     return source[cols].head(limit).fillna("").to_dict("records")
 
@@ -135,14 +147,22 @@ def _ledger_columns() -> list[str]:
         "trade_id",
         "symbol",
         "side",
+        "position_status",
         "trade_status",
+        "entry_time",
+        "exit_time",
         "opened_at",
         "closed_at",
         "entry_price",
         "exit_price",
+        "entry_quantity",
+        "exit_quantity",
         "quantity",
+        "realised_pnl",
         "realized_pnl_usd",
         "client_order_id",
+        "entry_broker_order_id",
+        "exit_broker_order_id",
         "broker_order_id",
     ]
 
@@ -155,7 +175,9 @@ def _attribution_columns() -> list[str]:
         "opened_at",
         "closed_at",
         "realized_pnl_usd",
+        "realised_pnl",
         "total_pnl_usd",
+        "total_pnl",
         "entry_slippage_bps",
         "exit_slippage_bps",
         "candidate_source",
@@ -170,6 +192,8 @@ def _unmatched_columns() -> list[str]:
         "symbol",
         "event_type",
         "client_order_id",
+        "entry_broker_order_id",
+        "exit_broker_order_id",
         "broker_order_id",
         "trade_id",
         "lineage_warning",

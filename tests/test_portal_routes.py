@@ -926,3 +926,61 @@ def test_attribution_diagnostics_report_and_download_render(client):
 
     missing = client.get("/reports/diagnostics/not_a_kind.csv")
     assert missing.status_code == 404
+
+
+
+def test_trade_ledger_report_reads_new_ledger_schema(client):
+    root = Path("_tmp_portal_routes")
+    write_csv(
+        root / "data" / "trading" / "diagnostics" / "trade_ledger_20260630_183240.csv",
+        [
+            {
+                "trade_id": "trade-1",
+                "symbol": "PLTR",
+                "side": "short",
+                "position_status": "closed",
+                "entry_time": "2026-06-30T13:38:30Z",
+                "exit_time": "2026-06-30T15:30:12Z",
+                "entry_price": 115.06,
+                "exit_price": 117.58,
+                "realised_pnl": -52.93,
+            }
+        ],
+    )
+    write_csv(root / "data" / "trading" / "diagnostics" / "unmatched_lifecycle_events_20260630_183240.csv", [])
+    write_csv(
+        root / "data" / "trading" / "diagnostics" / "profitability_attribution_20260630_183240.csv",
+        [{"dimension": "ALL", "bucket": "ALL", "total_pnl": -52.93}],
+    )
+
+    response = client.get("/reports/trade_ledger")
+    assert response.status_code == 200
+    assert b"PLTR" in response.data
+    assert b"-52.93" in response.data
+    assert b"closed" in response.data
+    assert b"-52.93" in response.data
+
+
+
+def test_trade_ledger_context_uses_ledger_pnl_not_dimension_sum():
+    from portal.services.trade_ledger_view import trade_ledger_context
+
+    root = Path("_tmp_portal_routes")
+    write_csv(
+        root / "data" / "trading" / "diagnostics" / "trade_ledger_20260630_183241.csv",
+        [
+            {"trade_id": "trade-1", "symbol": "AAA", "position_status": "closed", "realised_pnl": -10},
+            {"trade_id": "trade-2", "symbol": "BBB", "position_status": "closed", "realised_pnl": -5},
+        ],
+    )
+    write_csv(root / "data" / "trading" / "diagnostics" / "unmatched_lifecycle_events_20260630_183241.csv", [])
+    write_csv(
+        root / "data" / "trading" / "diagnostics" / "profitability_attribution_20260630_183241.csv",
+        [
+            {"dimension": "ALL", "bucket": "ALL", "total_pnl": -15},
+            {"dimension": "side", "bucket": "short", "total_pnl": -15},
+        ],
+    )
+    ctx = trade_ledger_context(root)
+    assert ctx["summary"]["total_pnl_usd"] == -15
+    assert ctx["summary"]["closed_trades"] == 2
