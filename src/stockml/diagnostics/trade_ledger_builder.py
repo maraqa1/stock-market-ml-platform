@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -14,6 +14,8 @@ from stockml.db.connection import get_engine
 from stockml.db.schema import position_events
 from stockml.trading.activity_journal_export import ActivityJournalExportRequest, parse_utc_datetime, request_for_date, request_for_range
 from stockml.trading.lifecycle_ids import lifecycle_position_id_for, trade_id_for
+from stockml.trading.config import alpaca_config
+from stockml.trading.alpaca_client import AlpacaPaperClient
 
 LEDGER_COLUMNS = ["trade_id","position_id","symbol","side","order_intent","strategy_mode","event_session_mode","planned_execution_session_mode","actual_submission_session_mode","candidate_source","model_version","signal_id","candidate_id","client_order_id","entry_broker_order_id","exit_broker_order_id","entry_time","entry_price","entry_quantity","exit_time","exit_price","exit_quantity","current_price","position_status","realised_pnl","unrealised_pnl","realised_return_pct","unrealised_return_pct","holding_minutes","exit_decision_id","exit_reason","model_score","rank_overall","predicted_rank_pct","meta_label_probability","meta_label_decision","expected_trade_return","risk_adjusted_score","spread_bps_at_entry","spread_bps_at_exit","estimated_slippage_bps","estimated_total_cost","lineage_quality","lineage_warnings"]
 UNMATCHED_COLUMNS = ["event_id","event_at","symbol","event_type","source","reason_unmatched","available_trade_id","available_position_id","available_broker_order_id","available_client_order_id","available_candidate_id","suggested_fix"]
@@ -50,7 +52,19 @@ def _dt(v: Any) -> datetime | None:
     s = _text(v)
     if not s: return None
     try:
-        out = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        normalized = s.replace("Z", "+00:00")
+        if "." in normalized:
+            head, tail = normalized.split(".", 1)
+            tz = ""
+            for marker in ("+", "-"):
+                if marker in tail:
+                    frac, tz_part = tail.split(marker, 1)
+                    tz = marker + tz_part
+                    break
+            else:
+                frac = tail
+            normalized = head + "." + frac[:6] + tz
+        out = datetime.fromisoformat(normalized)
         return out if out.tzinfo else out.replace(tzinfo=timezone.utc)
     except Exception: return None
 
@@ -211,6 +225,65 @@ def _pnl(row):
     a,b = _dt(row.get("entry_time")), (_dt(row.get("exit_time")) or datetime.now(timezone.utc))
     if a: row["holding_minutes"] = round((b-a).total_seconds()/60,2)
 
+
+def hydrate_broker_fill_events(events: Iterable[Mapping[str, Any]], *, client: Any | None = None) -> list[dict[str, Any]]:
+    """Append read-only broker fill events for submitted orders missing journal fills.
+
+    This does not submit, cancel, or modify orders. It only asks the paper broker for
+    order status so diagnostics can reconstruct trades when the activity journal has
+    submission events but no filled events.
+    """
+    base = [dict(e) for e in events]
+    existing_broker_fills = {_text(_v(e, "broker_order_id") or _v(e, "order_id")) for e in base if _etype(e) in FILL_EVENTS}
+    submitted = [e for e in base if _etype(e) in SUBMITTED_EVENTS or _etype(e) == "operator_close"]
+    if not submitted:
+        return base
+    broker = client
+    if broker is None:
+        try:
+            broker = AlpacaPaperClient(alpaca_config())
+        except Exception:
+            return base
+    hydrated: list[dict[str, Any]] = []
+    next_id = max([int(e.get("id") or 0) for e in base] or [0]) + 1
+    for event in submitted:
+        broker_order_id = _text(_v(event, "broker_order_id") or _v(event, "order_id"))
+        if not broker_order_id or broker_order_id in existing_broker_fills:
+            continue
+        try:
+            order = broker.get_order(broker_order_id)
+        except Exception:
+            continue
+        status = _text(order.get("status")).lower()
+        filled_qty = _num(order.get("filled_qty")) or 0.0
+        filled_price = _num(order.get("filled_avg_price")) or 0.0
+        if status != "filled" or filled_qty <= 0 or filled_price <= 0:
+            continue
+        source_type = _etype(event)
+        event_type = "close_filled" if source_type == "operator_close" or _text(_v(event, "client_order_id")).startswith("stockml-close-") else "filled"
+        submitted_at = _dt(order.get("filled_at") or order.get("updated_at") or order.get("submitted_at")) or _dt(event.get("event_at"))
+        hydrated_event = {
+            **event,
+            "id": next_id,
+            "event_at": submitted_at,
+            "event_type": event_type,
+            "source": "broker_fill_hydration",
+            "symbol": _text(order.get("symbol") or _v(event, "symbol") or _v(event, "ticker")).upper(),
+            "side": _text(order.get("side") or _v(event, "side")).lower(),
+            "broker_order_id": broker_order_id,
+            "order_id": broker_order_id,
+            "client_order_id": _text(order.get("client_order_id") or _v(event, "client_order_id")),
+            "filled_qty": filled_qty,
+            "filled_avg_price": filled_price,
+            "order_intent": _text(_v(event, "order_intent")),
+            "exit_reason": "operator_close" if event_type == "close_filled" else "",
+            "lineage_warning": "broker_fill_hydrated_from_order_status",
+        }
+        hydrated.append(hydrated_event)
+        existing_broker_fills.add(broker_order_id)
+        next_id += 1
+    return sorted([*base, *hydrated], key=lambda e: (_dt(e.get("event_at")) or datetime.min.replace(tzinfo=timezone.utc), int(e.get("id") or 0)))
+
 def build_trade_ledger_from_events(events: Iterable[Mapping[str, Any]]) -> TradeLedgerResult:
     ordered = sorted([dict(e) for e in events], key=lambda e: (_dt(e.get("event_at")) or datetime.min.replace(tzinfo=timezone.utc), int(e.get("id") or 0)))
     ctx, prices, trades, unmatched = {}, {}, {}, []
@@ -253,7 +326,11 @@ def load_activity_events(request: ActivityJournalExportRequest, *, target: Engin
         out.append(e)
     return out
 
-def build_trade_ledger(request: ActivityJournalExportRequest, *, target: Engine | None = None) -> TradeLedgerResult: return build_trade_ledger_from_events(load_activity_events(request, target=target))
+def build_trade_ledger(request: ActivityJournalExportRequest, *, target: Engine | None = None, hydrate_broker_fills: bool = True) -> TradeLedgerResult:
+    events = load_activity_events(request, target=target)
+    if hydrate_broker_fills:
+        events = hydrate_broker_fill_events(events)
+    return build_trade_ledger_from_events(events)
 
 def write_trade_ledger(result: TradeLedgerResult, output_dir: Path | str = TRADING_DIR / "diagnostics") -> TradeLedgerResult:
     out=Path(output_dir); out.mkdir(parents=True, exist_ok=True); stamp=timestamp(); ledger_path=out/f"trade_ledger_{stamp}.csv"; unmatched_path=out/f"unmatched_lifecycle_events_{stamp}.csv"; summary_path=out/f"trade_ledger_summary_{stamp}.md"

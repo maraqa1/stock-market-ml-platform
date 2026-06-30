@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 
 from stockml.diagnostics.trade_ledger_builder import build_trade_ledger_from_events
 
@@ -115,3 +115,57 @@ def test_summary_returns_fit_for_attribution_when_valid_closed_trade_exists():
         ev("close_filled", id=2, symbol="AAA", broker_order_id="oid-2", trade_id="trade-1", position_id="pos-1", filled_avg_price=12, filled_qty=1),
     ])
     assert result.summary["fit_for_attribution_decision"] == "FIT_FOR_ATTRIBUTION"
+
+
+from stockml.diagnostics.trade_ledger_builder import hydrate_broker_fill_events
+
+
+class FakeBrokerClient:
+    def __init__(self, orders):
+        self.orders = orders
+
+    def get_order(self, order_id):
+        return self.orders[order_id]
+
+
+def test_hydrate_broker_fill_events_adds_open_and_close_fills():
+    events = [
+        ev("candidate_submitted", id=1, symbol="AAA", side="sell", broker_order_id="open-1", client_order_id="cid-open", order_intent="open_short"),
+        ev("operator_close", id=2, event_at=datetime(2026, 6, 30, 14, 10, tzinfo=timezone.utc), symbol="AAA", broker_order_id="close-1", client_order_id="stockml-close-AAA"),
+    ]
+    client = FakeBrokerClient({
+        "open-1": {"id": "open-1", "symbol": "AAA", "side": "sell", "status": "filled", "filled_qty": "5", "filled_avg_price": "10", "filled_at": "2026-06-30T14:01:00+00:00", "client_order_id": "cid-open"},
+        "close-1": {"id": "close-1", "symbol": "AAA", "side": "buy", "status": "filled", "filled_qty": "5", "filled_avg_price": "12", "filled_at": "2026-06-30T14:11:00+00:00", "client_order_id": "stockml-close-AAA"},
+    })
+    hydrated = hydrate_broker_fill_events(events, client=client)
+    types = [row["event_type"] for row in hydrated]
+    assert "filled" in types
+    assert "close_filled" in types
+    result = build_trade_ledger_from_events(hydrated)
+    assert len(result.ledger) == 1
+    assert result.ledger.iloc[0]["position_status"] == "closed"
+    assert result.ledger.iloc[0]["realised_pnl"] == -10
+
+
+def test_hydrate_broker_fill_events_ignores_unfilled_orders():
+    events = [ev("candidate_submitted", symbol="AAA", broker_order_id="open-1")]
+    client = FakeBrokerClient({"open-1": {"id": "open-1", "symbol": "AAA", "side": "buy", "status": "new", "filled_qty": "0"}})
+    hydrated = hydrate_broker_fill_events(events, client=client)
+    assert [row["event_type"] for row in hydrated] == ["candidate_submitted"]
+
+
+
+def test_hydrated_broker_fill_uses_broker_fill_time_and_exit_reason():
+    events = [
+        ev("candidate_submitted", id=1, symbol="AAA", side="sell", broker_order_id="open-1", client_order_id="cid-open", order_intent="open_short"),
+        ev("operator_close", id=2, event_at=datetime(2026, 6, 30, 14, 10, tzinfo=timezone.utc), symbol="AAA", broker_order_id="close-1", client_order_id="stockml-close-AAA"),
+    ]
+    client = FakeBrokerClient({
+        "open-1": {"id": "open-1", "symbol": "AAA", "side": "sell", "status": "filled", "filled_qty": "5", "filled_avg_price": "10", "filled_at": "2026-06-30T14:01:02.123456789Z", "client_order_id": "cid-open"},
+        "close-1": {"id": "close-1", "symbol": "AAA", "side": "buy", "status": "filled", "filled_qty": "5", "filled_avg_price": "12", "filled_at": "2026-06-30T14:11:03.987654321Z", "client_order_id": "stockml-close-AAA"},
+    })
+    result = build_trade_ledger_from_events(hydrate_broker_fill_events(events, client=client))
+    row = result.ledger.iloc[0]
+    assert row["entry_time"].startswith("2026-06-30T14:01:02.123456")
+    assert row["exit_time"].startswith("2026-06-30T14:11:03.987654")
+    assert row["exit_reason"] == "operator_close"
