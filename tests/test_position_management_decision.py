@@ -74,6 +74,13 @@ def test_hard_stop_recommends_close():
     assert decision["primary_reason"] == "hard_stop_hit"
 
 
+def test_explicit_monitor_close_recommends_close():
+    decision = action(pos(decision="close", decision_reason="operator_close_candidate"))
+    assert decision["recommended_action"] == "close"
+    assert decision["primary_reason"] == "monitor_close"
+    assert_read_only(decision)
+
+
 def test_hard_stop_overrides_increase():
     decision = action(pos(unrealized_plpc=-0.05, source_trade_action="Long", rank_status="top"))
     assert decision["recommended_action"] == "close"

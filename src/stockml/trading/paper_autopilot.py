@@ -33,6 +33,10 @@ from stockml.trading.anti_churn_guard import enrich_open_positions_with_order_hi
 from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.paper_trader import refresh_order_tracking
+from stockml.trading.position_management_decision import (
+    build_position_management_decisions,
+    write_position_management_decision_outputs,
+)
 from stockml.trading.profit_taking import ProfitTakingRules, classify_profit_taking
 from stockml.trading.session_mode import classify_session_mode
 from stockml.trading.stale_entry_orders import cancel_stale_entry_orders
@@ -671,6 +675,53 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
     return out
 
 
+def _positions_for_position_management(root: Path | None, positions: pd.DataFrame, state: dict[str, Any] | None = None) -> pd.DataFrame:
+    if positions.empty or "symbol" not in positions.columns:
+        return positions
+    out = positions.copy()
+    out["__symbol"] = out["symbol"].fillna("").astype(str).str.upper()
+    peaks = (state or {}).get("position_peak_plpc") if isinstance((state or {}).get("position_peak_plpc"), dict) else {}
+    if peaks:
+        out["peak_pnl_pct"] = out["__symbol"].map(lambda symbol: peaks.get(symbol, ""))
+    decisions = load_monitor_decisions(root)
+    if not decisions.empty and "symbol" in decisions.columns:
+        latest = decisions.copy()
+        latest["__symbol"] = latest["symbol"].fillna("").astype(str).str.upper()
+        latest = latest.drop_duplicates("__symbol", keep="last").set_index("__symbol")
+        for column in [
+            "decision",
+            "decision_reason",
+            "recommended_action",
+            "unrealized_plpc",
+            "latest_signal_status",
+            "signal_state",
+            "source_trade_action",
+            "directional_action",
+            "signal_alignment",
+            "rank_status",
+            "rank_change",
+        ]:
+            if column in latest.columns:
+                out[column] = out["__symbol"].map(latest[column]).where(
+                    out.get(column, pd.Series("", index=out.index)).fillna("").astype(str).eq(""),
+                    out.get(column, pd.Series("", index=out.index)),
+                )
+    return out.drop(columns=["__symbol"], errors="ignore")
+
+
+def _position_management_reason_bucket(reason: str) -> str:
+    text = str(reason or "").lower()
+    if "hard_stop" in text or "severe_loss" in text or "emergency" in text:
+        return "hard_stop"
+    if "giveback" in text or "take_profit" in text:
+        return "trailing"
+    if "reversal" in text:
+        return "health"
+    if "edge" in text or "loss" in text or "risk" in text:
+        return "health"
+    return "position_management"
+
+
 def apply_paper_autopilot_decisions(
     root: Path | None,
     positions: pd.DataFrame,
@@ -678,14 +729,27 @@ def apply_paper_autopilot_decisions(
     *,
     action_func: Callable[[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Apply the first narrow Paper Autopilot authority slice.
+    """Apply guarded paper close actions from the unified position manager.
 
-    Paper Autopilot may submit paper close orders for monitor close decisions,
-    monitor replace recommendations, hard stop-loss breaches, stale losing
-    positions, and stale winners that give back too much profit. Replacement
-    opens remain delegated to the guarded auto-open path.
+    The unified position-management decision engine is the single source of
+    truth for automatic close decisions. It always writes diagnostics first.
+    Only rows with recommended_action == close are eligible for broker action.
+    Reduce, increase, replace, hold, and manual_review remain non-submitting
+    until explicit paper execution support exists for those actions.
     """
-    candidates = _auto_close_candidates(root, positions, state)
+    management_positions = _positions_for_position_management(root, positions, state)
+    decisions = build_position_management_decisions(management_positions, now=datetime.now(timezone.utc))
+    decision_stamp = timestamp()
+    decision_csv, decision_md = write_position_management_decision_outputs(decisions, root=root, stamp=decision_stamp)
+    if decisions.empty:
+        candidates = pd.DataFrame()
+    else:
+        candidates = decisions[decisions["recommended_action"].astype(str).str.lower().eq("close")].copy()
+        candidates["__symbol"] = candidates["symbol"].astype(str).str.upper()
+        candidates["__autopilot_close_reason"] = candidates["primary_reason"].fillna("position_management_close")
+    auto_config = load_auto_open_config(root=root)
+    if str(auto_config.close_automation_mode or "automatic").lower() == "review_only":
+        candidates = pd.DataFrame()
     anti_churn_blocked = 0
     anti_churn_path = ""
     if not candidates.empty:
@@ -728,6 +792,8 @@ def apply_paper_autopilot_decisions(
             "autopilot_open_notes": "",
             "autopilot_anti_churn_blocked": anti_churn_blocked,
             "autopilot_anti_churn_report_path": anti_churn_path,
+            "position_management_decision_path": str(decision_csv),
+            "position_management_decision_markdown_path": str(decision_md),
         }
 
     apply_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
@@ -756,13 +822,14 @@ def apply_paper_autopilot_decisions(
         if status == "submitted":
             submitted += 1
             reason = str(row.get("__autopilot_close_reason") or "")
+            bucket = _position_management_reason_bucket(reason)
             if reason == "defensive_stale_loss":
                 defensive_submitted += 1
-            elif reason == "hard_stop_loss":
+            elif reason == "hard_stop_loss" or bucket == "hard_stop":
                 hard_stop_submitted += 1
-            elif reason in {"position_health_close_candidate", "position_health_close_now"}:
+            elif reason in {"position_health_close_candidate", "position_health_close_now"} or bucket == "health":
                 health_submitted += 1
-            elif reason in {"trailing_profit_giveback", "fresh_signal_profit_giveback"}:
+            elif reason in {"trailing_profit_giveback", "fresh_signal_profit_giveback"} or bucket == "trailing":
                 trailing_submitted += 1
             elif reason == "monitor_replace":
                 replace_submitted += 1
@@ -791,6 +858,8 @@ def apply_paper_autopilot_decisions(
         "autopilot_action_notes": "; ".join(notes[:10]),
         "autopilot_anti_churn_blocked": anti_churn_blocked,
         "autopilot_anti_churn_report_path": anti_churn_path,
+        "position_management_decision_path": str(decision_csv),
+        "position_management_decision_markdown_path": str(decision_md),
     }
 
 

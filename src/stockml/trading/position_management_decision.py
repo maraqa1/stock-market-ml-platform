@@ -353,6 +353,10 @@ def decide_position(row: dict[str, Any], *, now: datetime | None = None, config:
     if _bool(row.get("severe_loss_threshold_breached")) or pnl <= -0.06:
         return _finalize(out, "close", "severe_loss_threshold_breached", level=2, strength="high", confidence="high")
 
+    monitor_decision = _lower(row.get("decision") or row.get("recommended_action"))
+    if monitor_decision == "close":
+        return _finalize(out, "close", "monitor_close", level=3, strength="high", confidence="high", support=support)
+
     alignment = out["signal_alignment"]
     source_side = _action_side(out["source_trade_action"])
     directional_side = _action_side(out["directional_action"])
@@ -614,6 +618,22 @@ def write_markdown_report(decisions: pd.DataFrame, path: Path) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def write_position_management_decision_outputs(
+    decisions: pd.DataFrame,
+    *,
+    root: Path | None = None,
+    stamp: str | None = None,
+) -> tuple[Path, Path]:
+    output_stamp = stamp or timestamp()
+    out_dir = _diagnostics_dir(root)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / f"position_management_decisions_{output_stamp}.csv"
+    md_path = out_dir / f"position_management_decisions_{output_stamp}.md"
+    decisions.to_csv(csv_path, index=False)
+    write_markdown_report(decisions, md_path)
+    return csv_path, md_path
+
+
 def run_position_management_decisions(*, root: Path | None = None, now: datetime | None = None) -> dict[str, Any]:
     positions, holding, tracking, plan = latest_input_frames(root)
     decisions = build_position_management_decisions(
@@ -623,13 +643,7 @@ def run_position_management_decisions(*, root: Path | None = None, now: datetime
         candidate_plan=plan,
         now=now,
     )
-    stamp = timestamp()
-    out_dir = _diagnostics_dir(root)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = out_dir / f"position_management_decisions_{stamp}.csv"
-    md_path = out_dir / f"position_management_decisions_{stamp}.md"
-    decisions.to_csv(csv_path, index=False)
-    write_markdown_report(decisions, md_path)
+    csv_path, md_path = write_position_management_decision_outputs(decisions, root=root)
     counts = decisions["recommended_action"].value_counts().to_dict() if not decisions.empty else {}
     return {
         "status": "ok" if not positions.empty else "insufficient_data",

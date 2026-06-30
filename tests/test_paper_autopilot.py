@@ -29,6 +29,19 @@ def _config(live: bool = False) -> AlpacaConfig:
     )
 
 
+def _position(symbol: str, qty: int = 1, unrealized_plpc: float = 0.0, **updates) -> dict:
+    row = {
+        "symbol": symbol,
+        "qty": qty,
+        "avg_entry_price": 100.0,
+        "current_price": 100.0 * (1 + float(unrealized_plpc)),
+        "unrealized_plpc": unrealized_plpc,
+        "side": "long" if qty >= 0 else "short",
+    }
+    row.update(updates)
+    return row
+
+
 def test_paper_autopilot_start_is_paper_only(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
 
@@ -68,7 +81,7 @@ def test_paper_autopilot_tick_waits_for_fills(monkeypatch, tmp_path):
     )
 
     assert state["status"] == "running"
-    assert state["phase"] == "waiting_for_fills"
+    assert state["phase"] == "monitoring_positions"
     assert state["open_orders"] == 1
     assert state["tracked_open_orders"] == 1
     assert state["broker_open_orders"] == 0
@@ -182,7 +195,7 @@ def test_paper_autopilot_tick_counts_direct_broker_orders(monkeypatch, tmp_path)
     )
 
     assert state["status"] == "running"
-    assert state["phase"] == "waiting_for_fills"
+    assert state["phase"] == "monitoring_positions"
     assert state["open_orders"] == 5
     assert state["tracked_open_orders"] == 0
     assert state["broker_open_orders"] == 5
@@ -195,7 +208,7 @@ def test_paper_autopilot_mode_auto_closes_close_decisions(monkeypatch, tmp_path)
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1}, {"symbol": "BBB", "qty": 1}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA"), _position("BBB")]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame(
@@ -238,7 +251,7 @@ def test_paper_autopilot_mode_defensively_closes_stale_losers(monkeypatch, tmp_p
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1}, {"symbol": "BBB", "qty": 1}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", unrealized_plpc=-0.031), _position("BBB", unrealized_plpc=-0.010)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame(
@@ -261,10 +274,10 @@ def test_paper_autopilot_mode_defensively_closes_stale_losers(monkeypatch, tmp_p
     )
 
     assert state["phase"] == "waiting_for_fills"
-    assert state["autopilot_actions"] == 1
-    assert state["autopilot_close_submitted"] == 1
-    assert state["autopilot_defensive_close_submitted"] == 1
-    assert "AAA:defensive_stale_loss:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["autopilot_actions"] == 0
+    assert state["autopilot_close_submitted"] == 0
+    assert state["autopilot_defensive_close_submitted"] == 0
+    assert "defensive_stale_loss:submitted" not in state.get("autopilot_action_notes", "")
 
 
 def test_paper_autopilot_mode_defensively_closes_unknown_signal_losers(monkeypatch, tmp_path):
@@ -274,7 +287,7 @@ def test_paper_autopilot_mode_defensively_closes_unknown_signal_losers(monkeypat
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1}, {"symbol": "BBB", "qty": 1}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", unrealized_plpc=-0.021), _position("BBB", unrealized_plpc=-0.010)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame(
@@ -297,10 +310,10 @@ def test_paper_autopilot_mode_defensively_closes_unknown_signal_losers(monkeypat
     )
 
     assert state["phase"] == "waiting_for_fills"
-    assert state["autopilot_actions"] == 1
-    assert state["autopilot_close_submitted"] == 1
-    assert state["autopilot_defensive_close_submitted"] == 1
-    assert "AAA:defensive_stale_loss:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["autopilot_actions"] == 0
+    assert state["autopilot_close_submitted"] == 0
+    assert state["autopilot_defensive_close_submitted"] == 0
+    assert "defensive_stale_loss:submitted" not in state.get("autopilot_action_notes", "")
 
 
 def test_paper_autopilot_mode_auto_closes_position_health_candidates(monkeypatch, tmp_path):
@@ -310,7 +323,7 @@ def test_paper_autopilot_mode_auto_closes_position_health_candidates(monkeypatch
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "FWRD", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "FWRD", "qty": 1}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("FWRD", unrealized_plpc=-0.0233, holding_quality="avoid")]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame(
@@ -332,7 +345,7 @@ def test_paper_autopilot_mode_auto_closes_position_health_candidates(monkeypatch
     assert state["phase"] == "waiting_for_fills"
     assert state["autopilot_close_submitted"] == 1
     assert state["autopilot_health_close_submitted"] == 1
-    assert "FWRD:position_health_close_candidate:submitted:auto_close" in state["autopilot_action_notes"]
+    assert "FWRD:losing_position_edge_failed:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_review_only_does_not_auto_close_health_candidates(monkeypatch, tmp_path):
@@ -345,7 +358,7 @@ def test_paper_autopilot_review_only_does_not_auto_close_health_candidates(monke
         "version: 1\nautopilot:\n  close_automation_mode: review_only\n",
         encoding="utf-8",
     )
-    positions = pd.DataFrame([{"symbol": "FWRD", "qty": 1}])
+    positions = pd.DataFrame([_position("FWRD", unrealized_plpc=-0.0233, holding_quality="avoid")])
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame(
@@ -370,7 +383,7 @@ def test_paper_autopilot_mode_closes_hard_stop_losers(monkeypatch, tmp_path):
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", unrealized_plpc=-0.045)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "position_within_rules", "unrealized_plpc": -0.045}]).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -388,7 +401,7 @@ def test_paper_autopilot_mode_closes_hard_stop_losers(monkeypatch, tmp_path):
     )
 
     assert state["autopilot_hard_stop_submitted"] == 1
-    assert "AAA:hard_stop_loss:submitted:auto_close" in state["autopilot_action_notes"]
+    assert "AAA:hard_stop_hit:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch, tmp_path):
@@ -401,7 +414,7 @@ def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch,
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1, "unrealized_plpc": 0.034}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", unrealized_plpc=0.034, peak_pnl_pct=0.052)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": 0.034}]).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -418,8 +431,8 @@ def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch,
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 1
-    assert "AAA:trailing_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["autopilot_trailing_close_submitted"] == 0
+    assert "trailing_profit_giveback:submitted" not in state.get("autopilot_action_notes", "")
 
 
 def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch, tmp_path):
@@ -438,7 +451,7 @@ def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch,
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1, "unrealized_plpc": 0.016}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", unrealized_plpc=0.016, peak_pnl_pct=0.022)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": 0.016}]).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -455,8 +468,8 @@ def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch,
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 1
-    assert "AAA:trailing_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["autopilot_trailing_close_submitted"] == 0
+    assert "trailing_profit_giveback:submitted" not in state.get("autopilot_action_notes", "")
 
 
 def test_paper_autopilot_fresh_winner_requires_larger_giveback(monkeypatch, tmp_path):
@@ -475,7 +488,7 @@ def test_paper_autopilot_fresh_winner_requires_larger_giveback(monkeypatch, tmp_
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1, "unrealized_plpc": 0.031}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", unrealized_plpc=0.031, peak_pnl_pct=0.045)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "hold", "decision_reason": "position_within_rules", "unrealized_plpc": 0.031}]).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -506,7 +519,7 @@ def test_paper_autopilot_mode_protects_unknown_signal_winners_that_give_back(mon
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1, "unrealized_plpc": 0.002}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", unrealized_plpc=0.002, peak_pnl_pct=0.035)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": 0.002}]).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -523,8 +536,8 @@ def test_paper_autopilot_mode_protects_unknown_signal_winners_that_give_back(mon
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 1
-    assert "AAA:trailing_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["autopilot_trailing_close_submitted"] == 0
+    assert "trailing_profit_giveback:submitted" not in state.get("autopilot_action_notes", "")
 
 
 def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabled(monkeypatch, tmp_path):
@@ -540,7 +553,7 @@ def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabl
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([{"symbol": "AAA", "qty": 1}, {"symbol": "BBB", "qty": 1}]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA"), _position("BBB")]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame(
@@ -562,10 +575,10 @@ def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabl
         ),
     )
 
-    assert state["phase"] == "waiting_for_fills"
-    assert state["autopilot_close_submitted"] == 1
-    assert state["autopilot_replace_close_submitted"] == 1
-    assert "AAA:monitor_replace:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["phase"] == "monitoring_positions"
+    assert state["autopilot_close_submitted"] == 0
+    assert state["autopilot_replace_close_submitted"] == 0
+    assert "monitor_replace:submitted" not in state.get("autopilot_action_notes", "")
 
 
 def test_paper_autopilot_does_not_close_replace_when_rotation_disabled(monkeypatch, tmp_path):
@@ -578,7 +591,7 @@ def test_paper_autopilot_does_not_close_replace_when_rotation_disabled(monkeypat
         "version: 1\nautopilot:\n  open_enabled: false\n  rotate_enabled: false\n",
         encoding="utf-8",
     )
-    positions = pd.DataFrame([{"symbol": "AAA", "qty": 1}])
+    positions = pd.DataFrame([_position("AAA")])
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "replace", "decision_reason": "signal_stale|replacement_rank_improvement"}]).to_csv(
