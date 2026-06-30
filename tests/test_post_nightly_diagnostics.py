@@ -36,15 +36,15 @@ def test_main_runs_selected_steps_after_ok_doctor(monkeypatch):
         "audit_latest_pipeline",
         lambda *args, **kwargs: {"status": "ok", "reason": "", "missing_stages": []},
     )
-    monkeypatch.setattr(post, "run_step", lambda name, script, extra_args=None: ran.append((name, Path(script).name)))
+    monkeypatch.setattr(post, "run_step", lambda name, script, extra_args=None: ran.append((name, Path(script).name, extra_args or [])))
 
-    code = post.main(["--skip-wait", "--skip-promotion-replay"])
+    code = post.main(["--skip-wait", "--skip-promotion-replay", "--diagnostic-date", "2026-06-30"])
 
     assert code == 0
     assert ran == [
-        ("trade_ledger", "build_trade_ledger.py"),
-        ("profitability_attribution", "build_profitability_attribution.py"),
-        ("strategy_diagnostics", "run_strategy_diagnostics.py"),
+        ("trade_ledger", "build_trade_ledger.py", ["--date", "2026-06-30"]),
+        ("profitability_attribution", "build_profitability_attribution.py", []),
+        ("strategy_diagnostics", "run_strategy_diagnostics.py", []),
     ]
 
 
@@ -55,7 +55,7 @@ def test_main_can_skip_trade_ledger_and_attribution(monkeypatch):
         "audit_latest_pipeline",
         lambda *args, **kwargs: {"status": "ok", "reason": "", "missing_stages": []},
     )
-    monkeypatch.setattr(post, "run_step", lambda name, script, extra_args=None: ran.append((name, Path(script).name)))
+    monkeypatch.setattr(post, "run_step", lambda name, script, extra_args=None: ran.append((name, Path(script).name, extra_args or [])))
 
     code = post.main([
         "--skip-wait",
@@ -65,7 +65,7 @@ def test_main_can_skip_trade_ledger_and_attribution(monkeypatch):
     ])
 
     assert code == 0
-    assert ran == [("strategy_diagnostics", "run_strategy_diagnostics.py")]
+    assert ran == [("strategy_diagnostics", "run_strategy_diagnostics.py", [])]
 
 
 def test_deployment_timer_references_post_nightly_script():

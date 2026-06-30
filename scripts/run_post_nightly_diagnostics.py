@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+from datetime import datetime, timezone
 import sys
 import time
 from pathlib import Path
@@ -75,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-wait-minutes", type=int, default=180)
     parser.add_argument("--poll-seconds", type=int, default=300)
     parser.add_argument("--skip-wait", action="store_true", help="Run one doctor check and fail if it is not ok.")
+    parser.add_argument("--diagnostic-date", default="", help="UTC YYYY-MM-DD used for date-scoped trade ledger diagnostics. Defaults to today UTC.")
     parser.add_argument("--skip-trade-ledger", action="store_true")
     parser.add_argument("--skip-profitability-attribution", action="store_true")
     parser.add_argument("--skip-strategy-diagnostics", action="store_true")
@@ -95,18 +97,23 @@ def main(argv: list[str] | None = None) -> int:
             poll_seconds=args.poll_seconds,
         )
 
+    diagnostic_date = args.diagnostic_date or datetime.now(timezone.utc).date().isoformat()
     steps = []
     if not args.skip_trade_ledger:
-        steps.append(DEFAULT_STEPS[0])
+        name, script = DEFAULT_STEPS[0]
+        steps.append((name, script, ["--date", diagnostic_date]))
     if not args.skip_profitability_attribution:
-        steps.append(DEFAULT_STEPS[1])
+        name, script = DEFAULT_STEPS[1]
+        steps.append((name, script, []))
     if not args.skip_strategy_diagnostics:
-        steps.append(DEFAULT_STEPS[2])
+        name, script = DEFAULT_STEPS[2]
+        steps.append((name, script, []))
     if not args.skip_promotion_replay:
-        steps.append(DEFAULT_STEPS[3])
+        name, script = DEFAULT_STEPS[3]
+        steps.append((name, script, []))
 
-    for name, script in steps:
-        run_step(name, script)
+    for name, script, extra_args in steps:
+        run_step(name, script, extra_args)
 
     print("post_nightly_diagnostics_status: ok")
     return 0
