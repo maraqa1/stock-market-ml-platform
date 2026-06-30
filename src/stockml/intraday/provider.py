@@ -33,6 +33,14 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
     try:
         text = str(value).replace("Z", "+00:00")
+        if "." in text:
+            prefix, suffix = text.split(".", 1)
+            if "+" in suffix:
+                fractional, tz = suffix.split("+", 1)
+                text = f"{prefix}.{fractional[:6]}+{tz}"
+            elif "-" in suffix:
+                fractional, tz = suffix.split("-", 1)
+                text = f"{prefix}.{fractional[:6]}-{tz}"
         parsed = datetime.fromisoformat(text)
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=timezone.utc)

@@ -114,6 +114,19 @@ def test_provider_calendar_parses_market_local_times_to_utc():
     assert calendar.close_at == datetime(2026, 5, 12, 20, 0, tzinfo=timezone.utc)
 
 
+def test_provider_parses_nanosecond_quote_timestamps():
+    class NanoQuoteSession(FakeSession):
+        def get(self, url, headers=None, params=None, timeout=None):
+            self.calls.append({"url": url, "headers": headers, "params": params, "timeout": timeout})
+            return FakeResponse({"quote": {"bp": 10.0, "ap": 10.1, "t": "2026-06-30T20:00:00.173316186Z"}})
+
+    provider = IntradayProvider(cfg(), session=NanoQuoteSession(), logger=lambda event, payload: None)
+
+    quote = provider.fetch_quote("BNY")
+
+    assert quote.quote_ts == datetime(2026, 6, 30, 20, 0, 0, 173316, tzinfo=timezone.utc)
+
+
 def test_independent_reference_provider_is_disabled_hook():
     provider = IndependentReferenceProvider()
 

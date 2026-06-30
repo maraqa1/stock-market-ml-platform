@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 import os
 
 import pandas as pd
@@ -82,6 +83,27 @@ class RejectingClient(FakeClient):
         response.status_code = 403
         response._content = b'{"code":40310000,"message":"asset is not shortable"}'
         raise AlpacaAPIError("POST", "https://paper-api.alpaca.markets/v2/orders", response)
+
+
+class FakeQuoteProvider:
+    def __init__(self, quote: dict | None = None, error: Exception | None = None):
+        self.quote = quote or {}
+        self.error = error
+        self.calls: list[str] = []
+
+    def fetch_quote(self, symbol: str):
+        self.calls.append(symbol)
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(
+            symbol=symbol.upper(),
+            bid=self.quote.get("bid"),
+            ask=self.quote.get("ask"),
+            last_price=self.quote.get("last_price"),
+            quote_ts=self.quote.get("quote_ts"),
+            fetched_at=self.quote.get("fetched_at"),
+            source="fake",
+        )
 
 
 def _engine():
@@ -2112,6 +2134,68 @@ def test_auto_open_blocks_24_5_order_without_fresh_quote_timestamp():
     assert result["autopilot_open_blocked"] == 1
     assert "quote_timestamp_missing" in result["autopilot_open_notes"]
     assert client.orders == []
+
+
+def test_auto_open_uses_fresh_quote_price_for_extended_limit_and_quantity():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True, "overnight_tradable": True})
+    quote_provider = FakeQuoteProvider(
+        {
+            "bid": 49.99,
+            "ask": 50.00,
+            "quote_ts": datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc),
+            "fetched_at": datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc),
+        }
+    )
+    candidate = _candidate("NVTS", 0.71)
+    candidate["current_price"] = 10
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, min_position_value_usd=1),
+        alpaca_cfg=_trade_config(extended_hours=True, overnight_trading_enabled=True, overnight_limit_buffer_bps=50),
+        client=client,
+        quote_provider=quote_provider,
+        now=datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert quote_provider.calls == ["NVTS"]
+    assert client.orders[0]["limit_price"] == 50.25
+    assert client.orders[0]["qty"] == "1"
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["details"]["execution_reference_price"] == 50.0
+    assert row["details"]["live_ask"] == 50.0
+
+
+def test_auto_open_blocks_extended_order_when_quote_fetch_fails():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True, "overnight_tradable": True})
+    quote_provider = FakeQuoteProvider(error=RuntimeError("quote_api_down"))
+
+    result = apply_auto_open(
+        [_candidate("NVTS", 0.71)],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, min_position_value_usd=1),
+        alpaca_cfg=_trade_config(extended_hours=True, overnight_trading_enabled=True, overnight_limit_buffer_bps=50),
+        client=client,
+        quote_provider=quote_provider,
+        now=datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "quote_timestamp_missing" in result["autopilot_open_notes"]
+    assert client.orders == []
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["details"]["quote_fetch_error"] == "quote_api_down"
 
 
 def test_auto_open_blocks_24_5_order_when_asset_not_overnight_tradable():

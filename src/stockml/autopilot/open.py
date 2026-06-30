@@ -16,6 +16,7 @@ from stockml.autopilot.candidate_arbitration import arbitrate_candidates, arbitr
 from stockml.common.paths import HOLDING_PERIOD_DIR, PORTAL_OUTPUTS_DIR, PROJECT_ROOT, TRADING_DIR, latest_file
 from stockml.db.connection import get_engine
 from stockml.db.schema import autopilot_open_log, intraday_candidate_snapshots, intraday_promotion_log
+from stockml.intraday.provider import IntradayProvider
 from stockml.intraday import kill_switch
 from stockml.services.events import position_id_for_symbol, record_event_once
 from stockml.safety.paper_only_guard import paper_only_guard
@@ -1266,6 +1267,39 @@ def _whole_share_qty(order_size: float, current_price: float) -> int:
     return int(math.floor(float(order_size) / float(current_price)))
 
 
+def _quote_execution_context(symbol: str, side: str, quote_provider: Any | None, stamp: datetime) -> dict[str, Any]:
+    if quote_provider is None:
+        return {}
+    quote = quote_provider.fetch_quote(symbol)
+    bid = _float(getattr(quote, "bid", None), 0.0)
+    ask = _float(getattr(quote, "ask", None), 0.0)
+    last = _float(getattr(quote, "last_price", None), 0.0)
+    mid = ((bid + ask) / 2.0) if bid > 0 and ask > 0 else 0.0
+    if str(side).lower() == "buy":
+        execution_price = ask or last or mid
+    else:
+        execution_price = bid or last or mid
+    quote_ts = getattr(quote, "quote_ts", None)
+    fetched_at = getattr(quote, "fetched_at", None)
+    out = {
+        "bid": bid or "",
+        "ask": ask or "",
+        "bid_price": bid or "",
+        "ask_price": ask or "",
+        "live_bid": bid or "",
+        "live_ask": ask or "",
+        "live_mid": mid or "",
+        "live_last_price": last or "",
+        "current_price": execution_price or "",
+        "execution_reference_price": execution_price or "",
+        "quote_timestamp": quote_ts.isoformat() if quote_ts is not None else "",
+        "latest_quote_at": quote_ts.isoformat() if quote_ts is not None else "",
+        "quote_fetched_at": fetched_at.isoformat() if fetched_at is not None else stamp.isoformat(),
+        "quote_source": getattr(quote, "source", "alpaca"),
+    }
+    return {key: value for key, value in out.items() if value not in [None, ""]}
+
+
 def apply_auto_open(
     candidates: list[dict[str, Any]],
     open_positions: list[dict[str, Any]],
@@ -1275,6 +1309,7 @@ def apply_auto_open(
     config: AutoOpenConfig | None = None,
     alpaca_cfg: AlpacaConfig | None = None,
     client: AlpacaPaperClient | None = None,
+    quote_provider: Any | None = None,
     now: datetime | None = None,
     root: Path | str | None = None,
 ) -> dict[str, Any]:
@@ -1351,6 +1386,9 @@ def apply_auto_open(
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": capacity_note or "auto_open_cap_or_basket_full"}
 
     broker = client or AlpacaPaperClient(trade_cfg)
+    default_quote_provider = quote_provider
+    if default_quote_provider is None and client is None and bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled):
+        default_quote_provider = IntradayProvider(trade_cfg)
     for candidate in candidates:
         if slots <= 0:
             break
@@ -1579,12 +1617,20 @@ def apply_auto_open(
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="asset_not_shortable", details=asset_details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:asset_not_shortable")
             continue
+        requested_order_type = "limit" if bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled) else "market"
         current_price = _candidate_price(candidate, details)
         quote_data = {**candidate, **details, "current_price": current_price}
-        requested_order_type = "limit" if bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled) else "market"
+        if requested_order_type == "limit":
+            try:
+                live_quote = _quote_execution_context(symbol, side, default_quote_provider, stamp)
+            except Exception as exc:
+                live_quote = {"quote_fetch_error": str(exc)}
+            quote_data.update(live_quote)
+            current_price = _float(quote_data.get("execution_reference_price") or quote_data.get("current_price"), current_price)
         policy = session_order_policy(now=stamp, asset=asset, quote=quote_data, requested_order_type=requested_order_type)
         asset_details = {
             **asset_details,
+            **{key: quote_data.get(key) for key in ["live_bid", "live_ask", "live_mid", "live_last_price", "execution_reference_price", "quote_timestamp", "latest_quote_at", "quote_fetched_at", "quote_source", "quote_fetch_error"] if quote_data.get(key) not in [None, ""]},
             "session_mode": policy.session_mode,
             "order_policy": policy.order_policy,
             "extended_hours": policy.extended_hours,
