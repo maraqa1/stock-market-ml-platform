@@ -150,6 +150,8 @@ def _ranked_shortlist(signals: pd.DataFrame, config: AlpacaConfig) -> pd.DataFra
         return filter_tradeable_signals(signals, config, limit=max(config.candidate_pool_size, config.max_orders))
 
     frame = signals.copy()
+    if "source_trade_action" not in frame.columns:
+        frame["source_trade_action"] = frame.get("trade_action", pd.Series("", index=frame.index))
     frame["rank_overall"] = pd.to_numeric(frame["rank_overall"], errors="coerce")
     frame = frame[frame["rank_overall"].notna()].copy()
     if frame.empty:
@@ -231,6 +233,31 @@ def _limit_sector_concentration(frame: pd.DataFrame, config: AlpacaConfig, limit
     return pd.DataFrame(selected)
 
 
+def _append_reason(existing: object, reason: str) -> str:
+    parts = [part for part in str(existing or "").split("|") if part and part.lower() not in {"nan", "none"}]
+    if reason not in parts:
+        parts.append(reason)
+    return "|".join(parts)
+
+
+def _enforce_executable_source_action(pool: pd.DataFrame) -> pd.DataFrame:
+    if pool.empty:
+        return pool
+    out = pool.copy()
+    source = out.get("source_trade_action", out.get("trade_action", pd.Series("", index=out.index))).fillna("").astype(str).str.strip().str.lower()
+    blocked = ~source.isin({"long", "short"})
+    if not blocked.any():
+        return out
+    out.loc[blocked, "trade_quality_status"] = "rejected"
+    out.loc[blocked, "candidate_status"] = "rejected"
+    out.loc[blocked, "order_eligible"] = False
+    out.loc[blocked, "approved_notional"] = 0.0
+    out.loc[blocked, "notional"] = 0.0
+    out.loc[blocked, "suggested_quantity"] = 0
+    out.loc[blocked, "trade_quality_reason"] = out.loc[blocked, "trade_quality_reason"].map(lambda value: _append_reason(value, "source_trade_action_not_executable"))
+    return out
+
+
 def build_candidate_pool(
     signals: pd.DataFrame,
     config: AlpacaConfig,
@@ -258,6 +285,7 @@ def build_candidate_pool(
         return pool
     pool["candidate_rank"] = range(1, len(pool) + 1)
     pool["candidate_status"] = pool["trade_quality_status"]
+    pool = _enforce_executable_source_action(pool)
     pool = apply_same_day_sizing(
         pool,
         account_equity=config.account_equity,

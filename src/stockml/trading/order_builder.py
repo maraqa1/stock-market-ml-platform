@@ -179,6 +179,7 @@ def order_row(row: pd.Series, config: AlpacaConfig) -> dict:
         "limit_price": limit_price if limit_price is not None else "",
         "client_order_id": f"stockml-{date_part}-{symbol}-{side}",
         "trade_action": row.get("trade_action"),
+        "source_trade_action": row.get("source_trade_action", row.get("trade_action", "")),
         "confidence_score": row.get("confidence_score", ""),
         "side_probability": row.get("side_probability"),
         "probability_edge": row.get("probability_edge"),

@@ -1,7 +1,7 @@
 import pandas as pd
 
 from stockml.trading.config import AlpacaConfig
-from stockml.trading.order_planner import build_candidate_pool, build_order_plan, filter_tradeable_signals
+from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, filter_tradeable_signals
 
 
 def config(**overrides):
@@ -369,3 +369,34 @@ def test_order_plan_limits_sector_concentration_when_sector_is_available():
     )
     plan = build_order_plan(signals, config(max_orders=3, max_sector_fraction=0.34))
     assert list(plan["symbol"]) == ["AAA", "CCC"]
+
+
+def test_directional_no_decision_rows_are_not_executable_orders():
+    signals = pd.DataFrame(
+        [
+            trade_signal(
+                "BUG",
+                "No Decision",
+                score=-5.0,
+                rank_overall=999,
+                directional_action="Short",
+                directional_strength=1.0,
+                directional_reason="rank_within_directional_short_window",
+                probability_edge=-0.5,
+                expected_trade_return=-0.1,
+            )
+        ]
+    )
+
+    pool = build_candidate_pool(signals, config(candidate_pool_size=5, max_orders=1, allow_short_selling=True))
+    assert list(pool["symbol"]) == ["BUG"]
+    assert pool.iloc[0]["trade_action"] == "Short"
+    assert pool.iloc[0]["source_trade_action"] == "No Decision"
+    assert pool.iloc[0]["trade_quality_status"] == "rejected"
+    assert bool(pool.iloc[0]["order_eligible"]) is False
+    assert pool.iloc[0]["approved_notional"] == 0.0
+    assert "source_trade_action_not_executable" in pool.iloc[0]["trade_quality_reason"]
+
+    plan = build_order_plan_from_candidate_pool(pool, config(max_orders=1, allow_short_selling=True))
+    assert bool(plan.iloc[0]["order_eligible"]) is False
+    assert plan.iloc[0]["trade_quality_status"] == "rejected"
