@@ -77,3 +77,25 @@ def test_regular_session_allows_market_order_normal_size():
     assert decision.order_type == "market"
     assert decision.extended_hours is False
     assert decision.size_multiplier == 1.0
+
+
+def test_after_hours_rejects_missing_quote_timestamp():
+    decision = session_order_policy(
+        now=datetime(2026, 6, 18, 20, 0, tzinfo=timezone.utc),
+        asset=_asset(),
+        quote={"spread_bps": 2},
+        requested_order_type="limit",
+        config={
+            "session_modes": {
+                "after_hours": {
+                    "enabled": True,
+                    "allow_market_orders": False,
+                    "max_spread_bps": 10,
+                    "position_size_multiplier": 0.25,
+                }
+            }
+        },
+    )
+    assert decision.allowed is False
+    assert decision.session_mode == "after_hours"
+    assert decision.session_reject_reason == "quote_timestamp_missing"

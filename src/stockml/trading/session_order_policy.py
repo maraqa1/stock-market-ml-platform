@@ -77,7 +77,13 @@ def session_order_policy(
         return SessionOrderDecision(False, mode, policy_name, order_type, extended, multiplier, max_spread_value, "asset_not_overnight_tradable")
     if cfg.get("require_not_overnight_halted") and is_overnight_halted(asset):
         return SessionOrderDecision(False, mode, policy_name, order_type, extended, multiplier, max_spread_value, "asset_overnight_halted")
-    quality = evaluate_quote_quality(quote or {}, max_spread_bps=max_spread_value or 999999.0, now=now)
+    require_fresh_quote = bool(cfg.get("quote_freshness_required", extended))
+    quality = evaluate_quote_quality(
+        quote or {},
+        max_spread_bps=max_spread_value or 999999.0,
+        now=now,
+        require_fresh_quote=require_fresh_quote,
+    )
     if extended and not quality.ok:
         return SessionOrderDecision(False, mode, policy_name, order_type, extended, multiplier, max_spread_value, quality.reason, quality.spread_bps, quality.freshness_seconds)
     return SessionOrderDecision(True, mode, policy_name, order_type, extended, multiplier, max_spread_value, "", quality.spread_bps, quality.freshness_seconds)

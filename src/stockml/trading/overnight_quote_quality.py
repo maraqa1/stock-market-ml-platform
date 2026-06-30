@@ -42,7 +42,14 @@ def _aware(value: Any) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
-def evaluate_quote_quality(data: dict[str, Any], *, max_spread_bps: float, max_freshness_seconds: float = 900.0, now: datetime | None = None) -> QuoteQualityResult:
+def evaluate_quote_quality(
+    data: dict[str, Any],
+    *,
+    max_spread_bps: float,
+    max_freshness_seconds: float = 900.0,
+    now: datetime | None = None,
+    require_fresh_quote: bool = False,
+) -> QuoteQualityResult:
     spread = _float(data.get("spread_bps"))
     bid = _float(data.get("bid") or data.get("bid_price"))
     ask = _float(data.get("ask") or data.get("ask_price"))
@@ -53,6 +60,8 @@ def evaluate_quote_quality(data: dict[str, Any], *, max_spread_bps: float, max_f
         return QuoteQualityResult(False, spread, None, "spread_too_wide")
     quote_time = _aware(data.get("quote_timestamp") or data.get("quote_time") or data.get("latest_quote_at"))
     freshness = None
+    if require_fresh_quote and quote_time is None:
+        return QuoteQualityResult(False, spread, freshness, "quote_timestamp_missing")
     if quote_time is not None:
         current = now or datetime.now(timezone.utc)
         if current.tzinfo is None:

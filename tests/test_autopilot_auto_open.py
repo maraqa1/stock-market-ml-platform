@@ -2065,8 +2065,12 @@ def test_auto_open_uses_overnight_limit_order_when_24_5_enabled():
     engine = _engine()
     client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True, "overnight_tradable": True})
 
+    candidate = _candidate("NVTS", 0.71)
+    candidate["quote_timestamp"] = "2026-06-18T02:00:00+00:00"
+    candidate["spread_bps"] = 2
+
     result = apply_auto_open(
-        [_candidate("NVTS", 0.71)],
+        [candidate],
         [],
         mode="paper_autopilot",
         engine=engine,
@@ -2087,6 +2091,27 @@ def test_auto_open_uses_overnight_limit_order_when_24_5_enabled():
     assert row["details"]["order_policy"] == "overnight_24_5"
     assert row["details"]["extended_hours"] is True
     assert row["details"]["session_size_multiplier"] == 0.1
+
+
+def test_auto_open_blocks_24_5_order_without_fresh_quote_timestamp():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True, "overnight_tradable": True})
+
+    result = apply_auto_open(
+        [_candidate("NVTS", 0.71)],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, min_position_value_usd=1),
+        alpaca_cfg=_trade_config(extended_hours=True, overnight_trading_enabled=True, overnight_limit_buffer_bps=50),
+        client=client,
+        now=datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "quote_timestamp_missing" in result["autopilot_open_notes"]
+    assert client.orders == []
 
 
 def test_auto_open_blocks_24_5_order_when_asset_not_overnight_tradable():

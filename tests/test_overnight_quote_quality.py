@@ -27,3 +27,13 @@ def test_quote_quality_rejects_stale_quote():
     )
     assert result.ok is False
     assert result.reason == "quote_stale"
+
+
+def test_quote_quality_rejects_missing_timestamp_when_fresh_quote_required():
+    result = evaluate_quote_quality(
+        {"spread_bps": 2},
+        max_spread_bps=8,
+        require_fresh_quote=True,
+    )
+    assert result.ok is False
+    assert result.reason == "quote_timestamp_missing"
