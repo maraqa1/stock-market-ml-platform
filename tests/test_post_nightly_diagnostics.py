@@ -45,6 +45,12 @@ def test_main_runs_selected_steps_after_ok_doctor(monkeypatch):
         ("trade_ledger", "build_trade_ledger.py", ["--date", "2026-06-30"]),
         ("profitability_attribution", "build_profitability_attribution.py", []),
         ("strategy_diagnostics", "run_strategy_diagnostics.py", []),
+        ("broker_fill_reconciliation", "run_broker_fill_reconciliation.py", []),
+        ("candidate_trade_attribution", "run_candidate_trade_attribution.py", []),
+        ("missed_better_candidates", "run_missed_better_candidates.py", []),
+        ("position_management_outcomes", "run_position_management_outcomes.py", []),
+        ("ranking_polarity", "run_ranking_polarity_diagnostic.py", []),
+        ("side_mapping_audit", "run_side_mapping_audit.py", []),
     ]
 
 
@@ -62,6 +68,12 @@ def test_main_can_skip_trade_ledger_and_attribution(monkeypatch):
         "--skip-trade-ledger",
         "--skip-profitability-attribution",
         "--skip-promotion-replay",
+        "--skip-fill-reconciliation",
+        "--skip-candidate-trade-attribution",
+        "--skip-missed-better-candidates",
+        "--skip-position-management-outcomes",
+        "--skip-ranking-polarity",
+        "--skip-side-mapping-audit",
     ])
 
     assert code == 0
@@ -79,3 +91,15 @@ def test_deployment_timer_references_post_nightly_script():
     assert "scripts/run_post_nightly_diagnostics.py" in service
     assert "After=stockml-full-nightly.service" in service
     assert "OnCalendar=*-*-* 10:00:00" in timer
+
+
+def test_default_steps_include_read_only_diagnostics():
+    names = [name for name, _script in post.DEFAULT_STEPS]
+    assert names[-6:] == [
+        "broker_fill_reconciliation",
+        "candidate_trade_attribution",
+        "missed_better_candidates",
+        "position_management_outcomes",
+        "ranking_polarity",
+        "side_mapping_audit",
+    ]

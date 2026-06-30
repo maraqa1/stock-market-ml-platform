@@ -21,6 +21,12 @@ DEFAULT_STEPS = (
     ("profitability_attribution", ROOT / "scripts" / "build_profitability_attribution.py"),
     ("strategy_diagnostics", ROOT / "scripts" / "run_strategy_diagnostics.py"),
     ("intraday_promotion_replay", ROOT / "scripts" / "run_intraday_promotion_replay.py"),
+    ("broker_fill_reconciliation", ROOT / "scripts" / "run_broker_fill_reconciliation.py"),
+    ("candidate_trade_attribution", ROOT / "scripts" / "run_candidate_trade_attribution.py"),
+    ("missed_better_candidates", ROOT / "scripts" / "run_missed_better_candidates.py"),
+    ("position_management_outcomes", ROOT / "scripts" / "run_position_management_outcomes.py"),
+    ("ranking_polarity", ROOT / "scripts" / "run_ranking_polarity_diagnostic.py"),
+    ("side_mapping_audit", ROOT / "scripts" / "run_side_mapping_audit.py"),
 )
 
 
@@ -81,6 +87,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-profitability-attribution", action="store_true")
     parser.add_argument("--skip-strategy-diagnostics", action="store_true")
     parser.add_argument("--skip-promotion-replay", action="store_true")
+    parser.add_argument("--skip-fill-reconciliation", action="store_true")
+    parser.add_argument("--skip-candidate-trade-attribution", action="store_true")
+    parser.add_argument("--skip-missed-better-candidates", action="store_true")
+    parser.add_argument("--skip-position-management-outcomes", action="store_true")
+    parser.add_argument("--skip-ranking-polarity", action="store_true")
+    parser.add_argument("--skip-side-mapping-audit", action="store_true")
     args = parser.parse_args(argv)
 
     if args.skip_wait:
@@ -110,6 +122,24 @@ def main(argv: list[str] | None = None) -> int:
         steps.append((name, script, []))
     if not args.skip_promotion_replay:
         name, script = DEFAULT_STEPS[3]
+        steps.append((name, script, []))
+    if not args.skip_fill_reconciliation:
+        name, script = DEFAULT_STEPS[4]
+        steps.append((name, script, []))
+    if not args.skip_candidate_trade_attribution:
+        name, script = DEFAULT_STEPS[5]
+        steps.append((name, script, []))
+    if not args.skip_missed_better_candidates:
+        name, script = DEFAULT_STEPS[6]
+        steps.append((name, script, []))
+    if not args.skip_position_management_outcomes:
+        name, script = DEFAULT_STEPS[7]
+        steps.append((name, script, []))
+    if not args.skip_ranking_polarity:
+        name, script = DEFAULT_STEPS[8]
+        steps.append((name, script, []))
+    if not args.skip_side_mapping_audit:
+        name, script = DEFAULT_STEPS[9]
         steps.append((name, script, []))
 
     for name, script, extra_args in steps:
