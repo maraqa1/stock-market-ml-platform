@@ -19,6 +19,7 @@ from portal.services.same_day_view import missed_opportunities_context, record_s
 from portal.services.rotation_diagnostic_service import held_vs_candidate_context
 from portal.services.reports_view import closed_trades_context, closed_trades_csv
 from portal.services.trade_ledger_view import trade_ledger_context, trade_ledger_csv
+from portal.services.diagnostic_reports_view import diagnostic_reports_context, diagnostic_report_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
 from portal.services.intraday import decisions_csv as intraday_decisions_csv
@@ -820,6 +821,26 @@ def create_app(root: Path | None = None) -> Flask:
             csv_text,
             mimetype="text/csv",
             headers={"Content-Disposition": f"attachment; filename=trade_ledger_{kind}.csv"},
+        )
+
+
+    @app.route("/reports/diagnostics")
+    def reports_diagnostics():
+        return render_template(
+            "reports/diagnostics.html",
+            title="Attribution Diagnostics",
+            diagnostics=diagnostic_reports_context(root_path()),
+        )
+
+    @app.route("/reports/diagnostics/<kind>.csv")
+    def reports_diagnostics_csv(kind: str):
+        csv_text = diagnostic_report_csv(root_path(), kind)
+        if csv_text is None:
+            abort(404)
+        return Response(
+            csv_text,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=diagnostic_{kind}.csv"},
         )
 
     @app.route("/reports/daily/<report_date>.json")

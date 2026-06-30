@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="trading-console">
+  <section class="zone trading-zone" data-zone="attribution-diagnostics">
+    <div class="zone__header">
+      <span>Attribution Diagnostics</span>
+      <span class="zone__header-meta">read-only</span>
+    </div>
+    <div class="zone__body">
+      <p class="small muted">Latest generated diagnostic artifacts. These reports do not submit orders, change gates, change scoring, or alter exposure.</p>
+      <div class="table-scroll">
+        <table class="data dense">
+          <thead>
+            <tr>
+              <th>Report</th>
+              <th>Status</th>
+              <th class="num">Rows</th>
+              <th>File</th>
+              <th>Download</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if diagnostics.missing %}
+              <tr><td colspan="5" class="empty small">{{ diagnostics.missing_message }}</td></tr>
+            {% else %}
+              {% for row in diagnostics.files %}
+                <tr>
+                  <td>{{ row.label }}</td>
+                  <td>{{ row.status }}</td>
+                  <td class="num">{{ row.rows }}</td>
+                  <td class="mono small">{{ row.filename or "Not available" }}</td>
+                  <td>{% if row.csv_url %}<a href="{{ row.csv_url }}">CSV</a>{% else %}<span class="muted">Not available</span>{% endif %}</td>
+                </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {% for row in diagnostics.files %}
+    {% set preview = diagnostics.previews.get(row.kind, []) %}
+    <section class="zone trading-zone" data-zone="diagnostic-preview-{{ row.kind }}">
+      <div class="zone__header">
+        <span>{{ row.label }}</span>
+        <span class="zone__header-meta">{{ row.status }}</span>
+      </div>
+      <div class="zone__body">
+        {% if preview %}
+          {{ table(preview) }}
+        {% else %}
+          <div class="empty small">No preview rows.</div>
+        {% endif %}
+      </div>
+    </section>
+  {% endfor %}
+</section>
+{% endblock %}

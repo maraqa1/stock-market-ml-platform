@@ -895,3 +895,34 @@ def test_stock_detail_missing_ticker_returns_200(client):
     response = client.get("/stock/AAPL")
     assert response.status_code == 200
     assert b"No detail rows found" in response.data
+
+
+
+def test_attribution_diagnostics_report_and_download_render(client):
+    root = Path("_tmp_portal_routes")
+    write_csv(
+        root / "data" / "trading" / "diagnostics" / "missed_better_candidates_20260630_101500.csv",
+        [{"status": "ok", "candidate_symbol": "AAA", "diagnostic_decision": "review_candidate"}],
+    )
+    write_csv(
+        root / "data" / "model_outputs" / "diagnostics" / "side_mapping_audit_20260630_101500.csv",
+        [{"symbol": "AAA", "audit_flag": "ok", "severity": "info"}],
+    )
+
+    response = client.get("/reports")
+    assert response.status_code == 200
+    assert b"Attribution Diagnostics" in response.data
+
+    report = client.get("/reports/diagnostics")
+    assert report.status_code == 200
+    assert b"Missed better candidates" in report.data
+    assert b"Side mapping audit" in report.data
+    assert b"AAA" in report.data
+
+    csv_response = client.get("/reports/diagnostics/missed_better_candidates.csv")
+    assert csv_response.status_code == 200
+    assert csv_response.mimetype == "text/csv"
+    assert b"candidate_symbol" in csv_response.data
+
+    missing = client.get("/reports/diagnostics/not_a_kind.csv")
+    assert missing.status_code == 404
