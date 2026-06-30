@@ -18,6 +18,7 @@ from portal.services.per_symbol_forecast_service import per_symbol_forecast_cont
 from portal.services.same_day_view import missed_opportunities_context, record_same_day_operator_decision, same_day_panel_context
 from portal.services.rotation_diagnostic_service import held_vs_candidate_context
 from portal.services.reports_view import closed_trades_context, closed_trades_csv
+from portal.services.trade_ledger_view import trade_ledger_context, trade_ledger_csv
 from portal.services.kpi import trading_cadence_context, trading_header_context, trading_kpi_context
 from portal.services.journal import filters_from_args, iter_csv as journal_iter_csv, query as journal_query
 from portal.services.intraday import decisions_csv as intraday_decisions_csv
@@ -786,6 +787,25 @@ def create_app(root: Path | None = None) -> Flask:
             "reports/closed_trades.html",
             title="Closed Trades Attribution",
             closed_trades=closed_trades_context(root_path(), days=days, stream=stream),
+        )
+
+    @app.route("/reports/trade_ledger")
+    def reports_trade_ledger():
+        return render_template(
+            "reports/trade_ledger.html",
+            title="Trade Ledger Diagnostics",
+            ledger=trade_ledger_context(root_path()),
+        )
+
+    @app.route("/reports/trade_ledger/<kind>.csv")
+    def reports_trade_ledger_csv(kind: str):
+        csv_text = trade_ledger_csv(root_path(), kind)
+        if csv_text is None:
+            abort(404)
+        return Response(
+            csv_text,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=trade_ledger_{kind}.csv"},
         )
 
     @app.route("/reports/daily/<report_date>.json")

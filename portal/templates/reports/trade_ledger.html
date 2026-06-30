@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+{% set report = ledger %}
+<section class="trading-console">
+  <section class="zone trading-zone" data-zone="trade-ledger-header">
+    <div class="zone__header">
+      <span>Trade Ledger Diagnostics</span>
+      <span class="zone__header-meta">read-only</span>
+    </div>
+    <div class="zone__body">
+      <div class="table-toolbar">
+        <a class="btn btn-ghost" href="/reports">Reports</a>
+        {% for file in report.files %}
+          {% if file.exists %}
+            <a class="btn btn-ghost" href="{{ file.csv_url }}">{{ file.label }} CSV</a>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% if report.missing %}
+        <div class="empty small">{{ report.missing_message }}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="trade-ledger-files">
+    <div class="zone__header"><span>Diagnostic Files</span><span class="zone__header-meta">latest artifacts</span></div>
+    <div class="zone__body">{{ table(report.files, ["label", "rows", "filename", "path"]) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="trade-ledger-summary">
+    <div class="zone__header"><span>Summary</span><span class="zone__header-meta">latest ledger</span></div>
+    <div class="zone__body kpi-grid">
+      <div class="kpi-card"><span>Trades</span><strong class="num-l">{{ report.summary.trade_count }}</strong></div>
+      <div class="kpi-card"><span>Open</span><strong class="num-l">{{ report.summary.open_trades }}</strong></div>
+      <div class="kpi-card"><span>Closed</span><strong class="num-l">{{ report.summary.closed_trades }}</strong></div>
+      <div class="kpi-card"><span>Unmatched</span><strong class="num-l">{{ report.summary.unmatched_events }}</strong></div>
+      <div class="kpi-card"><span>P&amp;L</span><strong class="num-l">{{ "%+.2f"|format(report.summary.total_pnl_usd or 0) }}</strong></div>
+      <div class="kpi-card"><span>W / L</span><strong class="num-l">{{ report.summary.winner_count }} / {{ report.summary.loser_count }}</strong></div>
+    </div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="trade-ledger-rows">
+    <div class="zone__header"><span>Trade Ledger</span><span class="zone__header-meta">latest 100</span></div>
+    <div class="zone__body">{{ table(report.ledger_rows) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="trade-ledger-attribution">
+    <div class="zone__header"><span>Profitability Attribution</span><span class="zone__header-meta">latest 100</span></div>
+    <div class="zone__body">{{ table(report.attribution_rows) }}</div>
+  </section>
+
+  <section class="zone trading-zone" data-zone="trade-ledger-unmatched">
+    <div class="zone__header"><span>Unmatched Lifecycle Events</span><span class="zone__header-meta">latest 100</span></div>
+    <div class="zone__body">{{ table(report.unmatched_rows) }}</div>
+  </section>
+</section>
+{% endblock %}

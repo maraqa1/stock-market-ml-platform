@@ -10,6 +10,7 @@ from portal.services.trading_api_service import action_queue_context, positions_
 from portal.services.universe_service import universe_context
 from portal.services.signal_service import signal_context
 from portal.services.trading_service import lifecycle_context, trading_context
+from portal.services.trade_ledger_view import trade_ledger_context, trade_ledger_csv
 
 
 def write_csv(path: Path, rows):
@@ -121,6 +122,36 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert ctx["rejected_trimmed_rows"][0]["source"] == "Guardrail"
     assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Rejected / Error"] == 0
     assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Fill ratio"] == "Not available"
+
+
+
+def test_trade_ledger_context_loads_latest_diagnostics(tmp_path):
+    write_csv(
+        tmp_path / "data" / "trading" / "diagnostics" / "trade_ledger_20260630_090000.csv",
+        [{"trade_id": "old", "symbol": "OLD", "trade_status": "closed", "realized_pnl_usd": -1}],
+    )
+    time.sleep(0.01)
+    write_csv(
+        tmp_path / "data" / "trading" / "diagnostics" / "trade_ledger_20260630_100000.csv",
+        [{"trade_id": "new", "symbol": "NEW", "trade_status": "open", "realized_pnl_usd": 0}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "diagnostics" / "profitability_attribution_20260630_100000.csv",
+        [{"trade_id": "new", "symbol": "NEW", "total_pnl_usd": 4.5}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "diagnostics" / "unmatched_lifecycle_events_20260630_100000.csv",
+        [{"event_id": 1, "symbol": "MISS", "lineage_warning": "missing_candidate_id"}],
+    )
+
+    ctx = trade_ledger_context(tmp_path)
+
+    assert ctx["summary"]["trade_count"] == 1
+    assert ctx["summary"]["open_trades"] == 1
+    assert ctx["summary"]["total_pnl_usd"] == 4.5
+    assert ctx["ledger_rows"][0]["trade_id"] == "new"
+    assert ctx["unmatched_rows"][0]["lineage_warning"] == "missing_candidate_id"
+    assert "new" in trade_ledger_csv(tmp_path, "ledger")
 
 
 def test_held_vs_candidate_context_compares_positions_and_available_candidates(tmp_path):

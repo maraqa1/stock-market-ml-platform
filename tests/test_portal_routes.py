@@ -213,6 +213,7 @@ def test_reports_page_and_daily_exports_render(client):
     index = client.get("/reports")
     assert index.status_code == 200
     assert b"Daily Reports" in index.data
+    assert b"Trade Ledger Diagnostics" in index.data
 
     daily = client.get("/reports/daily/2026-05-12")
     assert daily.status_code == 200
@@ -229,6 +230,47 @@ def test_reports_page_and_daily_exports_render(client):
     assert csv_response.status_code == 200
     assert csv_response.mimetype == "text/csv"
     assert b"section,metric,value" in csv_response.data
+
+
+
+def test_trade_ledger_report_and_download_render(client):
+    root = Path("_tmp_portal_routes")
+    write_csv(
+        root / "data" / "trading" / "diagnostics" / "trade_ledger_20260630_101500.csv",
+        [
+            {
+                "trade_id": "trade-1",
+                "symbol": "AAA",
+                "side": "long",
+                "trade_status": "closed",
+                "opened_at": "2026-06-30T10:00:00Z",
+                "closed_at": "2026-06-30T10:30:00Z",
+                "realized_pnl_usd": 12.5,
+            }
+        ],
+    )
+    write_csv(
+        root / "data" / "trading" / "diagnostics" / "profitability_attribution_20260630_101500.csv",
+        [{"trade_id": "trade-1", "symbol": "AAA", "total_pnl_usd": 12.5, "session_mode": "regular_session"}],
+    )
+    write_csv(
+        root / "data" / "trading" / "diagnostics" / "unmatched_lifecycle_events_20260630_101500.csv",
+        [{"event_id": 7, "symbol": "BBB", "lineage_warning": "missing_trade_id"}],
+    )
+
+    response = client.get("/reports/trade_ledger")
+    assert response.status_code == 200
+    assert b"Trade Ledger Diagnostics" in response.data
+    assert b"AAA" in response.data
+    assert b"missing_trade_id" in response.data
+
+    csv_response = client.get("/reports/trade_ledger/ledger.csv")
+    assert csv_response.status_code == 200
+    assert csv_response.mimetype == "text/csv"
+    assert b"trade-1" in csv_response.data
+
+    missing = client.get("/reports/trade_ledger/not_a_kind.csv")
+    assert missing.status_code == 404
 
 
 def test_trading_paper_autopilot_controls(client):
