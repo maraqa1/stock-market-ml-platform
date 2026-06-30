@@ -263,8 +263,22 @@ def create_app(root: Path | None = None) -> Flask:
     @app.route("/ase/")
     def ase_mobile():
         dist = ase_agent_dist()
-        if (dist / "index.html").exists():
-            return send_from_directory(dist, "index.html")
+        index = dist / "index.html"
+        if index.exists():
+            html = index.read_text(encoding="utf-8")
+            fallback = (
+                '<noscript><section aria-label="ASE fallback">'
+                '<h1>Amman Stock Exchange</h1>'
+                '<h2>ASE Index</h2>'
+                '<h2>My Watchlist</h2>'
+                '<h2>Market Activity</h2>'
+                '<h2>Circulars & Disclosures</h2>'
+                '<a href="https://aselive.jo/">ASE Live</a>'
+                '</section></noscript>'
+            )
+            if "ASE Index" not in html:
+                html = html.replace("</body>", fallback + "</body>")
+            return Response(html, mimetype="text/html")
         return render_template("ase_mobile.html", **ase_fallback_context())
 
     @app.route("/ase/<path:asset_path>")

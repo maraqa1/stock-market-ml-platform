@@ -28,7 +28,7 @@ SUBMITTED_EVENTS = {"submitted", "order_submitted", "candidate_submitted"}
 FILL_EVENTS = {"filled", "close_filled"}
 MONITOR_EVENTS = {"monitor_safe", "monitor_watch", "monitor_rotate", "monitor_close"}
 EXIT_EVENTS = {"monitor_close", "operator_close", "close_submitted", "close_filled"}
-LINEAGE_EXPORT_COLUMNS = ["pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "scan_candidate_id", "parent_candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "event_session_mode", "planned_execution_session_mode", "actual_submission_session_mode", "candidate_source", "model_version", "lineage_warning"]
+LINEAGE_EXPORT_COLUMNS = ["position_id", "pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "scan_candidate_id", "parent_candidate_id", "event_key", "client_order_id", "broker_order_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "event_session_mode", "planned_execution_session_mode", "actual_submission_session_mode", "candidate_source", "model_version", "lineage_warning"]
 
 
 @dataclass
