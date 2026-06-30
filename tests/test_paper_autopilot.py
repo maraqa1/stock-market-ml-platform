@@ -81,7 +81,7 @@ def test_paper_autopilot_tick_waits_for_fills(monkeypatch, tmp_path):
     )
 
     assert state["status"] == "running"
-    assert state["phase"] == "monitoring_positions"
+    assert state["phase"] == "waiting_for_fills"
     assert state["open_orders"] == 1
     assert state["tracked_open_orders"] == 1
     assert state["broker_open_orders"] == 0
@@ -195,7 +195,7 @@ def test_paper_autopilot_tick_counts_direct_broker_orders(monkeypatch, tmp_path)
     )
 
     assert state["status"] == "running"
-    assert state["phase"] == "monitoring_positions"
+    assert state["phase"] == "waiting_for_fills"
     assert state["open_orders"] == 5
     assert state["tracked_open_orders"] == 0
     assert state["broker_open_orders"] == 5
@@ -237,7 +237,7 @@ def test_paper_autopilot_mode_auto_closes_close_decisions(monkeypatch, tmp_path)
 
     assert calls == [["AAA", "BBB"]]
     assert state["mode"] == "paper_autopilot"
-    assert state["phase"] == "waiting_for_fills"
+    assert state["phase"] == "monitoring_positions"
     assert state["autopilot_actions"] == 1
     assert state["autopilot_close_submitted"] == 1
     assert state["autopilot_defensive_close_submitted"] == 0
@@ -273,7 +273,7 @@ def test_paper_autopilot_mode_defensively_closes_stale_losers(monkeypatch, tmp_p
         ),
     )
 
-    assert state["phase"] == "waiting_for_fills"
+    assert state["phase"] == "monitoring_positions"
     assert state["autopilot_actions"] == 0
     assert state["autopilot_close_submitted"] == 0
     assert state["autopilot_defensive_close_submitted"] == 0
@@ -431,8 +431,8 @@ def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch,
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 0
-    assert "trailing_profit_giveback:submitted" not in state.get("autopilot_action_notes", "")
+    assert state["autopilot_trailing_close_submitted"] == 1
+    assert "AAA:severe_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch, tmp_path):
@@ -468,8 +468,8 @@ def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch,
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 0
-    assert "trailing_profit_giveback:submitted" not in state.get("autopilot_action_notes", "")
+    assert state["autopilot_trailing_close_submitted"] == 1
+    assert "AAA:severe_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_fresh_winner_requires_larger_giveback(monkeypatch, tmp_path):
@@ -536,8 +536,8 @@ def test_paper_autopilot_mode_protects_unknown_signal_winners_that_give_back(mon
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 0
-    assert "trailing_profit_giveback:submitted" not in state.get("autopilot_action_notes", "")
+    assert state["autopilot_trailing_close_submitted"] == 1
+    assert "AAA:severe_profit_giveback:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabled(monkeypatch, tmp_path):
