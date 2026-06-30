@@ -27,6 +27,9 @@ class SessionOrderDecision:
     session_reject_reason: str = ""
     spread_bps: float | None = None
     quote_freshness_seconds: float | None = None
+    executable_price: float | None = None
+    reference_price: float | None = None
+    executable_price_deviation_bps: float | None = None
 
 
 def load_session_mode_config(path: Path | None = None) -> dict[str, Any]:
@@ -81,9 +84,10 @@ def session_order_policy(
     quality = evaluate_quote_quality(
         quote or {},
         max_spread_bps=max_spread_value or 999999.0,
+        max_executable_deviation_bps=cfg.get("max_executable_deviation_bps"),
         now=now,
         require_fresh_quote=require_fresh_quote,
     )
     if extended and not quality.ok:
-        return SessionOrderDecision(False, mode, policy_name, order_type, extended, multiplier, max_spread_value, quality.reason, quality.spread_bps, quality.freshness_seconds)
-    return SessionOrderDecision(True, mode, policy_name, order_type, extended, multiplier, max_spread_value, "", quality.spread_bps, quality.freshness_seconds)
+        return SessionOrderDecision(False, mode, policy_name, order_type, extended, multiplier, max_spread_value, quality.reason, quality.spread_bps, quality.freshness_seconds, quality.executable_price, quality.reference_price, quality.executable_price_deviation_bps)
+    return SessionOrderDecision(True, mode, policy_name, order_type, extended, multiplier, max_spread_value, "", quality.spread_bps, quality.freshness_seconds, quality.executable_price, quality.reference_price, quality.executable_price_deviation_bps)

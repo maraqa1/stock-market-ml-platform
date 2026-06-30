@@ -99,3 +99,34 @@ def test_after_hours_rejects_missing_quote_timestamp():
     assert decision.allowed is False
     assert decision.session_mode == "after_hours"
     assert decision.session_reject_reason == "quote_timestamp_missing"
+
+
+def test_after_hours_rejects_quote_reference_price_dislocation():
+    decision = session_order_policy(
+        now=datetime(2026, 6, 18, 20, 0, tzinfo=timezone.utc),
+        asset=_asset(),
+        quote={
+            "side": "buy",
+            "bid": 142,
+            "ask": 155,
+            "candidate_reference_price": 143,
+            "quote_timestamp": "2026-06-18T20:00:00+00:00",
+        },
+        requested_order_type="limit",
+        config={
+            "session_modes": {
+                "after_hours": {
+                    "enabled": True,
+                    "allow_market_orders": False,
+                    "max_spread_bps": 2000,
+                    "max_executable_deviation_bps": 100,
+                    "position_size_multiplier": 0.25,
+                }
+            }
+        },
+    )
+    assert decision.allowed is False
+    assert decision.session_reject_reason == "quote_reference_price_dislocated"
+    assert decision.executable_price == 155
+    assert decision.reference_price == 143
+    assert decision.executable_price_deviation_bps is not None

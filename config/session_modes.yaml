@@ -15,6 +15,7 @@ session_modes:
     enabled: true
     allow_market_orders: false
     max_spread_bps: 10
+    max_executable_deviation_bps: 100
     position_size_multiplier: 0.25
 
   overnight_24_5:
@@ -25,6 +26,7 @@ session_modes:
     require_overnight_tradable: true
     require_not_overnight_halted: true
     max_spread_bps: 8
+    max_executable_deviation_bps: 100
     position_size_multiplier: 0.10
     max_new_orders_per_cycle: 1
     min_hold_minutes: 60

@@ -1619,7 +1619,13 @@ def apply_auto_open(
             continue
         requested_order_type = "limit" if bool(trade_cfg.extended_hours or trade_cfg.overnight_trading_enabled) else "market"
         current_price = _candidate_price(candidate, details)
-        quote_data = {**candidate, **details, "current_price": current_price}
+        quote_data = {
+            **candidate,
+            **details,
+            "current_price": current_price,
+            "candidate_reference_price": current_price,
+            "side": side,
+        }
         if requested_order_type == "limit":
             try:
                 live_quote = _quote_execution_context(symbol, side, default_quote_provider, stamp)
@@ -1637,6 +1643,9 @@ def apply_auto_open(
             "overnight_tradable": asset_is_overnight_tradable(asset),
             "spread_bps": policy.spread_bps,
             "quote_freshness_seconds": policy.quote_freshness_seconds,
+            "quote_executable_price": policy.executable_price,
+            "quote_reference_price": policy.reference_price,
+            "quote_executable_price_deviation_bps": policy.executable_price_deviation_bps,
             "session_reject_reason": policy.session_reject_reason,
             "session_max_spread_bps": policy.max_spread_bps,
             "session_size_multiplier": policy.size_multiplier,

@@ -2148,7 +2148,7 @@ def test_auto_open_uses_fresh_quote_price_for_extended_limit_and_quantity():
         }
     )
     candidate = _candidate("NVTS", 0.71)
-    candidate["current_price"] = 10
+    candidate["current_price"] = 49.95
 
     result = apply_auto_open(
         [candidate],

@@ -13,6 +13,9 @@ class QuoteQualityResult:
     spread_bps: float | None
     freshness_seconds: float | None
     reason: str = ""
+    executable_price: float | None = None
+    reference_price: float | None = None
+    executable_price_deviation_bps: float | None = None
 
 
 def _float(value: Any) -> float | None:
@@ -47,26 +50,41 @@ def evaluate_quote_quality(
     *,
     max_spread_bps: float,
     max_freshness_seconds: float = 900.0,
+    max_executable_deviation_bps: float | None = None,
     now: datetime | None = None,
     require_fresh_quote: bool = False,
 ) -> QuoteQualityResult:
     spread = _float(data.get("spread_bps"))
     bid = _float(data.get("bid") or data.get("bid_price"))
     ask = _float(data.get("ask") or data.get("ask_price"))
+    side = str(data.get("side") or data.get("order_side") or "").strip().lower()
+    executable = ask if side == "buy" else (bid if side in {"sell", "short"} else None)
+    reference = _float(
+        data.get("candidate_reference_price")
+        or data.get("model_reference_price")
+        or data.get("reference_price")
+    )
+    executable_deviation = None
+    if executable and reference and reference > 0:
+        executable_deviation = ((executable - reference) / reference) * 10000.0
+        if side in {"sell", "short"}:
+            executable_deviation *= -1.0
     if spread is None and bid and ask and bid > 0 and ask >= bid:
         mid = (bid + ask) / 2.0
         spread = ((ask - bid) / mid) * 10000.0 if mid > 0 else None
-    if spread is not None and spread > max_spread_bps:
-        return QuoteQualityResult(False, spread, None, "spread_too_wide")
     quote_time = _aware(data.get("quote_timestamp") or data.get("quote_time") or data.get("latest_quote_at"))
     freshness = None
     if require_fresh_quote and quote_time is None:
-        return QuoteQualityResult(False, spread, freshness, "quote_timestamp_missing")
+        return QuoteQualityResult(False, spread, freshness, "quote_timestamp_missing", executable, reference, executable_deviation)
     if quote_time is not None:
         current = now or datetime.now(timezone.utc)
         if current.tzinfo is None:
             current = current.replace(tzinfo=timezone.utc)
         freshness = max(0.0, (current.astimezone(timezone.utc) - quote_time).total_seconds())
         if freshness > max_freshness_seconds:
-            return QuoteQualityResult(False, spread, freshness, "quote_stale")
-    return QuoteQualityResult(True, spread, freshness, "")
+            return QuoteQualityResult(False, spread, freshness, "quote_stale", executable, reference, executable_deviation)
+    if max_executable_deviation_bps is not None and executable_deviation is not None and executable_deviation > max_executable_deviation_bps:
+        return QuoteQualityResult(False, spread, freshness, "quote_reference_price_dislocated", executable, reference, executable_deviation)
+    if spread is not None and spread > max_spread_bps:
+        return QuoteQualityResult(False, spread, freshness, "spread_too_wide", executable, reference, executable_deviation)
+    return QuoteQualityResult(True, spread, freshness, "", executable, reference, executable_deviation)
