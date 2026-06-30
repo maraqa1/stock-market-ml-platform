@@ -27,3 +27,17 @@ def test_rank_polarity_diagnostic_flags_possible_inversion():
     ])
     out = build_ranking_polarity(frame, cost=0.0)
     assert bool(out["polarity_bug_likely"].iloc[0]) is True
+
+
+from pathlib import Path
+
+from stockml.diagnostics.ranking_polarity_diagnostic import build_ranking_polarity_report
+
+
+def test_ranking_polarity_report_writes_missing_data(tmp_path: Path):
+    empty = tmp_path / "signals.csv"
+    empty.write_text("ticker,date,rank_overall\n", encoding="utf-8")
+    output = build_ranking_polarity_report("20260630_120000", signal_file=empty, gold_file=tmp_path / "missing_gold.csv")
+    assert output.status == "missing_data"
+    assert output.path.exists()
+    assert "signal_history" in output.missing_inputs or "forward_outcomes" in output.missing_inputs
