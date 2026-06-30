@@ -12,7 +12,7 @@ session_modes:
     position_size_multiplier: 0.25
 
   after_hours:
-    enabled: false
+    enabled: true
     allow_market_orders: false
     max_spread_bps: 10
     position_size_multiplier: 0.25
