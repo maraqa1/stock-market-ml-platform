@@ -1753,7 +1753,7 @@ def test_paper_autopilot_tick_builds_monitor_and_closes_max_holding_days(monkeyp
 
     assert closes == [("HOLD", "close")]
     assert state["autopilot_close_submitted"] == 1
-    assert state["autopilot_action_notes"].startswith("HOLD:monitor_close:submitted")
+    assert state["autopilot_action_notes"].startswith("HOLD:close:monitor_close:submitted")
     decision_path = sorted((tmp_path / "data" / "trading" / "agent_decisions").glob("position_decisions_*.csv"))[-1]
     decisions = pd.read_csv(decision_path)
     assert decisions.iloc[0]["decision"] == "close"
