@@ -33,6 +33,7 @@ def _cfg(**overrides):
         account_equity=100000,
         max_position_pct=0.05,
         allow_short_selling=True,
+        extended_hours=False,
         live_trading_enabled=False,
         paper_trading_enabled=True,
     )
