@@ -65,12 +65,12 @@
               <td class="num">{{ row.qty }}</td>
               <td class="num {{ 'text-up' if (row.pnl_amount|float(0)) > 0 else 'text-down' if (row.pnl_amount|float(0)) < 0 else '' }}">{{ signed_money(row.pnl_amount|float(0)) }}</td>
               <td class="num {{ 'text-up' if (row.pnl_pct|float(0)) > 0 else 'text-down' if (row.pnl_pct|float(0)) < 0 else '' }}">{{ signed_pct(row.pnl_pct|float(0)) }}</td>
-              <td><span class="badge badge-blue">{{ row.recommended_action|replace("_", " ")|title }}</span><br><small>{{ row.action_strength or "not scored" }} · {{ row.decision_confidence or "no confidence" }}</small></td>
+              <td><span class="badge badge-blue">{{ row.recommended_action|replace("_", " ")|title }}</span><br><small>{{ row.action_strength or "not scored" }} - {{ row.decision_confidence or "no confidence" }}</small></td>
               <td class="num">{{ row.recommended_target_qty }}</td>
               <td class="num">{{ row.recommended_delta_qty }}</td>
               <td>
                 {% if row.auto_action %}
-                  <span class="badge badge-green">{{ row.auto_action|replace("_", " ")|title }}</span><br><small>{{ row.auto_status }} · {{ row.auto_message }}</small>
+                  <span class="badge badge-green">{{ row.auto_action|replace("_", " ")|title }}</span><br><small>{{ row.auto_status }} - {{ row.auto_message }}</small>
                 {% else %}
                   <span class="badge">No action</span>
                 {% endif %}

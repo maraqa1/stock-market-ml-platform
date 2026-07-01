@@ -18,16 +18,6 @@ CANDIDATE_POOL_READ_LIMIT = 1000
 CANDIDATE_POOL_DISPLAY_LIMIT = 500
 
 
-def _latest_matching(root: Path, relative_dir: str, pattern: str) -> Path | None:
-    directory = Path(root) / relative_dir
-    if not directory.exists():
-        return None
-    matches = [path for path in directory.glob(pattern) if path.is_file()]
-    if not matches:
-        return None
-    return max(matches, key=lambda path: path.stat().st_mtime)
-
-
 def _records(frame, limit: int = 50) -> list[dict]:
     if frame.empty:
         return []
@@ -477,8 +467,8 @@ def trading_context(root: Path) -> dict:
     tracking_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     actions_file = latest_file(root, "operator_actions", "operator_position_actions_*.csv")
-    position_management_file = _latest_matching(root, "data/trading/diagnostics", "position_management_decisions_*.csv")
-    autopilot_tick_file = _latest_matching(root, "data/trading/autopilot", "autopilot_ticks_*.csv")
+    position_management_file = latest_file(root, "trading_diagnostics", "position_management_decisions_*.csv")
+    autopilot_tick_file = latest_file(root, "paper_autopilot", "autopilot_ticks_*.csv")
     plan = safe_read_csv(plan_file, nrows=500)
     candidate_pool = safe_read_csv(candidate_pool_file, nrows=CANDIDATE_POOL_READ_LIMIT)
     results = safe_read_csv(result_file, nrows=500)
