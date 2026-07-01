@@ -15,6 +15,12 @@ def main() -> int:
     outputs = build_latest_validation_bucket_calibration(args.root, output_dir=args.output_dir)
     status = "ok" if outputs.usable_buckets > 0 else "insufficient_data"
     print(f"validation_bucket_calibration_status: {status}")
+    print(f"calibration_source: {outputs.calibration_source}")
+    print(f"gold_path: {outputs.gold_path or ''}")
+    print(f"gold_rows_read: {outputs.gold_rows_read}")
+    print(f"label_column_used: {outputs.label_column_used}")
+    print(f"max_label_date_used: {outputs.max_label_date_used}")
+    print(f"excluded_recent_rows: {outputs.excluded_recent_rows}")
     print(f"validation_rows_used: {outputs.validation_rows_used}")
     print(f"buckets_built: {outputs.buckets_built}")
     print(f"usable_buckets: {outputs.usable_buckets}")

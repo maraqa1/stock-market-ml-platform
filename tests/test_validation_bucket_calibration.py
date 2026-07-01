@@ -5,8 +5,11 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.diagnostics.validation_bucket_calibration import (
+    HISTORICAL_GOLD_WARNING,
+    build_gold_fallback_calibration,
     build_validation_bucket_calibration,
     map_candidates_to_calibration,
+    prepare_gold_historical_rows,
     prepare_validation_rows,
     write_validation_bucket_calibration,
 )
@@ -22,6 +25,20 @@ def _prediction_rows(count: int = 120, *, side: str = "Long", forward: float = 0
             "forward_5d_return": [forward] * count,
             "split": ["validation"] * count,
             "sector": ["Technology"] * count,
+        }
+    )
+
+
+def _gold_rows(count: int = 120, *, target_col: str = "target_return_5d", target: float = 0.02) -> pd.DataFrame:
+    dates = pd.bdate_range("2024-01-01", periods=count)
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "ticker": [f"G{i:03d}" for i in range(count)],
+            "sector": ["Technology"] * count,
+            "model_score": [1.0 - (i / max(count, 1)) for i in range(count)],
+            "rank_overall": list(range(1, count + 1)),
+            target_col: [target] * count,
         }
     )
 
@@ -45,6 +62,79 @@ def test_no_usable_forward_returns_writes_empty_calibration():
     assert validation_rows == 0
     assert list(calibration.columns)
     assert calibration.empty
+
+
+def test_empty_walk_forward_outputs_trigger_gold_fallback(tmp_path: Path):
+    outputs = write_validation_bucket_calibration(
+        pd.DataFrame(columns=["model_score", "forward_5d_return"]),
+        output_dir=tmp_path,
+        stamp="20260101_000000",
+        gold_panel=_gold_rows(1200),
+        gold_path=tmp_path / "gold.csv",
+    )
+
+    assert outputs.calibration_source == "gold_historical_targets"
+    assert outputs.validation_rows_used > 0
+    assert outputs.usable_buckets > 0
+    assert HISTORICAL_GOLD_WARNING in outputs.summary_path.read_text(encoding="utf-8")
+
+
+def test_gold_fallback_accepts_target_return_5d():
+    calibration, rows, metadata = build_gold_fallback_calibration(_gold_rows(1200, target_col="target_return_5d"))
+
+    assert rows > 0
+    assert metadata["label_column_used"] == "target_return_5d"
+    assert calibration["calibration_source"].eq("gold_historical_targets").all()
+
+
+def test_gold_fallback_prefers_sector_relative_target():
+    frame = _gold_rows(1200, target_col="target_return_5d")
+    frame["target_sector_relative_return_5d"] = 0.03
+
+    calibration, rows, metadata = build_gold_fallback_calibration(frame)
+
+    assert rows > 0
+    assert metadata["label_column_used"] == "target_sector_relative_return_5d"
+    assert calibration["validation_warning"].eq(HISTORICAL_GOLD_WARNING).all()
+
+
+def test_gold_latest_horizon_rows_are_excluded():
+    frame = _gold_rows(40, target_col="target_return_5d")
+
+    prepared, metadata = prepare_gold_historical_rows(frame, horizon_days=5)
+
+    assert metadata["excluded_recent_rows"] == 5
+    assert pd.to_datetime(prepared["date"]).max().date().isoformat() == metadata["max_label_date_used"]
+
+
+def test_gold_missing_target_rows_are_excluded():
+    frame = _gold_rows(40, target_col="target_return_5d")
+    frame.loc[0:4, "target_return_5d"] = pd.NA
+
+    prepared, _ = prepare_gold_historical_rows(frame, horizon_days=5)
+
+    assert len(prepared) == (40 - 5 - 5) * 2
+
+
+def test_gold_long_and_short_bps_calculation_and_costs():
+    frame = _gold_rows(40, target_col="target_return_5d", target=0.02)
+
+    prepared, _ = prepare_gold_historical_rows(frame, horizon_days=5, estimated_spread_cost_bps=3, estimated_slippage_bps=5, borrow_cost_estimate_bps=2)
+    long_value = prepared[prepared["side"].eq("Long")]["forward_return_bps"].iloc[0]
+    short_value = prepared[prepared["side"].eq("Short")]["forward_return_bps"].iloc[0]
+
+    assert long_value == 192.0
+    assert short_value == -210.0
+
+
+def test_missing_gold_target_returns_insufficient_data():
+    frame = _gold_rows(40, target_col="target_return_5d").drop(columns=["target_return_5d"])
+
+    calibration, rows, metadata = build_gold_fallback_calibration(frame)
+
+    assert rows == 0
+    assert calibration.empty
+    assert metadata["label_column_used"] == ""
 
 
 def test_latest_unlabelled_rows_are_not_used_for_calibration():

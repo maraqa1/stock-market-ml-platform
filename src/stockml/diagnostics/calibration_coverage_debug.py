@@ -384,12 +384,16 @@ def build_calibration_coverage_debug(
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     base = Path(root) if root else PROJECT_ROOT
     input_rows, frames = locate_validation_inputs(base)
+    explicit_validation_frame = validation_frame is not None
     if validation_frame is None:
         validation_frame = _best_validation_frame(frames)
     if calibration is None:
-        calibration = frames.get("expected_return_bucket_calibration_latest", pd.DataFrame())
-        if calibration.empty:
+        if explicit_validation_frame:
             calibration, _ = build_validation_bucket_calibration(validation_frame)
+        else:
+            calibration = frames.get("expected_return_bucket_calibration_latest", pd.DataFrame())
+            if calibration.empty:
+                calibration, _ = build_validation_bucket_calibration(validation_frame)
     prepared = prepare_validation_rows(validation_frame)
     rebuilt_calibration, validation_rows_used = build_validation_bucket_calibration(validation_frame)
     effective_calibration = calibration if calibration is not None and not calibration.empty else rebuilt_calibration

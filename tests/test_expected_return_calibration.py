@@ -10,6 +10,8 @@ from stockml.diagnostics.expected_return_calibration import (
     write_expected_return_calibration,
 )
 from stockml.diagnostics.validation_bucket_calibration import CALIBRATION_COLUMNS
+from stockml.diagnostics.validation_bucket_calibration import build_validation_bucket_calibration
+import stockml.trading.trade_quality_gate as trade_quality_gate
 from stockml.trading.config import AlpacaConfig
 from stockml.trading.trade_quality_gate import apply_trade_quality_gate
 
@@ -123,13 +125,50 @@ def test_safety_reason_does_not_fallback_to_raw_expected_return():
     assert expected_return_safety_reason(row) == "expected_return_uncalibrated"
 
 
-def test_trade_quality_gate_rejects_uncalibrated_expected_return_without_changing_score():
+def test_trade_quality_gate_rejects_uncalibrated_expected_return_without_changing_score(monkeypatch):
+    monkeypatch.setattr(trade_quality_gate, "latest_expected_return_calibration", lambda: pd.DataFrame())
     signal = pd.DataFrame([_candidate("GATE", expected=1961.05, risk=980.5257)])
     out = apply_trade_quality_gate(signal, _cfg())
     row = out.iloc[0]
     assert row["risk_adjusted_score"] == 980.5257
     assert row["trade_quality_status"] == "rejected"
     assert "expected_return_uncalibrated" in row["trade_quality_reason"]
+
+
+def test_trade_quality_gate_uses_latest_validation_bucket_calibration(monkeypatch):
+    validation = pd.DataFrame(
+        {
+            "ticker": [f"T{i:04d}" for i in range(1000)],
+            "side": ["Long"] * 1000,
+            "model_score": [1.0 - i / 1000 for i in range(1000)],
+            "rank_overall": list(range(1, 1001)),
+            "forward_5d_return": [0.02] * 1000,
+            "split": ["validation"] * 1000,
+        }
+    )
+    calibration, _ = build_validation_bucket_calibration(validation)
+    monkeypatch.setattr(trade_quality_gate, "latest_expected_return_calibration", lambda: calibration)
+    signal = pd.DataFrame(
+        [
+            {
+                **_candidate("SAFE", expected=1961.05, risk=0.50, model=0.99),
+                "candidate_rank": 1,
+                "current_price": 20,
+                "open_price": 20,
+                "intraday_high": 21,
+                "intraday_low": 19,
+                "intraday_volume": 2_000_000,
+                "market_cap": 10_000_000_000,
+                "avg_dollar_volume_20d": 80_000_000,
+                "volatility_20d": 0.02,
+            }
+        ]
+    )
+
+    out = apply_trade_quality_gate(signal, _cfg())
+
+    assert out.iloc[0]["expected_return_quality"] == "usable"
+    assert "expected_return_uncalibrated" not in out.iloc[0]["trade_quality_reason"]
 
 
 def test_write_outputs(tmp_path: Path):

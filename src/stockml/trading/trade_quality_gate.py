@@ -6,6 +6,7 @@ from typing import Optional
 import pandas as pd
 
 from stockml.common.paths import GOLD_DIR, INTERIM_DIR, PROCESSED_DIR, RAW_DIR, latest_file
+from stockml.diagnostics.validation_bucket_calibration import map_candidates_to_calibration
 from stockml.trading.config import AlpacaConfig
 from stockml.trading.position_sizing import approved_notional, base_notional, suggested_quantity
 from stockml.trading.risk_checks import liquidity_tier, numeric, reject_reasons, risk_tier, volatility_tier
@@ -30,6 +31,37 @@ def _numeric_column(frame: pd.DataFrame, column: str, default: float = 0.0) -> p
     if column not in frame.columns:
         return pd.Series(default, index=frame.index, dtype="float64")
     return pd.to_numeric(frame[column], errors="coerce").fillna(default)
+
+
+def latest_expected_return_calibration() -> pd.DataFrame:
+    path = PROCESSED_DIR.parent / "model_outputs" / "validation" / "expected_return_bucket_calibration_latest.csv"
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path, low_memory=False)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _apply_expected_return_calibration(signals: pd.DataFrame, calibration: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    if signals.empty:
+        return signals
+    source = calibration if calibration is not None else latest_expected_return_calibration()
+    if source is None or source.empty:
+        return signals
+    mapped = map_candidates_to_calibration(signals, source)
+    out = signals.copy()
+    for column in [
+        "calibrated_bucket_id",
+        "validated_expected_return_bps",
+        "validated_hit_rate",
+        "validated_profit_factor",
+        "calibration_source",
+        "calibration_quality",
+        "expected_return_quality",
+    ]:
+        out[column] = mapped[column].reindex(out.index)
+    return out
 
 
 def latest_price_snapshot(tickers: list[str], price_file: Optional[Path] = None) -> pd.DataFrame:
@@ -224,6 +256,7 @@ def apply_trade_quality_gate(
     if risk_features is None:
         risk_features = latest_risk_feature_snapshot(tickers)
     out = _prepare_market_context(signals, price_snapshot, metadata, risk_features)
+    out = _apply_expected_return_calibration(out)
     out["current_price"] = pd.to_numeric(out["current_price"], errors="coerce")
     out["open_price"] = pd.to_numeric(out["open_price"], errors="coerce")
     out["intraday_high"] = pd.to_numeric(out["intraday_high"], errors="coerce")

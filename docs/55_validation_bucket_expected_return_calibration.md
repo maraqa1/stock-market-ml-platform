@@ -11,6 +11,15 @@ Candidate rows can contain untrusted `expected_trade_return` values when the fie
 - Walk-forward or validation prediction CSVs from `data/model_outputs`.
 - Rows must contain a side, model score or rank, and a realised forward return.
 - Latest unlabeled rows are excluded because they do not yet have forward outcomes.
+- If walk-forward validation outputs are empty, the builder can fall back to the historical Gold panel.
+
+Source priority:
+
+1. `walk_forward_validation`
+2. `gold_historical_targets`
+3. `insufficient_data`
+
+The Gold fallback accepts `target_sector_relative_return_5d`, `target_return_5d`, `target_return_10d`, `target_return_20d`, and `return_5d`. For 5-day calibration it excludes the latest 5 trading dates before building buckets.
 
 ## Outputs
 
@@ -24,8 +33,8 @@ The builder creates these diagnostic bucket families:
 
 - `model_score_decile`
 - `rank_percentile_decile`
+- `rank_overall_decile`
 - `side_specific_rank_decile`
-- `sector_neutral_decile` when sector data is available
 
 Only side-specific Long and Short buckets are executable-safe for live candidate mapping.
 
@@ -43,3 +52,9 @@ Weak buckets remain blocked unless explicitly allowed by config. If no usable ca
 ## Limitations
 
 This layer does not prove the strategy is profitable. It only prevents raw or ambiguous expected-return fields from being treated as execution evidence.
+
+When `calibration_source=gold_historical_targets`, the summary includes:
+
+`historical_gold_fallback_not_true_walk_forward`
+
+That warning means the buckets are conservative historical target buckets, not a substitute for true walk-forward validation.
