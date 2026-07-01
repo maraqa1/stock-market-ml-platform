@@ -82,11 +82,11 @@ def _read_csv(path: Path | None) -> pd.DataFrame:
 def _summary(ledger: pd.DataFrame, unmatched: pd.DataFrame, attribution: pd.DataFrame) -> dict[str, Any]:
     status_col = _first_existing(ledger, ["trade_status", "position_status"])
     status_counts = _counts(ledger, status_col) if status_col else {}
-    pnl_col = _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"])
-    pnl_source = ledger
+    pnl_col = _first_existing(attribution, ["total_pnl_usd", "total_pnl", "realized_pnl_usd", "realised_pnl"])
+    pnl_source = attribution
     if pnl_col is None:
-        pnl_col = _first_existing(attribution, ["total_pnl_usd", "total_pnl", "realized_pnl_usd", "realised_pnl"])
-        pnl_source = attribution
+        pnl_col = _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"])
+        pnl_source = ledger
     return {
         "trade_count": int(len(ledger)),
         "open_trades": int(status_counts.get("open", 0)),
