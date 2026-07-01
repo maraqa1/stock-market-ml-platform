@@ -28,6 +28,7 @@ OUTPUT_COLUMNS = [
     "validated_hit_rate",
     "validated_profit_factor",
 ]
+SAFE_EMPTY_REASONS = {"", "nan", "none", "null"}
 
 
 def _text(value: Any) -> str:
@@ -220,3 +221,113 @@ def write_execution_ranked_candidates(
     path = out_dir / f"execution_ranked_candidates_{run_stamp}.csv"
     ranked.to_csv(path, index=False)
     return path
+
+
+def latest_execution_ranked_path(root: Path | str | None = None) -> Path | None:
+    base = Path(root) if root else PROJECT_ROOT
+    portal = base / "data" / "portal_outputs"
+    files = [path for path in portal.glob("execution_ranked_candidates_*.csv") if path.is_file()]
+    return max(files, key=lambda item: item.stat().st_mtime) if files else None
+
+
+def _boolish(value: Any, default: bool = False) -> bool:
+    if value in [None, ""]:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n"}:
+        return False
+    return default
+
+
+def _rank_present(value: Any) -> bool:
+    return _num(value) is not None
+
+
+def _safe_block_reasons(value: Any) -> bool:
+    return _text(value).lower() in SAFE_EMPTY_REASONS
+
+
+def execution_ranked_auto_open_candidates(
+    path: Path | str | None = None,
+    *,
+    root: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    source = Path(path) if path else latest_execution_ranked_path(root)
+    if source is None or not source.exists():
+        return []
+    try:
+        frame = pd.read_csv(source, low_memory=False)
+    except Exception:
+        return []
+    if frame.empty:
+        return []
+    if "execution_rank" not in frame.columns:
+        return []
+
+    out: list[dict[str, Any]] = []
+    ranked = frame.sort_values(["execution_rank", "raw_rank", "symbol"], na_position="last", kind="mergesort")
+    for _, row in ranked.iterrows():
+        status = _text(row.get("status")).lower()
+        side = _side(row)
+        source_action = (_text(row.get("source_trade_action")) or _text(row.get("trade_action"))).lower()
+        if status != "executable":
+            continue
+        if not _rank_present(row.get("execution_rank")):
+            continue
+        if side not in {"buy", "sell"}:
+            continue
+        if _boolish(row.get("research_only"), False):
+            continue
+        if "executable" in frame.columns and not _boolish(row.get("executable"), False):
+            continue
+        if not _safe_block_reasons(row.get("all_block_reasons")):
+            continue
+        if source_action in {"no decision", "no_decision", "none"}:
+            continue
+        trade_action = "Short" if side == "sell" else "Long"
+        details = row.to_dict()
+        details.update(
+            {
+                "candidate_source": "execution_ranked_candidates",
+                "model_evidence_source": "execution_ranked_candidates",
+                "execution_ranked_source_path": str(source),
+                "execution_ranked_candidate": True,
+                "trade_quality_status": "approved",
+                "candidate_status": "approved",
+                "order_eligible": True,
+                "side": side,
+                "trade_action": trade_action,
+                "source_trade_action": trade_action,
+                "current_trade_action": trade_action,
+                "nightly_bias": "short" if side == "sell" else "long",
+                "rank_overall": row.get("raw_rank", row.get("research_rank", "")),
+                "strategy_mode": row.get("strategy_mode", "execution_ranked"),
+            }
+        )
+        out.append(
+            {
+                "symbol": _symbol(row),
+                "side": side,
+                "trade_action": trade_action,
+                "source_trade_action": trade_action,
+                "current_trade_action": trade_action,
+                "nightly_bias": "short" if side == "sell" else "long",
+                "rank_overall": row.get("raw_rank", row.get("research_rank", "")),
+                "execution_rank": row.get("execution_rank", ""),
+                "raw_rank": row.get("raw_rank", ""),
+                "candidate_status": "approved",
+                "trade_quality_status": "approved",
+                "order_eligible": True,
+                "details": details,
+            }
+        )
+    return out

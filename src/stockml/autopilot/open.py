@@ -1572,7 +1572,14 @@ def apply_auto_open(
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="near_open_close", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:near_open_close")
             continue
-        side = "sell" if str(candidate.get("nightly_bias") or "").lower() == "short" else "buy"
+        explicit_side = str(details.get("side") or candidate.get("side") or "").strip().lower()
+        explicit_action = str(details.get("current_trade_action") or details.get("trade_action") or candidate.get("current_trade_action") or candidate.get("trade_action") or "").strip().lower()
+        if explicit_side in {"sell", "short"} or explicit_action == "short":
+            side = "sell"
+        elif explicit_side in {"buy", "long"} or explicit_action == "long":
+            side = "buy"
+        else:
+            side = "sell" if str(candidate.get("nightly_bias") or details.get("nightly_bias") or "").lower() == "short" else "buy"
         if side == "sell" and not trade_cfg.allow_short_selling:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="shorting_disabled", details=details, engine=db, now=stamp)
@@ -1704,8 +1711,8 @@ def apply_auto_open(
             continue
         if not trade_cfg.submit_orders:
             blocked += 1
-            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="submit_orders_disabled", details={**asset_details, "order": order}, engine=db, now=stamp)
-            notes.append(f"{symbol}:blocked:submit_orders_disabled")
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="paper_autopilot_submit_blocked_config", details={**asset_details, "order": order, "final_decision": "BLOCKED_BY_CONFIG"}, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:paper_autopilot_submit_blocked_config")
             continue
         try:
             intent_decision, intent_row = guard_order_submission(

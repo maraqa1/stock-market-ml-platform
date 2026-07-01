@@ -24,6 +24,7 @@ from stockml.autopilot.open import (
 )
 from stockml.autopilot.rotate import apply_auto_rotations
 from stockml.autopilot.position_health import PositionHealthRules, classify_position_health
+from stockml.candidates.execution_ranker import execution_ranked_auto_open_candidates
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
@@ -1047,6 +1048,7 @@ def tick(
     near_miss_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
     per_symbol_forecast_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
     plan_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
+    execution_ranked_candidate_loader: Callable[[], list[dict[str, Any]]] | None = None,
     auto_rotation_applier: Callable[[list[dict[str, Any]]], dict[str, Any]] | None = None,
     allow_auto_open: bool = True,
 ) -> dict[str, Any]:
@@ -1218,7 +1220,11 @@ def tick(
                 plan_candidates = plan_candidate_loader()
             else:
                 plan_candidates = latest_plan_fallback_candidates(root=root)
-            candidates = _dedupe_auto_open_candidates(strong_candidates, ranked_candidates, plan_candidates)
+            if execution_ranked_candidate_loader is not None:
+                execution_ranked_candidates = execution_ranked_candidate_loader()
+            else:
+                execution_ranked_candidates = execution_ranked_auto_open_candidates(root=root)
+            candidates = _dedupe_auto_open_candidates(execution_ranked_candidates, strong_candidates, ranked_candidates, plan_candidates)
             if not candidates and open_positions == 0:
                 candidates = fallback_candidate_loader()
             if auto_open_applier is not None:
