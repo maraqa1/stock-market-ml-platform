@@ -53,6 +53,7 @@
             <th class="num">Delta</th>
             <th>Auto Action</th>
             <th>Reason</th>
+            <th>Manager Explanation</th>
             <th>Guard</th>
             <th>Status</th>
           </tr>
@@ -76,11 +77,12 @@
                 {% endif %}
               </td>
               <td>{{ row.primary_reason|replace("_", " ") }}{% if row.auto_reason %}<br><small>auto: {{ row.auto_reason|replace("_", " ") }}</small>{% endif %}</td>
+              <td>{{ row.manager_explanation }}</td>
               <td>{{ row.blocking_guard or row.data_quality_status or "" }}</td>
               <td><span class="badge {{ 'badge-green' if row.review_status == 'submitted' else 'badge-red' if row.review_status in ['blocked', 'error', 'rejected'] else 'badge-yellow' if row.review_status in ['pending_auto', 'review_only'] else 'badge-blue' }}">{{ row.review_status|replace("_", " ")|title }}</span></td>
             </tr>
           {% else %}
-            <tr><td colspan="12">No position management review rows available.</td></tr>
+            <tr><td colspan="13">No position management review rows available.</td></tr>
           {% endfor %}
         </tbody>
       </table>

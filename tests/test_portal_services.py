@@ -167,6 +167,34 @@ def test_trading_context_exposes_position_management_review(tmp_path):
     assert review["rows"][0]["review_status"] == "submitted"
 
 
+def test_position_management_review_explains_loss_making_hold(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "AVAV", "side": "short", "qty": -3, "avg_entry_price": 164.08, "current_price": 165.5, "unrealized_pl": -4.25, "unrealized_plpc": -0.00864}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "diagnostics" / "position_management_decisions_1.csv",
+        [
+            {
+                "symbol": "AVAV",
+                "side": "short",
+                "qty": 3,
+                "pnl_amount": -4.25,
+                "pnl_pct": -0.00864,
+                "recommended_action": "hold",
+                "primary_reason": "no_action_required",
+                "blocking_guard": "",
+                "data_quality_status": "ok",
+            }
+        ],
+    )
+
+    row = trading_context(tmp_path)["position_management_review"]["rows"][0]
+
+    assert row["review_status"] == "monitoring"
+    assert row["manager_explanation"] == "loss below manager close trigger"
+
+
 
 def test_trade_ledger_context_loads_latest_diagnostics(tmp_path):
     write_csv(

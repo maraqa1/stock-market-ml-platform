@@ -135,6 +135,22 @@ def _position_management_status(action: str, auto_status: str, blocking_guard: s
     return "monitoring"
 
 
+def _position_management_explanation(action: str, pnl_pct: float, primary_reason: str, blocking_guard: str) -> str:
+    action = str(action or "").lower()
+    reason = str(primary_reason or "").replace("_", " ")
+    if blocking_guard:
+        return f"blocked by {str(blocking_guard).replace('_', ' ')}"
+    if action == "hold" and pnl_pct < 0:
+        return "loss below manager close trigger"
+    if action == "hold" and pnl_pct > 0:
+        return "profitable position still within hold rules"
+    if action in {"close", "reduce", "increase"}:
+        return f"manager action: {reason or action}"
+    if action == "manual_review":
+        return f"review only: {reason or 'manager requested review'}"
+    return reason or "monitoring"
+
+
 def _position_management_review_context(
     decisions: pd.DataFrame,
     positions: pd.DataFrame,
@@ -160,6 +176,7 @@ def _position_management_review_context(
         action = str(row.get("recommended_action") or "hold")
         blocking_guard = str(row.get("blocking_guard") or "")
         auto_status = str(auto.get("auto_status") or "")
+        pnl_pct = _numeric_value(row.get("pnl_pct") or position.get("unrealized_plpc") or 0, 0.0)
         rows.append(
             {
                 "symbol": symbol,
@@ -168,7 +185,7 @@ def _position_management_review_context(
                 "entry_price": row.get("entry_price") or position.get("avg_entry_price") or "",
                 "last_price": row.get("last_price") or position.get("current_price") or "",
                 "pnl_amount": row.get("pnl_amount") or position.get("unrealized_pl") or "",
-                "pnl_pct": row.get("pnl_pct") or position.get("unrealized_plpc") or "",
+                "pnl_pct": pnl_pct,
                 "position_age_minutes": row.get("position_age_minutes") or "",
                 "recommended_action": action,
                 "action_strength": row.get("action_strength") or "",
@@ -185,6 +202,7 @@ def _position_management_review_context(
                 "auto_status": auto_status,
                 "auto_message": auto.get("auto_message") or "",
                 "review_status": _position_management_status(action, auto_status, blocking_guard),
+                "manager_explanation": _position_management_explanation(action, pnl_pct, str(row.get("primary_reason") or ""), blocking_guard),
             }
         )
     action_counts = _status_counts(decisions, "recommended_action")
