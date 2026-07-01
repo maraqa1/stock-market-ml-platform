@@ -30,6 +30,11 @@ class SessionOrderDecision:
     executable_price: float | None = None
     reference_price: float | None = None
     executable_price_deviation_bps: float | None = None
+    expected_move_bps: float | None = None
+    estimated_cost_bps: float | None = None
+    expected_net_edge_bps: float | None = None
+    edge_to_spread_ratio: float | None = None
+    spread_gate_decision: str = ""
 
 
 def load_session_mode_config(path: Path | None = None) -> dict[str, Any]:
@@ -85,9 +90,12 @@ def session_order_policy(
         quote or {},
         max_spread_bps=max_spread_value or 999999.0,
         max_executable_deviation_bps=cfg.get("max_executable_deviation_bps"),
+        estimated_cost_bps=float(cfg.get("estimated_cost_bps", 10.0)),
+        min_edge_to_spread_ratio=float(cfg.get("min_edge_to_spread_ratio", 3.0)),
+        min_expected_net_edge_bps=float(cfg.get("min_expected_net_edge_bps", 25.0)),
         now=now,
         require_fresh_quote=require_fresh_quote,
     )
     if extended and not quality.ok:
-        return SessionOrderDecision(False, mode, policy_name, order_type, extended, multiplier, max_spread_value, quality.reason, quality.spread_bps, quality.freshness_seconds, quality.executable_price, quality.reference_price, quality.executable_price_deviation_bps)
-    return SessionOrderDecision(True, mode, policy_name, order_type, extended, multiplier, max_spread_value, "", quality.spread_bps, quality.freshness_seconds, quality.executable_price, quality.reference_price, quality.executable_price_deviation_bps)
+        return SessionOrderDecision(False, mode, policy_name, order_type, extended, multiplier, max_spread_value, quality.reason, quality.spread_bps, quality.freshness_seconds, quality.executable_price, quality.reference_price, quality.executable_price_deviation_bps, quality.expected_move_bps, quality.estimated_cost_bps, quality.expected_net_edge_bps, quality.edge_to_spread_ratio, quality.spread_gate_decision)
+    return SessionOrderDecision(True, mode, policy_name, order_type, extended, multiplier, max_spread_value, "", quality.spread_bps, quality.freshness_seconds, quality.executable_price, quality.reference_price, quality.executable_price_deviation_bps, quality.expected_move_bps, quality.estimated_cost_bps, quality.expected_net_edge_bps, quality.edge_to_spread_ratio, quality.spread_gate_decision)

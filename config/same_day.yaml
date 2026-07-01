@@ -7,6 +7,9 @@ same_day:
     min_market_cap: 500000000
     max_spread_bps: 15
     max_spread_bps_zscore_20d: 2.0
+    estimated_cost_bps: 10
+    min_edge_to_spread_ratio: 3.0
+    min_expected_net_edge_bps: 25
     min_signal_age_seconds: 300
     max_signal_age_seconds: 3600
     min_continuation_probability: 0.60

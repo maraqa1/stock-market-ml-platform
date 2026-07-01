@@ -9,6 +9,7 @@ from stockml.common.paths import GOLD_DIR, INTERIM_DIR, PROCESSED_DIR, RAW_DIR, 
 from stockml.trading.config import AlpacaConfig
 from stockml.trading.position_sizing import approved_notional, base_notional, suggested_quantity
 from stockml.trading.risk_checks import liquidity_tier, numeric, reject_reasons, risk_tier, volatility_tier
+from stockml.trading.spread_edge import evaluate_spread_edge, expected_move_bps_from
 from stockml.trading.stop_take_profit import stop_take_profit_prices
 
 
@@ -233,6 +234,8 @@ def apply_trade_quality_gate(
     out["expected_trade_return"] = _numeric_column(out, "expected_trade_return")
     out["risk_adjusted_score"] = _numeric_column(out, "risk_adjusted_score")
     out["side_probability"] = _numeric_column(out, "side_probability")
+    if "spread_bps" in out.columns:
+        out["spread_bps"] = pd.to_numeric(out["spread_bps"], errors="coerce")
     range_width = out["intraday_high"] - out["intraday_low"]
     out["price_position_in_intraday_range"] = ((out["current_price"] - out["intraday_low"]) / range_width.replace(0, pd.NA)).clip(0, 1)
     out["intraday_return_from_open"] = out["current_price"] / out["open_price"] - 1
@@ -251,6 +254,13 @@ def apply_trade_quality_gate(
         quantity = suggested_quantity(notional, current_price)
         sizing_reason = "standard_floor_quantity"
         stop = {"stop_loss_price": pd.NA, "take_profit_price": pd.NA, "max_holding_days": pd.NA}
+        spread_value = pd.to_numeric(row.get("spread_bps"), errors="coerce") if "spread_bps" in out.columns else pd.NA
+        spread_edge = evaluate_spread_edge(
+            spread_bps=None if pd.isna(spread_value) else float(spread_value),
+            max_spread_bps=25.0,
+            expected_move_bps=expected_move_bps_from(row),
+            estimated_cost_bps=float(getattr(config, "transaction_cost_bps", 10.0)),
+        )
         try:
             if current_price > 0:
                 stop = stop_take_profit_prices(float(row["current_price"]), side, str(row["volatility_tier"]), str(row["risk_tier"]))
@@ -275,6 +285,7 @@ def apply_trade_quality_gate(
                 "approved_notional": notional if status in {"approved", "reduced"} else 0.0,
                 "suggested_quantity": quantity if status in {"approved", "reduced"} else 0,
                 "position_sizing_reason": sizing_reason if status in {"approved", "reduced"} else "rejected",
+                **spread_edge.details(),
                 **stop,
                 "trade_quality_status": status,
                 "trade_quality_reason": status if status in {"approved", "reduced"} else "|".join(dict.fromkeys(reasons or ["risk_tier_reject"])),

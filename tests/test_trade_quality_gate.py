@@ -259,6 +259,16 @@ def test_missing_risk_fields_are_enriched_from_feature_snapshot():
     assert row["volatility_20d"] == 0.02
 
 
+def test_trade_quality_gate_reports_spread_adjusted_edge_when_available():
+    row = apply_trade_quality_gate(pd.DataFrame([signal(spread_bps=40, expected_trade_return=0.05)]), config()).iloc[0]
+
+    assert row["trade_quality_status"] == "approved"
+    assert row["spread_gate_decision"] == "wide_spread_edge_supported"
+    assert row["expected_move_bps"] == 500
+    assert row["expected_net_edge_bps"] == 450
+    assert row["edge_to_spread_ratio"] == 12.5
+
+
 def test_latest_metadata_snapshot_backfills_from_recent_full_file(tmp_path, monkeypatch):
     older = tmp_path / "04_us_metadata_enriched_20260519_201330.csv"
     newer = tmp_path / "04_us_metadata_enriched_20260520_043845.csv"

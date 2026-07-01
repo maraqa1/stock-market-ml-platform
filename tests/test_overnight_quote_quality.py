@@ -17,6 +17,31 @@ def test_quote_quality_rejects_wide_spread():
     assert result.reason == "spread_too_wide"
 
 
+def test_quote_quality_allows_wide_spread_when_edge_covers_cost():
+    result = evaluate_quote_quality(
+        {"bid": 99.0, "ask": 101.0, "expected_move_bps": 700},
+        max_spread_bps=8,
+        estimated_cost_bps=10,
+    )
+    assert result.ok is True
+    assert result.spread_gate_decision == "wide_spread_edge_supported"
+    assert result.expected_net_edge_bps is not None
+    assert result.expected_net_edge_bps > 25
+    assert result.edge_to_spread_ratio is not None
+    assert result.edge_to_spread_ratio > 3
+
+
+def test_quote_quality_rejects_wide_spread_when_edge_is_weak():
+    result = evaluate_quote_quality(
+        {"bid": 99.0, "ask": 101.0, "expected_move_bps": 80},
+        max_spread_bps=8,
+        estimated_cost_bps=10,
+    )
+    assert result.ok is False
+    assert result.reason == "spread_too_wide"
+    assert result.spread_gate_decision == "wide_spread_edge_insufficient"
+
+
 def test_quote_quality_rejects_stale_quote():
     now = datetime(2026, 6, 18, 2, 0, tzinfo=timezone.utc)
     result = evaluate_quote_quality(

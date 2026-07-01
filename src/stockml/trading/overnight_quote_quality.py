@@ -6,6 +6,8 @@ from typing import Any
 
 import pandas as pd
 
+from stockml.trading.spread_edge import evaluate_spread_edge, expected_move_bps_from
+
 
 @dataclass(frozen=True)
 class QuoteQualityResult:
@@ -16,6 +18,11 @@ class QuoteQualityResult:
     executable_price: float | None = None
     reference_price: float | None = None
     executable_price_deviation_bps: float | None = None
+    expected_move_bps: float | None = None
+    estimated_cost_bps: float | None = None
+    expected_net_edge_bps: float | None = None
+    edge_to_spread_ratio: float | None = None
+    spread_gate_decision: str = ""
 
 
 def _float(value: Any) -> float | None:
@@ -51,6 +58,9 @@ def evaluate_quote_quality(
     max_spread_bps: float,
     max_freshness_seconds: float = 900.0,
     max_executable_deviation_bps: float | None = None,
+    estimated_cost_bps: float = 10.0,
+    min_edge_to_spread_ratio: float = 3.0,
+    min_expected_net_edge_bps: float = 25.0,
     now: datetime | None = None,
     require_fresh_quote: bool = False,
 ) -> QuoteQualityResult:
@@ -85,6 +95,40 @@ def evaluate_quote_quality(
             return QuoteQualityResult(False, spread, freshness, "quote_stale", executable, reference, executable_deviation)
     if max_executable_deviation_bps is not None and executable_deviation is not None and executable_deviation > max_executable_deviation_bps:
         return QuoteQualityResult(False, spread, freshness, "quote_reference_price_dislocated", executable, reference, executable_deviation)
-    if spread is not None and spread > max_spread_bps:
-        return QuoteQualityResult(False, spread, freshness, "spread_too_wide", executable, reference, executable_deviation)
-    return QuoteQualityResult(True, spread, freshness, "", executable, reference, executable_deviation)
+    spread_edge = evaluate_spread_edge(
+        spread_bps=spread,
+        max_spread_bps=max_spread_bps,
+        expected_move_bps=expected_move_bps_from(data),
+        estimated_cost_bps=estimated_cost_bps,
+        min_edge_to_spread_ratio=min_edge_to_spread_ratio,
+        min_expected_net_edge_bps=min_expected_net_edge_bps,
+    )
+    if spread is not None and spread > max_spread_bps and not spread_edge.allowed:
+        return QuoteQualityResult(
+            False,
+            spread,
+            freshness,
+            "spread_too_wide",
+            executable,
+            reference,
+            executable_deviation,
+            spread_edge.expected_move_bps,
+            spread_edge.estimated_cost_bps,
+            spread_edge.expected_net_edge_bps,
+            spread_edge.edge_to_spread_ratio,
+            spread_edge.decision,
+        )
+    return QuoteQualityResult(
+        True,
+        spread,
+        freshness,
+        "",
+        executable,
+        reference,
+        executable_deviation,
+        spread_edge.expected_move_bps,
+        spread_edge.estimated_cost_bps,
+        spread_edge.expected_net_edge_bps,
+        spread_edge.edge_to_spread_ratio,
+        spread_edge.decision,
+    )

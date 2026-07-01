@@ -82,6 +82,34 @@ def test_continuation_and_reversal_probability_gates():
     assert high_reversal.reason == "REJECTED_REVERSAL_RISK_TOO_HIGH"
 
 
+def test_wide_spread_passes_when_expected_edge_covers_cost():
+    result = evaluate(
+        _features(spread_bps=40, expected_move_bps=250),
+        direction="long",
+        continuation_probability=0.70,
+        reversal_probability=0.20,
+        config=SameDayGateConfig(max_spread_bps=15, estimated_cost_bps=10, min_edge_to_spread_ratio=3.0, min_expected_net_edge_bps=25),
+        kill_switch_gate=allow_gate,
+    )
+
+    assert result.passed is True
+
+
+def test_wide_spread_rejects_when_expected_edge_is_weak():
+    result = evaluate(
+        _features(spread_bps=40, expected_move_bps=80),
+        direction="long",
+        continuation_probability=0.70,
+        reversal_probability=0.20,
+        config=SameDayGateConfig(max_spread_bps=15, estimated_cost_bps=10, min_edge_to_spread_ratio=3.0, min_expected_net_edge_bps=25),
+        kill_switch_gate=allow_gate,
+    )
+
+    assert result.passed is False
+    assert result.reason == "REJECTED_WIDE_SPREAD"
+    assert result.details["spread_gate_decision"] == "wide_spread_edge_insufficient"
+
+
 def test_symbol_activity_and_daily_cap_gates():
     symbol = evaluate(_features(), direction="long", continuation_probability=0.70, reversal_probability=0.20, config=SameDayGateConfig(), same_day_attempts_today_for_symbol=3, kill_switch_gate=allow_gate)
     daily = evaluate(_features(), direction="long", continuation_probability=0.70, reversal_probability=0.20, config=SameDayGateConfig(), same_day_candidates_today_count=20, kill_switch_gate=allow_gate)
