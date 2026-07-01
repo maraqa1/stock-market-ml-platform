@@ -446,12 +446,12 @@ def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch,
         encoding="utf-8",
     )
     state = paper_autopilot.load_state(tmp_path)
-    state["position_peak_plpc"] = {"AAA": 0.022}
+    state["position_peak_plpc"] = {"AAA": 0.03}
     paper_autopilot.save_state(state, tmp_path)
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([_position("AAA", qty=100, unrealized_plpc=0.016, peak_pnl_pct=0.022)]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", qty=100, unrealized_plpc=0.016, peak_pnl_pct=0.03)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": 0.016}]).to_csv(decisions / "position_decisions_1.csv", index=False)
