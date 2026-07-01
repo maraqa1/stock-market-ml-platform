@@ -356,6 +356,10 @@ def decide_position(row: dict[str, Any], *, now: datetime | None = None, config:
     monitor_decision = _lower(row.get("decision") or row.get("recommended_action"))
     if monitor_decision == "close":
         return _finalize(out, "close", "monitor_close", level=3, strength="high", confidence="high", support=support)
+    max_holding_days = _float(row.get("max_holding_days") or row.get("max_hold_days"))
+    age_minutes = _float(out.get("position_age_minutes"))
+    if max_holding_days and max_holding_days > 0 and age_minutes is not None and age_minutes >= max_holding_days * 1440:
+        return _finalize(out, "close", "max_holding_days_exceeded", level=3, strength="high", confidence="high", support=support)
 
     alignment = out["signal_alignment"]
     source_side = _action_side(out["source_trade_action"])
