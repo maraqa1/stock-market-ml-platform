@@ -1198,6 +1198,25 @@ def _record_candidate_lifecycle_event(
     )
 
 
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
 def _record_open(
     *,
     symbol: str,
@@ -1214,6 +1233,7 @@ def _record_open(
     if loggable_promotion_score is not None and abs(loggable_promotion_score) >= 10:
         details = {**(details or {}), "promotion_score_unlogged": loggable_promotion_score}
         loggable_promotion_score = None
+    safe_details = _json_safe(details or {})
     with engine.begin() as conn:
         result = conn.execute(
             insert(autopilot_open_log).values(
@@ -1224,7 +1244,7 @@ def _record_open(
                 verdict=verdict,
                 block_reason=block_reason or None,
                 order_id=order_id,
-                details=details or {},
+                details=safe_details,
             )
         )
         inserted_id = result.inserted_primary_key[0] if result.inserted_primary_key else None
@@ -1234,7 +1254,7 @@ def _record_open(
         block_reason=block_reason or "",
         order_id=order_id or "",
         size_usd=size_usd,
-        details=details or {},
+        details=safe_details,
         now=now,
     )
     return inserted_id

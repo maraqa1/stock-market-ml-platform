@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, insert, select
 
 from stockml.autopilot.open import (
     AutoOpenConfig,
+    _record_open,
     apply_auto_open,
     latest_flat_account_fallback_candidates,
     latest_near_miss_fallback_candidates,
@@ -125,6 +126,33 @@ def _candidate(symbol: str = "CSTL", score: float = 0.72, bias: str = "long") ->
         "trade_quality_status": "approved",
         "details": {"is_first_15_min": False, "is_last_30_min": False},
     }
+
+
+def test_record_open_sanitizes_nan_details_for_json_log():
+    engine = _engine()
+    now = datetime(2026, 7, 1, 20, 30, tzinfo=timezone.utc)
+
+    _record_open(
+        symbol="BNY",
+        promotion_score=None,
+        size_usd=2500,
+        verdict="blocked",
+        block_reason="quote_stale",
+        details={
+            "all_block_reasons": float("nan"),
+            "nested": {"value": pd.NA},
+            "items": [1, float("nan")],
+        },
+        engine=engine,
+        now=now,
+    )
+
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["block_reason"] == "quote_stale"
+    assert row["details"]["all_block_reasons"] is None
+    assert row["details"]["nested"]["value"] is None
+    assert row["details"]["items"] == [1, None]
 
 
 def _fallback_candidate(symbol: str = "ANGI", score: float = 0.4175, bias: str = "long") -> dict:
