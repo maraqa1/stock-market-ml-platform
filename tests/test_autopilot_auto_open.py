@@ -1733,7 +1733,7 @@ def test_paper_autopilot_tick_builds_monitor_and_closes_max_holding_days(monkeyp
     monkeypatch.setattr(
         paper_autopilot,
         "apply_manual_position_action",
-        lambda symbol, action: closes.append((symbol, action)) or {"status": "submitted", "message": "closed"},
+        lambda symbol, action, **_: closes.append((symbol, action)) or {"status": "submitted", "message": "closed"},
     )
 
     state = paper_autopilot.tick(
