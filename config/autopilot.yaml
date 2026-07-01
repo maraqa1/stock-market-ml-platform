@@ -2,7 +2,7 @@ version: 1
 execution_owner: paper_autopilot
 autopilot:
   open_enabled: true
-  rotate_enabled: false
+  rotate_enabled: true
   max_auto_opens_per_day: 20
   max_positions: 20
   min_account_equity_usd: 250
@@ -98,7 +98,7 @@ position_lifecycle:
   defensive_close_requires_loss_or_risk_breach: true
 
 rotation:
-  rotate_enabled: false
+  rotate_enabled: true
 
 same_day:
   same_day_auto_execution: false

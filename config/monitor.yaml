@@ -6,8 +6,8 @@ rotation:
   min_hold_minutes: 60
   max_rotations_per_day: 3
   require_operator_confirm: false
-  edge_replacement_auto_enabled: false
-  edge_replacement_auto_dry_run: true
+  edge_replacement_auto_enabled: true
+  edge_replacement_auto_dry_run: false
   respect_monitor_verdict: true
   monitor_override_score_delta: 0.20
 
