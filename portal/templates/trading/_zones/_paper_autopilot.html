@@ -117,50 +117,56 @@
         <input id="auto-open-limit-overall" name="max_auto_opens_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.auto_open_max_per_day }}" title="Overall auto opens per day" aria-label="Overall auto opens per day">
         <span class="label">Positions</span>
         <input name="max_positions" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.auto_open_max_positions }}" title="Maximum open positions" aria-label="Maximum open positions">
-        <span class="label">Flat/day</span>
-        <input name="flat_account_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.flat_account_fallback_max_per_day }}" title="Flat-account fallback opens per day" aria-label="Flat-account fallback opens per day">
-        <span class="label">Near/day</span>
-        <input name="near_miss_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.near_miss_fallback_max_per_day }}" title="Near-miss fallback opens per day" aria-label="Near-miss fallback opens per day">
-        <span class="label">Forecast/day</span>
-        <input name="per_symbol_forecast_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.per_symbol_forecast_fallback_max_per_day }}" title="Forecast fallback opens per day" aria-label="Forecast fallback opens per day">
-        <span class="label">Validation/cycle</span>
-        <input name="validation_max_new_orders_per_cycle" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.validation_max_new_orders_per_cycle }}" title="Validation new orders per cycle" aria-label="Validation new orders per cycle">
         <span class="label">Validation/day</span>
         <input name="validation_max_new_orders_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.validation_max_new_orders_per_day }}" title="Validation new orders per day" aria-label="Validation new orders per day">
-        <span class="label">Validation positions</span>
-        <input name="validation_max_open_positions_total" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.validation_max_open_positions_total }}" title="Validation maximum open positions" aria-label="Validation maximum open positions">
+        <details class="autopilot-log" data-key="autopilot-advanced-open-limits">
+          <summary>Advanced open limits</summary>
+          <span class="label">Validation/cycle</span>
+          <input name="validation_max_new_orders_per_cycle" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.validation_max_new_orders_per_cycle }}" title="Validation new orders per cycle" aria-label="Validation new orders per cycle">
+          <span class="label">Validation positions</span>
+          <input name="validation_max_open_positions_total" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.validation_max_open_positions_total }}" title="Validation maximum open positions" aria-label="Validation maximum open positions">
+          <span class="label">Flat/day</span>
+          <input name="flat_account_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.flat_account_fallback_max_per_day }}" title="Flat-account fallback opens per day" aria-label="Flat-account fallback opens per day">
+          <span class="label">Near/day</span>
+          <input name="near_miss_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.near_miss_fallback_max_per_day }}" title="Near-miss fallback opens per day" aria-label="Near-miss fallback opens per day">
+          <span class="label">Forecast/day</span>
+          <input name="per_symbol_forecast_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.per_symbol_forecast_fallback_max_per_day }}" title="Forecast fallback opens per day" aria-label="Forecast fallback opens per day">
+        </details>
         <button class="btn btn-ghost" type="submit">Save Limits</button>
       </form>
-      <form class="autopilot-mode-form" method="post" action="/trading/autopilot/feature/strategy-risk">
-        <label class="label" for="strategy-max-loss">Strategy risk</label>
-        <span class="label">Loss %</span>
-        <input id="strategy-max-loss" name="max_position_loss_pct" type="number" min="0" max="25" step="0.1" value="{{ paper_autopilot.max_position_loss_pct }}" title="Maximum position loss percent before strategy close" aria-label="Maximum position loss percent before strategy close">
-        <span class="label">Flip clocks</span>
-        <input name="signal_flip_confirmation_clocks" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.signal_flip_confirmation_clocks }}" title="Signal flip confirmation clocks" aria-label="Signal flip confirmation clocks">
-        <span class="label">Stale loss %</span>
-        <input name="stale_unknown_loss_close_pct" type="number" min="0" max="25" step="0.1" value="{{ paper_autopilot.stale_unknown_loss_close_pct }}" title="Stale or unknown signal loss close percent" aria-label="Stale or unknown signal loss close percent">
-        <span class="label">Arm %</span>
-        <input name="trailing_profit_arm_pct" type="number" min="0" max="50" step="0.1" value="{{ paper_autopilot.trailing_profit_arm_pct }}" title="Trailing profit arm percent" aria-label="Trailing profit arm percent">
-        <span class="label">Giveback %</span>
-        <input name="trailing_profit_giveback_pct" type="number" min="0" max="50" step="0.1" value="{{ paper_autopilot.trailing_profit_giveback_pct }}" title="Trailing profit giveback percent" aria-label="Trailing profit giveback percent">
-        <span class="label">Basket DD %</span>
-        <input name="basket_drawdown_pause_pct" type="number" min="0" max="50" step="0.1" value="{{ paper_autopilot.basket_drawdown_pause_pct }}" title="Basket drawdown pause percent" aria-label="Basket drawdown pause percent">
-        <span class="label">Long max</span>
-        <input name="max_long_positions" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.max_long_positions }}" title="Maximum long positions; 0 means global cap only" aria-label="Maximum long positions">
-        <span class="label">Short max</span>
-        <input name="max_short_positions" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.max_short_positions }}" title="Maximum short positions; 0 means global cap only" aria-label="Maximum short positions">
-        <label class="label">
-          <input name="near_miss_entries_with_open_positions" type="checkbox" value="true" {% if paper_autopilot.near_miss_entries_with_open_positions %}checked{% endif %}>
-          Near miss with positions
-        </label>
-        <label class="label" for="close-automation-mode">Close mode</label>
-        <select id="close-automation-mode" name="close_automation_mode" title="Close automation mode" aria-label="Close automation mode">
-          <option value="mixed" {% if paper_autopilot.close_automation_mode == "mixed" %}selected{% endif %}>Mixed</option>
-          <option value="automatic" {% if paper_autopilot.close_automation_mode == "automatic" %}selected{% endif %}>Automatic</option>
-          <option value="review_only" {% if paper_autopilot.close_automation_mode == "review_only" %}selected{% endif %}>Review only</option>
-        </select>
-        <button class="btn btn-ghost" type="submit">Save Strategy</button>
-      </form>
+      <details class="autopilot-log" data-key="autopilot-strategy-risk">
+        <summary>Advanced strategy risk</summary>
+        <form class="autopilot-mode-form" method="post" action="/trading/autopilot/feature/strategy-risk">
+          <label class="label" for="strategy-max-loss">Strategy risk</label>
+          <span class="label">Loss %</span>
+          <input id="strategy-max-loss" name="max_position_loss_pct" type="number" min="0" max="25" step="0.1" value="{{ paper_autopilot.max_position_loss_pct }}" title="Maximum position loss percent before strategy close" aria-label="Maximum position loss percent before strategy close">
+          <span class="label">Flip clocks</span>
+          <input name="signal_flip_confirmation_clocks" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.signal_flip_confirmation_clocks }}" title="Signal flip confirmation clocks" aria-label="Signal flip confirmation clocks">
+          <span class="label">Stale loss %</span>
+          <input name="stale_unknown_loss_close_pct" type="number" min="0" max="25" step="0.1" value="{{ paper_autopilot.stale_unknown_loss_close_pct }}" title="Stale or unknown signal loss close percent" aria-label="Stale or unknown signal loss close percent">
+          <span class="label">Arm %</span>
+          <input name="trailing_profit_arm_pct" type="number" min="0" max="50" step="0.1" value="{{ paper_autopilot.trailing_profit_arm_pct }}" title="Trailing profit arm percent" aria-label="Trailing profit arm percent">
+          <span class="label">Giveback %</span>
+          <input name="trailing_profit_giveback_pct" type="number" min="0" max="50" step="0.1" value="{{ paper_autopilot.trailing_profit_giveback_pct }}" title="Trailing profit giveback percent" aria-label="Trailing profit giveback percent">
+          <span class="label">Basket DD %</span>
+          <input name="basket_drawdown_pause_pct" type="number" min="0" max="50" step="0.1" value="{{ paper_autopilot.basket_drawdown_pause_pct }}" title="Basket drawdown pause percent" aria-label="Basket drawdown pause percent">
+          <span class="label">Long max</span>
+          <input name="max_long_positions" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.max_long_positions }}" title="Maximum long positions; 0 means global cap only" aria-label="Maximum long positions">
+          <span class="label">Short max</span>
+          <input name="max_short_positions" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.max_short_positions }}" title="Maximum short positions; 0 means global cap only" aria-label="Maximum short positions">
+          <label class="label">
+            <input name="near_miss_entries_with_open_positions" type="checkbox" value="true" {% if paper_autopilot.near_miss_entries_with_open_positions %}checked{% endif %}>
+            Near miss with positions
+          </label>
+          <label class="label" for="close-automation-mode">Close mode</label>
+          <select id="close-automation-mode" name="close_automation_mode" title="Close automation mode" aria-label="Close automation mode">
+            <option value="mixed" {% if paper_autopilot.close_automation_mode == "mixed" %}selected{% endif %}>Mixed</option>
+            <option value="automatic" {% if paper_autopilot.close_automation_mode == "automatic" %}selected{% endif %}>Automatic</option>
+            <option value="review_only" {% if paper_autopilot.close_automation_mode == "review_only" %}selected{% endif %}>Review only</option>
+          </select>
+          <button class="btn btn-ghost" type="submit">Save Strategy</button>
+        </form>
+      </details>
       {% if paper_autopilot.status in ["running", "paused"] %}
         <form method="post" action="/trading/autopilot/stop">
           <button class="btn btn-danger" type="submit">Stop Autopilot</button>
