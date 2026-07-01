@@ -209,6 +209,9 @@ def test_auto_open_limit_values_persist_and_clamp_to_portal_max(tmp_path):
             "flat_account_fallback_max_per_day": 4,
             "near_miss_fallback_max_per_day": 6,
             "per_symbol_forecast_fallback_max_per_day": 8,
+            "validation_max_new_orders_per_cycle": 2,
+            "validation_max_new_orders_per_day": 11,
+            "validation_max_open_positions_total": 7,
             "ignored_limit": 50,
         },
         root=tmp_path,
@@ -219,6 +222,9 @@ def test_auto_open_limit_values_persist_and_clamp_to_portal_max(tmp_path):
     assert config.flat_account_fallback_max_per_day == 4
     assert config.near_miss_fallback_max_per_day == 6
     assert config.per_symbol_forecast_fallback_max_per_day == 8
+    assert config.validation_max_new_orders_per_cycle == 2
+    assert config.validation_max_new_orders_per_day == 11
+    assert config.validation_max_open_positions_total == 7
 
 
 def test_auto_open_strategy_values_persist_to_root_config(tmp_path):

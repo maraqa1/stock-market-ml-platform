@@ -520,6 +520,9 @@ def set_auto_open_limit_values(limits: dict[str, int], *, root: Path | str | Non
         "flat_account_fallback_max_per_day",
         "near_miss_fallback_max_per_day",
         "per_symbol_forecast_fallback_max_per_day",
+        "validation_max_new_orders_per_cycle",
+        "validation_max_new_orders_per_day",
+        "validation_max_open_positions_total",
     }
     clean = {key: _clean_portal_limit(value) for key, value in limits.items() if key in allowed}
     return _write_auto_open_config_values(clean, root=root, path=path)

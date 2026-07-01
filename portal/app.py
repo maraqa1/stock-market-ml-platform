@@ -412,6 +412,9 @@ def create_app(root: Path | None = None) -> Flask:
             "flat_account_fallback_max_per_day",
             "near_miss_fallback_max_per_day",
             "per_symbol_forecast_fallback_max_per_day",
+            "validation_max_new_orders_per_cycle",
+            "validation_max_new_orders_per_day",
+            "validation_max_open_positions_total",
         ]
         limits = {}
         for field in fields:
@@ -427,6 +430,9 @@ def create_app(root: Path | None = None) -> Flask:
             "flat_account_fallback_max_per_day": config.flat_account_fallback_max_per_day,
             "near_miss_fallback_max_per_day": config.near_miss_fallback_max_per_day,
             "per_symbol_forecast_fallback_max_per_day": config.per_symbol_forecast_fallback_max_per_day,
+            "validation_max_new_orders_per_cycle": config.validation_max_new_orders_per_cycle,
+            "validation_max_new_orders_per_day": config.validation_max_new_orders_per_day,
+            "validation_max_open_positions_total": config.validation_max_open_positions_total,
         }
         if request.accept_mimetypes.best == "application/json":
             return jsonify(payload)

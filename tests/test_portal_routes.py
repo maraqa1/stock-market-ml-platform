@@ -368,6 +368,9 @@ def test_trading_paper_autopilot_auto_open_limits_persist_config(client):
             "flat_account_fallback_max_per_day": "3",
             "near_miss_fallback_max_per_day": "4",
             "per_symbol_forecast_fallback_max_per_day": "5",
+            "validation_max_new_orders_per_cycle": "2",
+            "validation_max_new_orders_per_day": "11",
+            "validation_max_open_positions_total": "7",
         },
     )
     assert post.status_code == 302
@@ -378,6 +381,13 @@ def test_trading_paper_autopilot_auto_open_limits_persist_config(client):
     assert "flat_account_fallback_max_per_day: 3" in text
     assert "near_miss_fallback_max_per_day: 4" in text
     assert "per_symbol_forecast_fallback_max_per_day: 5" in text
+    assert "validation_max_new_orders_per_cycle: 2" in text
+    assert "validation_max_new_orders_per_day: 11" in text
+    assert "validation_max_open_positions_total: 7" in text
+
+    page = client.get("/trading")
+    assert b'name="validation_max_new_orders_per_day"' in page.data
+    assert b'value="11"' in page.data
 
     page = client.get("/trading")
     assert b'title="Overall auto opens per day"' in page.data

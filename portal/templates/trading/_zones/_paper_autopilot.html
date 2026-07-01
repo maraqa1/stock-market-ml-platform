@@ -123,6 +123,12 @@
         <input name="near_miss_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.near_miss_fallback_max_per_day }}" title="Near-miss fallback opens per day" aria-label="Near-miss fallback opens per day">
         <span class="label">Forecast/day</span>
         <input name="per_symbol_forecast_fallback_max_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.per_symbol_forecast_fallback_max_per_day }}" title="Forecast fallback opens per day" aria-label="Forecast fallback opens per day">
+        <span class="label">Validation/cycle</span>
+        <input name="validation_max_new_orders_per_cycle" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.validation_max_new_orders_per_cycle }}" title="Validation new orders per cycle" aria-label="Validation new orders per cycle">
+        <span class="label">Validation/day</span>
+        <input name="validation_max_new_orders_per_day" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.validation_max_new_orders_per_day }}" title="Validation new orders per day" aria-label="Validation new orders per day">
+        <span class="label">Validation positions</span>
+        <input name="validation_max_open_positions_total" type="number" min="0" max="100" step="1" value="{{ paper_autopilot.validation_max_open_positions_total }}" title="Validation maximum open positions" aria-label="Validation maximum open positions">
         <button class="btn btn-ghost" type="submit">Save Limits</button>
       </form>
       <form class="autopilot-mode-form" method="post" action="/trading/autopilot/feature/strategy-risk">
