@@ -27,11 +27,12 @@ from stockml.autopilot.position_health import PositionHealthRules, classify_posi
 from stockml.common.paths import PORTAL_OUTPUTS_DIR, ensure_data_dirs, timestamp
 from stockml.db.connection import get_engine
 from stockml.db.schema import intraday_decisions
-from stockml.trading.alpaca_client import AlpacaPaperClient
-from stockml.trading.config import alpaca_config
+from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
+from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.anti_churn_guard import enrich_open_positions_with_order_history, guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.manual_position_actions import apply_manual_position_action
+from stockml.trading.order_builder import extended_limit_price
 from stockml.trading.paper_trader import refresh_order_tracking
 from stockml.trading.position_management_decision import (
     build_position_management_decisions,
@@ -99,6 +100,8 @@ TICK_LOG_COLUMNS = [
     "monitor_watch",
     "autopilot_actions",
     "autopilot_close_submitted",
+    "autopilot_reduce_submitted",
+    "autopilot_increase_submitted",
     "autopilot_defensive_close_submitted",
     "autopilot_hard_stop_submitted",
     "autopilot_health_close_submitted",
@@ -175,6 +178,8 @@ def _default_state() -> dict[str, Any]:
         "latest_monitor_at": "",
         "autopilot_actions": 0,
         "autopilot_close_submitted": 0,
+        "autopilot_reduce_submitted": 0,
+        "autopilot_increase_submitted": 0,
         "autopilot_defensive_close_submitted": 0,
         "autopilot_hard_stop_submitted": 0,
         "autopilot_health_close_submitted": 0,
@@ -722,6 +727,117 @@ def _position_management_reason_bucket(reason: str) -> str:
     return "position_management"
 
 
+def _manager_qty_text(quantity: float) -> str:
+    if float(quantity).is_integer():
+        return str(int(quantity))
+    return f"{quantity:.6f}".rstrip("0").rstrip(".")
+
+
+def _position_management_order_payload(row: dict[str, Any], action: str, cfg: AlpacaConfig) -> tuple[dict[str, Any] | None, str]:
+    symbol = str(row.get("__symbol") or row.get("symbol") or "").upper()
+    side = str(row.get("side") or "").lower()
+    qty = float(row.get("qty") or 0.0)
+    target = float(row.get("recommended_target_qty") if row.get("recommended_target_qty") not in [None, ""] else qty)
+    delta = target - qty
+    last_price = float(row.get("last_price") or row.get("current_price") or row.get("close") or 0.0)
+    if not symbol:
+        return None, "symbol_required"
+    if side not in {"long", "short"}:
+        return None, "invalid_position_side"
+    if qty <= 0:
+        return None, "position_quantity_zero"
+    if action == "reduce":
+        order_qty = qty - target
+        order_side = "sell" if side == "long" else "buy"
+    elif action == "increase":
+        order_qty = delta
+        order_side = "buy" if side == "long" else "sell"
+    else:
+        return None, "unsupported_position_management_action"
+    if order_qty <= 0:
+        return None, "non_positive_delta_quantity"
+    if last_price <= 0:
+        return None, "last_price_required"
+    extended = bool(cfg.extended_hours or cfg.overnight_trading_enabled)
+    order_type = "limit" if extended else "market"
+    limit_price = extended_limit_price(pd.Series({"current_price": last_price}), order_side, cfg.overnight_limit_buffer_bps) if extended else None
+    if extended and limit_price is None:
+        return None, "extended_limit_price_missing"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")[:17]
+    payload: dict[str, Any] = {
+        "symbol": symbol,
+        "qty": _manager_qty_text(order_qty),
+        "side": order_side,
+        "type": order_type,
+        "time_in_force": "day",
+        "client_order_id": f"stockml-pm-{action}-{stamp}-{symbol}"[:48],
+    }
+    if extended:
+        payload["extended_hours"] = True
+        payload["limit_price"] = limit_price
+    return payload, "ok"
+
+
+def apply_position_management_paper_action(
+    row: dict[str, Any],
+    action: str,
+    *,
+    config: AlpacaConfig | None = None,
+    client: AlpacaPaperClient | None = None,
+) -> dict[str, Any]:
+    symbol = str(row.get("__symbol") or row.get("symbol") or "").upper()
+    clean_action = str(action or "").lower()
+    if clean_action == "close":
+        return apply_manual_position_action(symbol, "close", config=config, client=client)
+    result = {
+        "status": "rejected",
+        "message": "",
+        "order_id": "",
+        "client_order_id": "",
+        "alpaca_status": "",
+    }
+    cfg = config or alpaca_config()
+    if cfg.live_trading_enabled:
+        result["message"] = "live_trading_disabled_for_position_management"
+        return result
+    if not cfg.paper_trading_enabled:
+        result["message"] = "paper_trading_disabled"
+        return result
+    if not cfg.submit_orders:
+        result["status"] = "dry_run"
+        result["message"] = f"position_management_{clean_action}_dry_run_submit_orders_disabled"
+        return result
+    if clean_action not in {"reduce", "increase"}:
+        result["message"] = "unsupported_position_management_action"
+        return result
+    if clean_action == "increase" and str(row.get("side") or "").lower() == "short":
+        result["message"] = "short_increase_disabled"
+        return result
+    if not cfg.api_key or not cfg.secret_key:
+        result["message"] = "alpaca_credentials_missing"
+        return result
+    payload, reason = _position_management_order_payload(row, clean_action, cfg)
+    if payload is None:
+        result["message"] = reason
+        return result
+    try:
+        alpaca_client = client or AlpacaPaperClient(cfg)
+        response = alpaca_client.submit_order(payload)
+        result["status"] = "submitted"
+        result["message"] = f"position_management_{clean_action}_submitted"
+        result["order_id"] = response.get("id", "")
+        result["client_order_id"] = response.get("client_order_id", "")
+        result["alpaca_status"] = response.get("status", "")
+    except AlpacaAPIError as exc:
+        result.update(exc.as_dict())
+        result["status"] = "error"
+        result["message"] = f"position_management_{clean_action}_alpaca_api_error"
+    except Exception as exc:
+        result["status"] = "error"
+        result["message"] = f"position_management_{clean_action}_error: {exc}"
+    return result
+
+
 def apply_paper_autopilot_decisions(
     root: Path | None,
     positions: pd.DataFrame,
@@ -729,13 +845,12 @@ def apply_paper_autopilot_decisions(
     *,
     action_func: Callable[[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Apply guarded paper close actions from the unified position manager.
+    """Apply guarded paper actions from the unified position manager.
 
     The unified position-management decision engine is the single source of
     truth for automatic close decisions. It always writes diagnostics first.
-    Only rows with recommended_action == close are eligible for broker action.
-    Reduce, increase, replace, hold, and manual_review remain non-submitting
-    until explicit paper execution support exists for those actions.
+    Rows with recommended_action in {close, reduce, increase} are eligible for
+    broker action. Replace, hold, and manual_review remain non-submitting.
     """
     management_positions = _positions_for_position_management(root, positions, state)
     decisions = build_position_management_decisions(management_positions, now=datetime.now(timezone.utc))
@@ -744,9 +859,10 @@ def apply_paper_autopilot_decisions(
     if decisions.empty:
         candidates = pd.DataFrame()
     else:
-        candidates = decisions[decisions["recommended_action"].astype(str).str.lower().eq("close")].copy()
+        candidates = decisions[decisions["recommended_action"].astype(str).str.lower().isin({"close", "reduce", "increase"})].copy()
         candidates["__symbol"] = candidates["symbol"].astype(str).str.upper()
-        candidates["__autopilot_close_reason"] = candidates["primary_reason"].fillna("position_management_close")
+        candidates["__autopilot_action"] = candidates["recommended_action"].astype(str).str.lower()
+        candidates["__autopilot_close_reason"] = candidates["primary_reason"].fillna("position_management_action")
     auto_config = load_auto_open_config(root=root)
     if str(auto_config.close_automation_mode or "automatic").lower() == "review_only":
         candidates = pd.DataFrame()
@@ -758,8 +874,10 @@ def apply_paper_autopilot_decisions(
         actions = [
             {
                 "symbol": row.get("__symbol") or row.get("symbol"),
-                "action": "close",
-                "side": "sell",
+                "action": "open" if str(row.get("__autopilot_action") or "").lower() == "increase" else "close",
+                "side": ("buy" if str(row.get("side") or "").lower() == "long" else "sell")
+                if str(row.get("__autopilot_action") or "").lower() == "increase"
+                else ("sell" if str(row.get("side") or "").lower() == "long" else "buy"),
                 "reason": row.get("__autopilot_close_reason") or row.get("decision_reason"),
             }
             for row in candidates.to_dict("records")
@@ -780,6 +898,8 @@ def apply_paper_autopilot_decisions(
         return {
             "autopilot_actions": 0,
             "autopilot_close_submitted": 0,
+            "autopilot_reduce_submitted": 0,
+            "autopilot_increase_submitted": 0,
             "autopilot_defensive_close_submitted": 0,
             "autopilot_hard_stop_submitted": 0,
             "autopilot_health_close_submitted": 0,
@@ -796,9 +916,11 @@ def apply_paper_autopilot_decisions(
             "position_management_decision_markdown_path": str(decision_md),
         }
 
-    apply_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
+    apply_action = action_func
     notes: list[str] = []
-    submitted = 0
+    close_submitted = 0
+    reduce_submitted = 0
+    increase_submitted = 0
     dry_run = 0
     rejected = 0
     errors = 0
@@ -815,24 +937,33 @@ def apply_paper_autopilot_decisions(
         if not symbol or symbol in seen:
             continue
         seen.add(symbol)
-        result = apply_action(symbol, "close")
+        action = str(row.get("__autopilot_action") or row.get("recommended_action") or "").lower()
+        if action_func is not None:
+            result = action_func(symbol, action)
+        else:
+            result = apply_position_management_paper_action(row, action)
         actions += 1
         status = str(result.get("status") or "")
         message = str(result.get("message") or "")
         if status == "submitted":
-            submitted += 1
             reason = str(row.get("__autopilot_close_reason") or "")
             bucket = _position_management_reason_bucket(reason)
-            if reason == "defensive_stale_loss":
-                defensive_submitted += 1
-            elif reason == "hard_stop_loss" or bucket == "hard_stop":
-                hard_stop_submitted += 1
-            elif reason in {"position_health_close_candidate", "position_health_close_now"} or bucket == "health":
-                health_submitted += 1
-            elif reason in {"trailing_profit_giveback", "fresh_signal_profit_giveback"} or bucket == "trailing":
-                trailing_submitted += 1
-            elif reason == "monitor_replace":
-                replace_submitted += 1
+            if action == "reduce":
+                reduce_submitted += 1
+            elif action == "increase":
+                increase_submitted += 1
+            else:
+                close_submitted += 1
+                if reason == "defensive_stale_loss":
+                    defensive_submitted += 1
+                elif reason == "hard_stop_loss" or bucket == "hard_stop":
+                    hard_stop_submitted += 1
+                elif reason in {"position_health_close_candidate", "position_health_close_now"} or bucket == "health":
+                    health_submitted += 1
+                elif reason in {"trailing_profit_giveback", "fresh_signal_profit_giveback"} or bucket == "trailing":
+                    trailing_submitted += 1
+                elif reason == "monitor_replace":
+                    replace_submitted += 1
         elif status == "dry_run":
             dry_run += 1
         elif status == "error":
@@ -841,11 +972,13 @@ def apply_paper_autopilot_decisions(
             skipped += 1
         else:
             rejected += 1
-        close_reason = str(row.get("__autopilot_close_reason") or "monitor_close")
-        notes.append(f"{symbol}:{close_reason}:{status or 'unknown'}:{message or 'no_message'}")
+        close_reason = str(row.get("__autopilot_close_reason") or "position_management_action")
+        notes.append(f"{symbol}:{action}:{close_reason}:{status or 'unknown'}:{message or 'no_message'}")
     return {
         "autopilot_actions": actions,
-        "autopilot_close_submitted": submitted,
+        "autopilot_close_submitted": close_submitted,
+        "autopilot_reduce_submitted": reduce_submitted,
+        "autopilot_increase_submitted": increase_submitted,
         "autopilot_close_dry_run": dry_run,
         "autopilot_close_rejected": rejected,
         "autopilot_close_error": errors,
@@ -979,6 +1112,8 @@ def tick(
         autopilot_result = {
             "autopilot_actions": 0,
             "autopilot_close_submitted": 0,
+            "autopilot_reduce_submitted": 0,
+            "autopilot_increase_submitted": 0,
             "autopilot_defensive_close_submitted": 0,
             "autopilot_hard_stop_submitted": 0,
             "autopilot_health_close_submitted": 0,
@@ -992,8 +1127,13 @@ def tick(
         }
         if state.get("mode") == "paper_autopilot" and open_orders == 0 and open_positions > 0:
             autopilot_result = autopilot_decision_applier(root, positions, state)
-            if int(autopilot_result.get("autopilot_close_submitted") or 0) > 0:
-                open_orders = max(open_orders, int(autopilot_result.get("autopilot_close_submitted") or 0))
+            manager_submitted = (
+                int(autopilot_result.get("autopilot_close_submitted") or 0)
+                + int(autopilot_result.get("autopilot_reduce_submitted") or 0)
+                + int(autopilot_result.get("autopilot_increase_submitted") or 0)
+            )
+            if manager_submitted > 0:
+                open_orders = max(open_orders, manager_submitted)
         if state.get("mode") == "paper_autopilot" and open_positions > 0:
             if eod_runner is not None:
                 eod_result = eod_runner(positions, state, open_orders)
@@ -1113,7 +1253,9 @@ def tick(
                     open_positions = post_open_positions
                     update_position_peaks(state, positions)
         submitted_close_actions = max(
-            int(autopilot_result.get("autopilot_close_submitted") or 0),
+            int(autopilot_result.get("autopilot_close_submitted") or 0)
+            + int(autopilot_result.get("autopilot_reduce_submitted") or 0)
+            + int(autopilot_result.get("autopilot_increase_submitted") or 0),
             int(autopilot_result.get("autopilot_replace_close_submitted") or 0),
             int(eod_result.get("eod_flatten_submitted") or 0),
             int(auto_rotation_result.get("auto_rotations_confirmed") or 0),

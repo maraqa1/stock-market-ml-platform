@@ -241,7 +241,7 @@ def test_paper_autopilot_mode_auto_closes_close_decisions(monkeypatch, tmp_path)
     assert state["autopilot_actions"] == 1
     assert state["autopilot_close_submitted"] == 1
     assert state["autopilot_defensive_close_submitted"] == 0
-    assert "AAA:monitor_close:submitted:auto_close" in state["autopilot_action_notes"]
+    assert "AAA:close:monitor_close:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_mode_defensively_closes_stale_losers(monkeypatch, tmp_path):
@@ -345,7 +345,7 @@ def test_paper_autopilot_mode_auto_closes_position_health_candidates(monkeypatch
     assert state["phase"] == "waiting_for_fills"
     assert state["autopilot_close_submitted"] == 1
     assert state["autopilot_health_close_submitted"] == 1
-    assert "FWRD:losing_position_edge_failed:submitted:auto_close" in state["autopilot_action_notes"]
+    assert "FWRD:close:losing_position_edge_failed:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_review_only_does_not_auto_close_health_candidates(monkeypatch, tmp_path):
@@ -401,7 +401,7 @@ def test_paper_autopilot_mode_closes_hard_stop_losers(monkeypatch, tmp_path):
     )
 
     assert state["autopilot_hard_stop_submitted"] == 1
-    assert "AAA:hard_stop_hit:submitted:auto_close" in state["autopilot_action_notes"]
+    assert "AAA:close:hard_stop_hit:submitted:auto_close" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch, tmp_path):
@@ -431,8 +431,8 @@ def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch,
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 1
-    assert "AAA:profit_giveback_with_weakening_edge:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["autopilot_reduce_submitted"] == 1
+    assert "AAA:reduce:profit_giveback_with_weakening_edge:submitted:auto_reduce" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch, tmp_path):
@@ -468,8 +468,8 @@ def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch,
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 0
-    assert "giveback:submitted" not in state.get("autopilot_action_notes", "")
+    assert state["autopilot_reduce_submitted"] == 1
+    assert "AAA:reduce:profit_giveback_with_weakening_edge:submitted:auto_reduce" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_fresh_winner_requires_larger_giveback(monkeypatch, tmp_path):
@@ -505,8 +505,8 @@ def test_paper_autopilot_fresh_winner_requires_larger_giveback(monkeypatch, tmp_
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 1
-    assert "AAA:profit_giveback_with_weakening_edge:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["autopilot_reduce_submitted"] == 1
+    assert "AAA:reduce:profit_giveback_with_weakening_edge:submitted:auto_reduce" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_mode_protects_unknown_signal_winners_that_give_back(monkeypatch, tmp_path):
@@ -536,8 +536,8 @@ def test_paper_autopilot_mode_protects_unknown_signal_winners_that_give_back(mon
         ),
     )
 
-    assert state["autopilot_trailing_close_submitted"] == 1
-    assert "AAA:profit_giveback_with_weakening_edge:submitted:auto_close" in state["autopilot_action_notes"]
+    assert state["autopilot_reduce_submitted"] == 1
+    assert "AAA:reduce:profit_giveback_with_weakening_edge:submitted:auto_reduce" in state["autopilot_action_notes"]
 
 
 def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabled(monkeypatch, tmp_path):
@@ -608,6 +608,46 @@ def test_paper_autopilot_does_not_close_replace_when_rotation_disabled(monkeypat
 
     assert result["autopilot_actions"] == 0
     assert result["autopilot_close_submitted"] == 0
+
+
+def test_paper_autopilot_increases_aligned_position_below_cap(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame(
+        [
+            _position(
+                "AAA",
+                qty=100,
+                unrealized_plpc=0.03,
+                source_trade_action="Long",
+                signal_alignment="aligned",
+                rank_status="top",
+                max_allowed_position_qty=150,
+                spread_bps=5,
+                liquidity_status="ok",
+            )
+        ]
+    ).to_csv(positions, index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            state=state,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        ),
+    )
+
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_increase_submitted"] == 1
+    assert "AAA:increase:aligned_profitable_position_below_cap:submitted:auto_increase" in state["autopilot_action_notes"]
 
 
 def test_paper_assist_does_not_auto_close_close_decisions(monkeypatch, tmp_path):
