@@ -414,7 +414,7 @@ def test_paper_autopilot_mode_protects_stale_winners_that_give_back(monkeypatch,
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([_position("AAA", unrealized_plpc=0.034, peak_pnl_pct=0.052)]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", qty=100, unrealized_plpc=0.034, peak_pnl_pct=0.052)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": 0.034}]).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -451,7 +451,7 @@ def test_paper_autopilot_trailing_profit_uses_configured_thresholds(monkeypatch,
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([_position("AAA", unrealized_plpc=0.016, peak_pnl_pct=0.022)]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", qty=100, unrealized_plpc=0.016, peak_pnl_pct=0.022)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": 0.016}]).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -488,7 +488,7 @@ def test_paper_autopilot_fresh_winner_requires_larger_giveback(monkeypatch, tmp_
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([_position("AAA", unrealized_plpc=0.031, peak_pnl_pct=0.045)]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", qty=100, unrealized_plpc=0.031, peak_pnl_pct=0.045)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "hold", "decision_reason": "position_within_rules", "unrealized_plpc": 0.031}]).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -519,7 +519,7 @@ def test_paper_autopilot_mode_protects_unknown_signal_winners_that_give_back(mon
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame([{"symbol": "AAA", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
-    pd.DataFrame([_position("AAA", unrealized_plpc=0.002, peak_pnl_pct=0.035)]).to_csv(positions, index=False)
+    pd.DataFrame([_position("AAA", qty=100, unrealized_plpc=0.002, peak_pnl_pct=0.035)]).to_csv(positions, index=False)
     decisions = tmp_path / "data" / "trading" / "agent_decisions"
     decisions.mkdir(parents=True)
     pd.DataFrame([{"symbol": "AAA", "decision": "watch", "decision_reason": "latest_signal_unknown", "unrealized_plpc": 0.002}]).to_csv(decisions / "position_decisions_1.csv", index=False)
