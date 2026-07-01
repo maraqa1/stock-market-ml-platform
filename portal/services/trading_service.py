@@ -18,6 +18,16 @@ CANDIDATE_POOL_READ_LIMIT = 1000
 CANDIDATE_POOL_DISPLAY_LIMIT = 500
 
 
+def _latest_matching(root: Path, relative_dir: str, pattern: str) -> Path | None:
+    directory = Path(root) / relative_dir
+    if not directory.exists():
+        return None
+    matches = [path for path in directory.glob(pattern) if path.is_file()]
+    if not matches:
+        return None
+    return max(matches, key=lambda path: path.stat().st_mtime)
+
+
 def _records(frame, limit: int = 50) -> list[dict]:
     if frame.empty:
         return []
@@ -80,6 +90,127 @@ def _status_counts(results, column: str = "status") -> dict[str, int]:
     if results.empty or column not in results.columns:
         return {}
     return {str(key): int(value) for key, value in results[column].fillna("").value_counts().to_dict().items() if str(key)}
+
+
+def _latest_autopilot_action_notes(frame: pd.DataFrame) -> str:
+    if frame.empty or "autopilot_action_notes" not in frame.columns:
+        return ""
+    notes = frame["autopilot_action_notes"].dropna().astype(str)
+    notes = notes[notes.str.strip().ne("")]
+    if notes.empty:
+        return ""
+    return str(notes.iloc[-1])
+
+
+def _parse_autopilot_action_notes(notes: str) -> dict[str, dict[str, str]]:
+    parsed: dict[str, dict[str, str]] = {}
+    for raw_note in str(notes or "").split(";"):
+        parts = [part.strip() for part in raw_note.split(":")]
+        if len(parts) < 5:
+            continue
+        symbol = parts[0].upper()
+        if not symbol:
+            continue
+        parsed[symbol] = {
+            "auto_action": parts[1],
+            "auto_reason": parts[2],
+            "auto_status": parts[3],
+            "auto_message": ":".join(parts[4:]),
+        }
+    return parsed
+
+
+def _positions_by_symbol(positions: pd.DataFrame) -> dict[str, dict]:
+    if positions.empty or "symbol" not in positions.columns:
+        return {}
+    out: dict[str, dict] = {}
+    for row in positions.fillna("").to_dict("records"):
+        symbol = str(row.get("symbol") or "").upper()
+        if symbol:
+            out[symbol] = row
+    return out
+
+
+def _position_management_status(action: str, auto_status: str, blocking_guard: str) -> str:
+    action = str(action or "").lower()
+    auto_status = str(auto_status or "").lower()
+    if auto_status in {"submitted", "dry_run", "error", "rejected", "skipped"}:
+        return auto_status
+    if blocking_guard:
+        return "blocked"
+    if action in {"close", "reduce", "increase"}:
+        return "pending_auto"
+    if action == "manual_review":
+        return "review_only"
+    return "monitoring"
+
+
+def _position_management_review_context(
+    decisions: pd.DataFrame,
+    positions: pd.DataFrame,
+    autopilot_ticks: pd.DataFrame,
+    *,
+    decisions_file: Path | None,
+    positions_file: Path | None,
+    autopilot_file: Path | None,
+) -> dict:
+    action_notes = _latest_autopilot_action_notes(autopilot_ticks)
+    auto_actions = _parse_autopilot_action_notes(action_notes)
+    positions_map = _positions_by_symbol(positions)
+    rows: list[dict] = []
+    source = decisions.copy()
+    if source.empty and not positions.empty:
+        source = positions.copy()
+        source["recommended_action"] = "hold"
+        source["primary_reason"] = "no_manager_diagnostic"
+    for row in source.fillna("").to_dict("records"):
+        symbol = str(row.get("symbol") or "").upper()
+        position = positions_map.get(symbol, {})
+        auto = auto_actions.get(symbol, {})
+        action = str(row.get("recommended_action") or "hold")
+        blocking_guard = str(row.get("blocking_guard") or "")
+        auto_status = str(auto.get("auto_status") or "")
+        rows.append(
+            {
+                "symbol": symbol,
+                "side": row.get("side") or position.get("side") or "",
+                "qty": row.get("qty") or position.get("qty") or "",
+                "entry_price": row.get("entry_price") or position.get("avg_entry_price") or "",
+                "last_price": row.get("last_price") or position.get("current_price") or "",
+                "pnl_amount": row.get("pnl_amount") or position.get("unrealized_pl") or "",
+                "pnl_pct": row.get("pnl_pct") or position.get("unrealized_plpc") or "",
+                "position_age_minutes": row.get("position_age_minutes") or "",
+                "recommended_action": action,
+                "action_strength": row.get("action_strength") or "",
+                "decision_confidence": row.get("decision_confidence") or "",
+                "recommended_target_qty": row.get("recommended_target_qty") or "",
+                "recommended_delta_qty": row.get("recommended_delta_qty") or "",
+                "recommended_delta_notional": row.get("recommended_delta_notional") or "",
+                "primary_reason": row.get("primary_reason") or "",
+                "supporting_reasons": row.get("supporting_reasons") or "",
+                "blocking_guard": blocking_guard,
+                "data_quality_status": row.get("data_quality_status") or "",
+                "auto_action": auto.get("auto_action") or "",
+                "auto_reason": auto.get("auto_reason") or "",
+                "auto_status": auto_status,
+                "auto_message": auto.get("auto_message") or "",
+                "review_status": _position_management_status(action, auto_status, blocking_guard),
+            }
+        )
+    action_counts = _status_counts(decisions, "recommended_action")
+    review_counts = {str(key): int(value) for key, value in pd.Series([row["review_status"] for row in rows]).value_counts().to_dict().items()} if rows else {}
+    return {
+        "rows": rows,
+        "row_count": len(rows),
+        "action_counts": action_counts,
+        "review_counts": review_counts,
+        "latest_action_notes": action_notes,
+        "files": [
+            file_status(decisions_file, "Position manager decisions"),
+            file_status(autopilot_file, "Paper Autopilot ticks"),
+            file_status(positions_file, "Alpaca positions"),
+        ],
+    }
 
 
 def _total_notional(plan) -> float:
@@ -346,12 +477,16 @@ def trading_context(root: Path) -> dict:
     tracking_file = latest_file(root, "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
     positions_file = latest_file(root, "portal_outputs", "08_alpaca_paper_positions_*.csv")
     actions_file = latest_file(root, "operator_actions", "operator_position_actions_*.csv")
+    position_management_file = _latest_matching(root, "data/trading/diagnostics", "position_management_decisions_*.csv")
+    autopilot_tick_file = _latest_matching(root, "data/trading/autopilot", "autopilot_ticks_*.csv")
     plan = safe_read_csv(plan_file, nrows=500)
     candidate_pool = safe_read_csv(candidate_pool_file, nrows=CANDIDATE_POOL_READ_LIMIT)
     results = safe_read_csv(result_file, nrows=500)
     tracking = safe_read_csv(tracking_file, nrows=500)
     positions = safe_read_csv(positions_file, nrows=500)
     actions = safe_read_csv(actions_file, nrows=100)
+    position_management_decisions = safe_read_csv(position_management_file, nrows=1000)
+    autopilot_ticks = safe_read_csv(autopilot_tick_file, nrows=1000)
     status_counts = _status_counts(results)
     tracking_status_counts = _status_counts(tracking, "alpaca_status")
     dry_run = not config.submit_orders or bool(status_counts.get("dry_run", 0))
@@ -402,6 +537,14 @@ def trading_context(root: Path) -> dict:
         "tracking_rows": _records(tracking),
         "position_rows": _records(positions),
         "operator_action_rows": _records(actions, limit=10),
+        "position_management_review": _position_management_review_context(
+            position_management_decisions,
+            positions,
+            autopilot_ticks,
+            decisions_file=position_management_file,
+            positions_file=positions_file,
+            autopilot_file=autopilot_tick_file,
+        ),
         "candidate_pool_display_limit": CANDIDATE_POOL_DISPLAY_LIMIT,
         "candidate_pool_display_count": min(len(candidate_pool), CANDIDATE_POOL_DISPLAY_LIMIT),
         "candidate_pool_rows": _records_by_rank(candidate_pool, limit=CANDIDATE_POOL_DISPLAY_LIMIT),

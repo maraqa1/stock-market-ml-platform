@@ -1,0 +1,89 @@
+{% from "_macros/format.html" import money, signed_money, signed_pct %}
+{% set pm = position_management_review or {} %}
+<section class="zone trading-zone" data-zone="position-management-review" id="position-management-review">
+  <div class="zone__header">
+    <span>Position Management Review</span>
+    <span class="zone__header-meta">
+      {% set decision_file = (pm.files or [])[0] if pm.files else {} %}
+      refreshed {{ decision_file.timestamp or "not available" }}
+    </span>
+  </div>
+  <div class="zone__body">
+    <div class="kpi-row" aria-label="Position management action summary">
+      <article class="kpi-card">
+        <span class="kpi-card__label">Reviewed</span>
+        <strong class="kpi-card__value">{{ pm.row_count or 0 }}</strong>
+        <small class="kpi-card__detail">open symbols in manager frame</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Close</span>
+        <strong class="kpi-card__value">{{ (pm.action_counts or {}).get("close", 0) }}</strong>
+        <small class="kpi-card__detail">manager close actions</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Reduce</span>
+        <strong class="kpi-card__value">{{ (pm.action_counts or {}).get("reduce", 0) }}</strong>
+        <small class="kpi-card__detail">partial exit actions</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Increase</span>
+        <strong class="kpi-card__value">{{ (pm.action_counts or {}).get("increase", 0) }}</strong>
+        <small class="kpi-card__detail">paper add actions</small>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Submitted</span>
+        <strong class="kpi-card__value">{{ (pm.review_counts or {}).get("submitted", 0) }}</strong>
+        <small class="kpi-card__detail">latest autopilot action notes</small>
+      </article>
+    </div>
+    {% if pm.latest_action_notes %}
+      <div class="stale-banner">Latest automatic action: {{ pm.latest_action_notes }}</div>
+    {% endif %}
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th class="col-pinned">Sym</th>
+            <th>L/S</th>
+            <th class="num">Qty</th>
+            <th class="num">P&amp;L $</th>
+            <th class="num">P&amp;L %</th>
+            <th>Manager</th>
+            <th class="num">Target</th>
+            <th class="num">Delta</th>
+            <th>Auto Action</th>
+            <th>Reason</th>
+            <th>Guard</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in pm.rows or [] %}
+            <tr>
+              <td class="col-pinned"><strong>{{ row.symbol }}</strong></td>
+              <td>{{ row.side }}</td>
+              <td class="num">{{ row.qty }}</td>
+              <td class="num {{ 'text-up' if (row.pnl_amount|float(0)) > 0 else 'text-down' if (row.pnl_amount|float(0)) < 0 else '' }}">{{ signed_money(row.pnl_amount|float(0)) }}</td>
+              <td class="num {{ 'text-up' if (row.pnl_pct|float(0)) > 0 else 'text-down' if (row.pnl_pct|float(0)) < 0 else '' }}">{{ signed_pct(row.pnl_pct|float(0)) }}</td>
+              <td><span class="badge badge-blue">{{ row.recommended_action|replace("_", " ")|title }}</span><br><small>{{ row.action_strength or "not scored" }} · {{ row.decision_confidence or "no confidence" }}</small></td>
+              <td class="num">{{ row.recommended_target_qty }}</td>
+              <td class="num">{{ row.recommended_delta_qty }}</td>
+              <td>
+                {% if row.auto_action %}
+                  <span class="badge badge-green">{{ row.auto_action|replace("_", " ")|title }}</span><br><small>{{ row.auto_status }} · {{ row.auto_message }}</small>
+                {% else %}
+                  <span class="badge">No action</span>
+                {% endif %}
+              </td>
+              <td>{{ row.primary_reason|replace("_", " ") }}{% if row.auto_reason %}<br><small>auto: {{ row.auto_reason|replace("_", " ") }}</small>{% endif %}</td>
+              <td>{{ row.blocking_guard or row.data_quality_status or "" }}</td>
+              <td><span class="badge {{ 'badge-green' if row.review_status == 'submitted' else 'badge-red' if row.review_status in ['blocked', 'error', 'rejected'] else 'badge-yellow' if row.review_status in ['pending_auto', 'review_only'] else 'badge-blue' }}">{{ row.review_status|replace("_", " ")|title }}</span></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="12">No position management review rows available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>

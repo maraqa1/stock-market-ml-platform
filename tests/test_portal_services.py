@@ -124,6 +124,49 @@ def test_trading_context_with_alpaca_artifacts(tmp_path):
     assert {row["label"]: row["value"] for row in ctx["execution_quality"]}["Fill ratio"] == "Not available"
 
 
+def test_trading_context_exposes_position_management_review(tmp_path):
+    write_csv(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_positions_1.csv",
+        [{"symbol": "AAA", "side": "long", "qty": 10, "avg_entry_price": 10, "current_price": 11, "unrealized_pl": 10, "unrealized_plpc": 0.1}],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "diagnostics" / "position_management_decisions_1.csv",
+        [
+            {
+                "symbol": "AAA",
+                "side": "long",
+                "qty": 10,
+                "pnl_amount": 10,
+                "pnl_pct": 0.1,
+                "recommended_action": "reduce",
+                "action_strength": "medium",
+                "decision_confidence": "high",
+                "recommended_target_qty": 5,
+                "recommended_delta_qty": -5,
+                "primary_reason": "profit_giveback_with_weakening_edge",
+                "blocking_guard": "",
+                "data_quality_status": "ok",
+            }
+        ],
+    )
+    write_csv(
+        tmp_path / "data" / "trading" / "autopilot" / "autopilot_ticks_20260701.csv",
+        [{"autopilot_action_notes": "AAA:reduce:profit_giveback_with_weakening_edge:submitted:auto_reduce"}],
+    )
+
+    ctx = trading_context(tmp_path)
+    review = ctx["position_management_review"]
+
+    assert review["row_count"] == 1
+    assert review["action_counts"] == {"reduce": 1}
+    assert review["review_counts"] == {"submitted": 1}
+    assert review["rows"][0]["symbol"] == "AAA"
+    assert review["rows"][0]["recommended_action"] == "reduce"
+    assert review["rows"][0]["auto_action"] == "reduce"
+    assert review["rows"][0]["auto_status"] == "submitted"
+    assert review["rows"][0]["review_status"] == "submitted"
+
+
 
 def test_trade_ledger_context_loads_latest_diagnostics(tmp_path):
     write_csv(
