@@ -524,6 +524,7 @@ def test_action_queue_counts_only_rows_requiring_attention(tmp_path):
     assert ctx["counts"]["action_required"] == 1
     assert rows["WIN"]["operator_call_label"] == "Hold winner"
     assert rows["WATCH"]["operator_call_label"] == "Watch only"
+    assert rows["WATCH"]["operator_explanation"] == "Loss is visible but remains below the manager close trigger."
     assert rows["REVIEW"]["operator_call_label"] == "Manual review"
 
 

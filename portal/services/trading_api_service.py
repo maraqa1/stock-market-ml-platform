@@ -850,6 +850,7 @@ def action_queue_context(root: Path) -> dict[str, Any]:
             item["position_id"] = position_id_for_symbol(str(item.get("symbol") or ""))
             item.update(_operator_call_for_queue_item(item, held_symbols))
             item.update(classify_action_queue_item(item, held_symbols=held_symbols, rules=rules, close_automation_mode=auto_config.close_automation_mode))
+            item["operator_explanation"] = _action_queue_explanation(item)
     open_order_symbols = _open_order_symbols_from_tracking(root)
     items.extend(_candidate_queue_items(evaluations, len(items), held_symbols=position_symbols or set(), root=root))
     items.extend(_rotation_queue_items(len(items), held_symbols=position_symbols, open_order_symbols=open_order_symbols))
@@ -871,6 +872,26 @@ def _action_queue_item_requires_attention(item: dict[str, Any]) -> bool:
     if bool(item.get("operator_apply_enabled")):
         return True
     return call in {"close", "warning"} or decision in {"close", "close_now", "close_candidate", "replace", "rotate", "open_candidate", "replace_candidate"}
+
+
+def _action_queue_explanation(item: dict[str, Any]) -> str:
+    decision = str(item.get("decision") or "").strip().lower()
+    label = str(item.get("operator_call_label") or "").strip().lower()
+    reason = str(item.get("decision_reason") or item.get("operator_call_reason") or "").strip().lower()
+    pnl_pct = _float_value(item.get("unrealized_plpc"))
+    if decision in {"watch", "watch_loss"} or label == "watch only":
+        if pnl_pct < 0:
+            return "Loss is visible but remains below the manager close trigger."
+        if pnl_pct > 0:
+            return "Position is profitable and remains inside hold rules."
+        return "Position remains inside hold rules."
+    if decision in {"close", "close_now", "close_candidate"} or label in {"auto close", "auto close now", "review close", "review close now"}:
+        return "Close path is active; check broker state and autopilot status."
+    if decision in {"rotate", "replace"}:
+        return "Replacement path is active; compare current P&L with replacement evidence."
+    if "fresh" in reason:
+        return "Waiting for a fresh signal before any paper action."
+    return ""
 
 
 def _open_symbols_from_positions_file(positions_file: Path | None) -> set[str] | None:

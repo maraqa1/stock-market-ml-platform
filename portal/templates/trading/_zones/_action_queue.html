@@ -46,6 +46,9 @@
               <td>
                 {{ pill(item.operator_call or "info", item.operator_call_label or "Review") }}
                 <div class="muted small">{{ item.operator_call_reason }}</div>
+                {% if item.operator_explanation %}
+                  <div class="muted small">{{ item.operator_explanation }}</div>
+                {% endif %}
               </td>
               <td>{{ item.decision_reason|reason }}</td>
               <td>{{ time_utc(item.generated_at or action_queue.generated_at) }}</td>
