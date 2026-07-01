@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from stockml.diagnostics.expected_return_calibration import expected_return_safety_reason
 from stockml.trading.config import AlpacaConfig
 
 
@@ -122,6 +123,9 @@ def quality_reasons(row: pd.Series, config: AlpacaConfig) -> list[str]:
         reasons.append("bottom_intraday_range_after_gap_down")
     if expected < config.min_expected_trade_return:
         reasons.append("expected_trade_return_below_threshold")
+    expected_return_safety = expected_return_safety_reason(row)
+    if expected_return_safety:
+        reasons.append(expected_return_safety)
     if risk_score < config.min_risk_adjusted_score:
         reasons.append("risk_adjusted_score_below_threshold")
     return reasons
