@@ -5,9 +5,11 @@ import pandas as pd
 from stockml.diagnostics.expected_return_calibration import (
     apply_expected_return_execution_safety,
     build_expected_return_calibration,
+    expected_return_safety_reason,
     infer_expected_return_source,
     write_expected_return_calibration,
 )
+from stockml.diagnostics.validation_bucket_calibration import CALIBRATION_COLUMNS
 from stockml.trading.config import AlpacaConfig
 from stockml.trading.trade_quality_gate import apply_trade_quality_gate
 
@@ -102,6 +104,23 @@ def test_uncalibrated_expected_return_blocks_execution():
     assert safe.iloc[0]["trade_quality_status"] == "rejected"
     assert safe.iloc[0]["order_eligible"] is False or safe.iloc[0]["order_eligible"] == False
     assert "expected_return_uncalibrated" in safe.iloc[0]["trade_quality_reason"]
+
+
+def test_empty_validation_bucket_calibration_blocks_raw_expected_return_fallback():
+    candidates = pd.DataFrame([_candidate("RAW_OK", expected=0.01, risk=0.01, model=0.75)])
+    empty_bucket_calibration = pd.DataFrame(columns=CALIBRATION_COLUMNS)
+
+    report = build_expected_return_calibration(candidates, empty_bucket_calibration)
+
+    assert report.iloc[0]["expected_return_quality"] == "invalid"
+    assert report.iloc[0]["execution_allowed"] is False or report.iloc[0]["execution_allowed"] == False
+    assert report.iloc[0]["execution_block_reason"] == "expected_return_uncalibrated"
+
+
+def test_safety_reason_does_not_fallback_to_raw_expected_return():
+    row = pd.Series(_candidate("RAW_OK", expected=0.01, risk=0.01, model=0.75))
+
+    assert expected_return_safety_reason(row) == "expected_return_uncalibrated"
 
 
 def test_trade_quality_gate_rejects_uncalibrated_expected_return_without_changing_score():

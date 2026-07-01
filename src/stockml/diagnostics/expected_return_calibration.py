@@ -9,6 +9,7 @@ import math
 import pandas as pd
 
 from stockml.common.paths import PROJECT_ROOT, timestamp
+from stockml.diagnostics.validation_bucket_calibration import map_candidates_to_calibration
 
 DIAGNOSTIC_COLUMNS = [
     "symbol",
@@ -162,6 +163,13 @@ def _normalise_validation(validation: pd.DataFrame | None) -> pd.DataFrame:
     return out.drop_duplicates("rank_bucket", keep="last")
 
 
+def _looks_like_bucket_calibration(validation: pd.DataFrame | None) -> bool:
+    if validation is None:
+        return False
+    required = {"bucket_type", "bucket_id", "side", "net_expected_return_bps", "calibration_quality"}
+    return required.issubset(set(validation.columns))
+
+
 def build_expected_return_calibration(candidates: pd.DataFrame, validation: pd.DataFrame | None = None) -> pd.DataFrame:
     if candidates is None or candidates.empty:
         return pd.DataFrame(columns=DIAGNOSTIC_COLUMNS)
@@ -176,23 +184,39 @@ def build_expected_return_calibration(candidates: pd.DataFrame, validation: pd.D
     frame["expected_return_quality"] = [item[1] for item in classified]
     frame["expected_return_issue"] = [item[2] for item in classified]
 
-    validation_norm = _normalise_validation(validation)
-    if not validation_norm.empty:
-        frame = frame.merge(validation_norm, on="rank_bucket", how="left")
-        has_validation = pd.to_numeric(frame["validated_expected_return_bps"], errors="coerce").notna()
-        frame.loc[has_validation & frame["expected_return_quality"].isin(["uncalibrated", "invalid"]), "expected_return_quality"] = "calibrated"
-        frame.loc[has_validation, "expected_return_source"] = frame.loc[has_validation, "expected_return_source"].where(
-            frame.loc[has_validation, "expected_return_source"].eq("forward_realised_return_leakage"),
-            "historical_bucket_return",
-        )
-        frame.loc[has_validation, "expected_return_issue"] = "validated_by_rank_bucket"
+    if _looks_like_bucket_calibration(validation):
+        mapped = map_candidates_to_calibration(frame, validation)
+        frame["rank_bucket"] = mapped["calibrated_bucket_id"].where(mapped["calibrated_bucket_id"].astype(str).ne(""), frame["rank_bucket"])
+        frame["validated_expected_return_bps"] = mapped["validated_expected_return_bps"]
+        frame["validated_hit_rate"] = mapped["validated_hit_rate"]
+        frame["validated_avg_gain"] = pd.NA
+        frame["validated_avg_loss"] = pd.NA
+        has_validation = pd.to_numeric(frame["validated_expected_return_bps"], errors="coerce").notna() & mapped["expected_return_quality"].isin(["usable", "weak_allowed_by_config"])
+        mapped_quality = mapped["expected_return_quality"].fillna("").astype(str)
+        mapped_reason = mapped["execution_block_reason"].fillna("").astype(str)
+        frame["expected_return_quality"] = mapped_quality.where(mapped_quality.ne(""), "invalid")
+        frame["expected_return_source"] = "unknown"
+        frame["expected_return_issue"] = mapped_reason.where(mapped_reason.ne(""), "validated_by_side_specific_bucket")
+        frame.loc[has_validation, "expected_return_source"] = "historical_bucket_return"
+        frame.loc[has_validation, "expected_return_issue"] = "validated_by_side_specific_bucket"
     else:
-        for column in ["validated_expected_return_bps", "validated_hit_rate", "validated_avg_gain", "validated_avg_loss"]:
-            frame[column] = pd.NA
+        validation_norm = _normalise_validation(validation)
+        if not validation_norm.empty:
+            frame = frame.merge(validation_norm, on="rank_bucket", how="left")
+            has_validation = pd.to_numeric(frame["validated_expected_return_bps"], errors="coerce").notna()
+            frame.loc[has_validation & frame["expected_return_quality"].isin(["uncalibrated", "invalid"]), "expected_return_quality"] = "calibrated"
+            frame.loc[has_validation, "expected_return_source"] = frame.loc[has_validation, "expected_return_source"].where(
+                frame.loc[has_validation, "expected_return_source"].eq("forward_realised_return_leakage"),
+                "historical_bucket_return",
+            )
+            frame.loc[has_validation, "expected_return_issue"] = "validated_by_rank_bucket"
+        else:
+            for column in ["validated_expected_return_bps", "validated_hit_rate", "validated_avg_gain", "validated_avg_loss"]:
+                frame[column] = pd.NA
 
     forward = frame.apply(_forward_return, axis=1)
     frame["realised_forward_return"] = forward
-    executable = frame["expected_return_quality"].isin(["usable", "calibrated"])
+    executable = frame["expected_return_quality"].isin(["usable", "calibrated", "weak_allowed_by_config"])
     frame["execution_allowed"] = executable
     frame["execution_block_reason"] = executable.map(lambda ok: "" if ok else "expected_return_uncalibrated")
     return frame.reindex(columns=DIAGNOSTIC_COLUMNS)
@@ -204,7 +228,7 @@ def apply_expected_return_execution_safety(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     diag = build_expected_return_calibration(out)
     quality = diag["expected_return_quality"].reindex(out.index)
-    block = ~quality.isin(["usable", "calibrated"])
+    block = ~quality.isin(["usable", "calibrated", "weak_allowed_by_config"])
     out["expected_return_quality"] = quality
     out["expected_return_source"] = diag["expected_return_source"].reindex(out.index)
     out["expected_return_issue"] = diag["expected_return_issue"].reindex(out.index)
@@ -221,8 +245,14 @@ def apply_expected_return_execution_safety(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def expected_return_safety_reason(row: pd.Series) -> str:
-    _, quality, _ = infer_expected_return_source(row)
-    return "" if quality in {"usable", "calibrated"} else "expected_return_uncalibrated"
+    quality = _text(row.get("expected_return_quality"))
+    validated = _num(row.get("validated_expected_return_bps"))
+    calibration_quality = _text(row.get("calibration_quality"))
+    if quality in {"usable", "calibrated", "weak_allowed_by_config"} and validated is not None:
+        return ""
+    if calibration_quality and calibration_quality != "usable":
+        return "expected_return_uncalibrated"
+    return "expected_return_uncalibrated"
 
 
 def latest_csv(directory: Path, pattern: str) -> Path | None:
@@ -247,6 +277,9 @@ def load_latest_validation(root: Path | str | None = None) -> tuple[Path | None,
         "*bucket_performance*.csv",
     ]
     files: list[Path] = []
+    validation_file = base / "data" / "model_outputs" / "validation" / "expected_return_bucket_calibration_latest.csv"
+    if validation_file.exists():
+        return validation_file, pd.read_csv(validation_file, low_memory=False)
     for pattern in patterns:
         files.extend([p for p in out_dir.glob(pattern) if p.is_file()])
     if not files:
@@ -258,7 +291,12 @@ def load_latest_validation(root: Path | str | None = None) -> tuple[Path | None,
 def _render_summary(report: pd.DataFrame, *, candidate_path: Path | None, validation_path: Path | None) -> str:
     rows = len(report)
     invalid = int(report["expected_return_quality"].isin(["invalid", "uncalibrated"]).sum()) if rows else 0
-    calibrated = int(report["expected_return_quality"].eq("calibrated").sum()) if rows else 0
+    calibrated = int(
+        (
+            report["expected_return_quality"].isin(["calibrated", "usable", "weak_allowed_by_config"])
+            & report["expected_return_source"].eq("historical_bucket_return")
+        ).sum()
+    ) if rows else 0
     executable = int(report["execution_allowed"].fillna(False).sum()) if rows else 0
     lines = [
         "# Expected Return Calibration Diagnostic",
@@ -301,7 +339,12 @@ def write_expected_return_calibration(
     report.to_csv(diagnostic_path, index=False)
     summary_path.write_text(_render_summary(report, candidate_path=candidate_path, validation_path=validation_path), encoding="utf-8")
     unrealistic = int(report["expected_return_quality"].isin(["invalid", "uncalibrated"]).sum()) if not report.empty else 0
-    calibrated = int(report["expected_return_quality"].eq("calibrated").sum()) if not report.empty else 0
+    calibrated = int(
+        (
+            report["expected_return_quality"].isin(["calibrated", "usable", "weak_allowed_by_config"])
+            & report["expected_return_source"].eq("historical_bucket_return")
+        ).sum()
+    ) if not report.empty else 0
     executable = int(report["execution_allowed"].fillna(False).sum()) if not report.empty else 0
     return ExpectedReturnCalibrationOutputs(diagnostic_path, summary_path, len(report), unrealistic, calibrated, executable)
 
