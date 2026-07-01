@@ -82,18 +82,16 @@ def _read_csv(path: Path | None) -> pd.DataFrame:
 def _summary(ledger: pd.DataFrame, unmatched: pd.DataFrame, attribution: pd.DataFrame) -> dict[str, Any]:
     status_col = _first_existing(ledger, ["trade_status", "position_status"])
     status_counts = _counts(ledger, status_col) if status_col else {}
-    pnl_col = _first_existing(attribution, ["total_pnl_usd", "total_pnl", "realized_pnl_usd", "realised_pnl"])
-    pnl_source = attribution
-    if pnl_col is None:
-        pnl_col = _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"])
-        pnl_source = ledger
+    attribution_total = _attribution_total_pnl(attribution)
+    ledger_pnl_col = _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"])
+    total_pnl = attribution_total if attribution_total is not None else (_sum(ledger, ledger_pnl_col) if ledger_pnl_col else 0.0)
     return {
         "trade_count": int(len(ledger)),
         "open_trades": int(status_counts.get("open", 0)),
         "closed_trades": int(status_counts.get("closed", 0)),
         "unmatched_events": int(len(unmatched)),
         "attribution_rows": int(len(attribution)),
-        "total_pnl_usd": _sum(pnl_source, pnl_col) if pnl_col else 0.0,
+        "total_pnl_usd": total_pnl,
         "winner_count": _positive_count(ledger, _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"]) or ""),
         "loser_count": _negative_count(ledger, _first_existing(ledger, ["realized_pnl_usd", "realised_pnl", "realized_pnl"]) or ""),
     }
@@ -117,6 +115,24 @@ def _sum(frame: pd.DataFrame, column: str) -> float:
     if frame.empty or column not in frame.columns:
         return 0.0
     return float(pd.to_numeric(frame[column], errors="coerce").fillna(0).sum())
+
+
+def _attribution_total_pnl(frame: pd.DataFrame) -> float | None:
+    pnl_col = _first_existing(frame, ["total_pnl_usd", "total_pnl", "realized_pnl_usd", "realised_pnl"])
+    if frame.empty or pnl_col is None:
+        return None
+    source = frame
+    if "dimension" in frame.columns:
+        dimension = frame["dimension"].fillna("").astype(str).str.upper()
+        total_rows = frame[dimension.eq("ALL")]
+        if "bucket" in frame.columns and not total_rows.empty:
+            bucket = total_rows["bucket"].fillna("").astype(str).str.upper()
+            all_bucket_rows = total_rows[bucket.eq("ALL")]
+            if not all_bucket_rows.empty:
+                total_rows = all_bucket_rows
+        if not total_rows.empty:
+            source = total_rows
+    return _sum(source, pnl_col)
 
 
 def _positive_count(frame: pd.DataFrame, column: str) -> int:
