@@ -241,7 +241,7 @@ def apply_ticker_direction_memory(candidates: pd.DataFrame, memory: pd.DataFrame
 
     def numeric_series(frame: pd.DataFrame, column: str) -> pd.Series:
         if column not in frame.columns:
-            return pd.Series(pd.NA, index=frame.index, dtype="float64")
+            return pd.Series(float("nan"), index=frame.index, dtype="float64")
         return pd.to_numeric(frame[column], errors="coerce")
 
     if memory is None or memory.empty:
