@@ -4,7 +4,7 @@ from stockml.models.build_model_outputs import _enrich_artifact_direction_memory
 from stockml.models.gold_direction_memory import enrich_gold_direction_memory_fields
 from stockml.models.ranking_model import ModelArtifacts
 from stockml.trading.order_builder import order_row
-from stockml.trading.config import AlpacaConfig
+from stockml.trading.config import alpaca_config
 
 
 def _frame():
@@ -89,10 +89,9 @@ def test_model_artifacts_preserve_gold_direction_memory_outputs():
 def test_order_rows_keep_gold_direction_memory_for_candidate_pool():
     enriched = enrich_gold_direction_memory_fields(_frame()).iloc[0]
 
-    row = order_row(enriched, AlpacaConfig())
+    row = order_row(enriched, alpaca_config())
 
     assert row["ticker_direction_bias"] == "trust_long"
     assert row["ticker_direction_sample_count"] == 42
     assert row["ticker_direction_memory_status"] == "available"
     assert row["expected_return_scope"] == "ticker"
-
