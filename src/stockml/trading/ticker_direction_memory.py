@@ -232,12 +232,30 @@ def apply_ticker_direction_memory(candidates: pd.DataFrame, memory: pd.DataFrame
         return candidates.copy() if candidates is not None else pd.DataFrame()
     out = candidates.copy()
     out["symbol"] = out.get("symbol", out.get("ticker", "")).astype(str).str.upper()
+
+    def has_existing(column: str) -> pd.Series:
+        if column not in out.columns:
+            return pd.Series(False, index=out.index)
+        text = out[column].fillna("").astype(str).str.strip().str.lower()
+        return ~text.isin({"", "nan", "none", "null"})
+
     if memory is None or memory.empty:
-        out["ticker_direction_bias"] = BIAS_INSUFFICIENT_DATA
-        out["ticker_direction_confidence"] = 0.0
-        out["ticker_direction_sample_count"] = 0
-        out["ticker_inverse_advantage_bps"] = pd.NA
-        out["ticker_direction_reason"] = "missing_ticker_direction_memory"
+        existing_bias = has_existing("ticker_direction_bias")
+        if "ticker_direction_bias" not in out.columns:
+            out["ticker_direction_bias"] = BIAS_INSUFFICIENT_DATA
+        out.loc[~existing_bias, "ticker_direction_bias"] = BIAS_INSUFFICIENT_DATA
+        if "ticker_direction_confidence" not in out.columns:
+            out["ticker_direction_confidence"] = 0.0
+        out["ticker_direction_confidence"] = pd.to_numeric(out["ticker_direction_confidence"], errors="coerce").fillna(0.0)
+        if "ticker_direction_sample_count" not in out.columns:
+            out["ticker_direction_sample_count"] = 0
+        out["ticker_direction_sample_count"] = pd.to_numeric(out["ticker_direction_sample_count"], errors="coerce").fillna(0).astype(int)
+        if "ticker_inverse_advantage_bps" not in out.columns:
+            out["ticker_inverse_advantage_bps"] = pd.NA
+        existing_reason = has_existing("ticker_direction_reason")
+        if "ticker_direction_reason" not in out.columns:
+            out["ticker_direction_reason"] = "missing_ticker_direction_memory"
+        out.loc[~existing_reason, "ticker_direction_reason"] = "missing_ticker_direction_memory"
         return out
     mem = memory.copy()
     mem["symbol"] = mem["symbol"].astype(str).str.upper()
@@ -254,13 +272,38 @@ def apply_ticker_direction_memory(candidates: pd.DataFrame, memory: pd.DataFrame
         ],
         on="symbol",
         how="left",
+        suffixes=("", "_memory"),
     )
+    for column in ["ticker_direction_bias", "ticker_direction_confidence", "ticker_direction_reason"]:
+        existing = merged[column] if column in merged.columns else pd.Series(pd.NA, index=merged.index)
+        memory_column = f"{column}_memory"
+        fallback = merged[memory_column] if memory_column in merged.columns else pd.Series(pd.NA, index=merged.index)
+        merged[column] = existing.combine_first(fallback)
+
+    existing_samples = pd.to_numeric(merged.get("ticker_direction_sample_count"), errors="coerce")
+    memory_samples = pd.to_numeric(merged.get("sample_count"), errors="coerce")
+    merged["ticker_direction_sample_count"] = existing_samples.where(existing_samples.fillna(0).gt(0), memory_samples).fillna(0).astype(int)
+
+    existing_inverse = pd.to_numeric(merged.get("ticker_inverse_advantage_bps"), errors="coerce")
+    memory_inverse = pd.to_numeric(merged.get("inverse_advantage_bps"), errors="coerce")
+    merged["ticker_inverse_advantage_bps"] = existing_inverse.combine_first(memory_inverse)
+
     merged["ticker_direction_bias"] = merged["ticker_direction_bias"].fillna(BIAS_INSUFFICIENT_DATA)
     merged["ticker_direction_confidence"] = pd.to_numeric(merged["ticker_direction_confidence"], errors="coerce").fillna(0.0)
-    merged["ticker_direction_sample_count"] = pd.to_numeric(merged["sample_count"], errors="coerce").fillna(0).astype(int)
-    merged["ticker_inverse_advantage_bps"] = pd.to_numeric(merged["inverse_advantage_bps"], errors="coerce")
     merged["ticker_direction_reason"] = merged["ticker_direction_reason"].fillna("missing_ticker_direction_memory")
-    return merged.drop(columns=[column for column in ["sample_count", "inverse_advantage_bps"] if column in merged.columns])
+    return merged.drop(
+        columns=[
+            column
+            for column in [
+                "sample_count",
+                "inverse_advantage_bps",
+                "ticker_direction_bias_memory",
+                "ticker_direction_confidence_memory",
+                "ticker_direction_reason_memory",
+            ]
+            if column in merged.columns
+        ]
+    )
 
 
 def latest_ticker_direction_memory_path(root: Path | str | None = None) -> Path | None:
