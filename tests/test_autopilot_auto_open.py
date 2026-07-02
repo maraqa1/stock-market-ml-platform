@@ -6,6 +6,7 @@ import os
 
 import pandas as pd
 import requests
+import yaml
 from sqlalchemy import create_engine, insert, select
 
 from stockml.autopilot.open import (
@@ -360,6 +361,66 @@ def test_auto_open_blocks_promoted_candidate_without_model_evidence():
     assert row["verdict"] == "blocked"
     assert row["block_reason"] == "model_evidence_missing"
     assert row["details"]["model_evidence_status"] == "blocked"
+
+
+def test_paper_allow_all_override_bypasses_stockml_open_gates(tmp_path):
+    engine = _engine()
+    client = FakeClient()
+    (tmp_path / "config").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config" / "autopilot.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "autopilot": {
+                    "open_enabled": True,
+                    "validation_mode": False,
+                    "holding_review_gate_enabled": False,
+                    "max_auto_opens_per_day": 100,
+                    "max_positions": 100,
+                },
+                "anti_churn": {"enabled": False},
+                "position_lifecycle": {"require_exit_confirmation": False},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "trading.yaml").write_text(
+        yaml.safe_dump({"trading": {"paper_trading_enabled": True, "live_trading_enabled": False}}, sort_keys=False),
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "session_modes.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "session_modes": {
+                    "overnight_24_5": {
+                        "allow_order_submission": True,
+                        "require_overnight_tradable": False,
+                    }
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    candidate = _candidate("CSTL", 0.71)
+    for key in ("meta_label_decision", "directional_action", "directional_strength", "trade_quality_status"):
+        candidate.pop(key)
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=100, validation_mode=False, holding_review_gate_enabled=False),
+        alpaca_cfg=_trade_config(submit_orders=True, paper_trading_enabled=True, live_trading_enabled=False),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+        root=tmp_path,
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert result["autopilot_open_blocked"] == 0
+    assert client.orders[0]["symbol"] == "CSTL"
 
 
 def test_auto_open_allows_same_day_momentum_without_daily_model_evidence():

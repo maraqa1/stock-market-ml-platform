@@ -25,6 +25,7 @@ from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.activity_journal import enrich_activity_details
 from stockml.trading.execution_engine import submit_paper_order_payload
+from stockml.trading.gate_override import paper_allow_all_override_active
 from stockml.trading.lifecycle_ids import LINEAGE_FIELDS, candidate_lineage, order_lineage, stable_id
 from stockml.trading.order_builder import extended_limit_price, validate_order_payload
 from stockml.trading.position_intent_guard import PositionIntentConfig, guard_order_submission, record_position_intent_block, write_position_intent_report
@@ -1340,6 +1341,7 @@ def apply_auto_open(
     stamp = _aware(now)
     cfg = config or load_auto_open_config()
     trade_cfg = alpaca_cfg or alpaca_config()
+    paper_allow_all = paper_allow_all_override_active(root, config=trade_cfg)
     held = {str(row.get("symbol") or "").upper() for row in open_positions if row.get("symbol")}
     opened = 0
     blocked = 0
@@ -1362,7 +1364,7 @@ def apply_auto_open(
         return {"autopilot_open_attempted": 0, "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "kill_switch_active"}
 
     basket = evaluate_basket_risk(open_positions)
-    if basket.new_entries_paused and not rotation_candidates:
+    if basket.new_entries_paused and not rotation_candidates and not paper_allow_all:
         return {
             "autopilot_open_attempted": 0,
             "autopilot_open_submitted": 0,
@@ -1484,14 +1486,14 @@ def apply_auto_open(
             details.setdefault("current_trade_action", details.get("same_day_trade_action") or candidate.get("trade_action") or ("Short" if str(candidate.get("nightly_bias") or "").lower() == "short" else "Long"))
             details.setdefault("side", "sell" if str(details.get("current_trade_action")).lower() == "short" else "buy")
         model_block_reason = model_evidence_block_reason(candidate, details)
-        if model_block_reason:
+        if model_block_reason and not paper_allow_all:
             blocked += 1
             evidence_details = {**details, "model_evidence_status": "blocked", "model_evidence_reason": model_block_reason}
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=0.0, verdict="blocked", block_reason=model_block_reason, details=evidence_details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:{model_block_reason}")
             continue
         alignment = evaluate_entry_signal_alignment(candidate, details)
-        if not alignment.allowed:
+        if not alignment.allowed and not paper_allow_all:
             blocked += 1
             gate_details = {**details, "entry_alignment_status": "blocked", "entry_alignment_reason": alignment.reason}
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=0.0, verdict="blocked", block_reason=alignment.reason, details=gate_details, engine=db, now=stamp)
@@ -1502,7 +1504,7 @@ def apply_auto_open(
         is_per_symbol_forecast = bool(details.get("per_symbol_forecast_fallback"))
         is_plan_fallback = bool(details.get("plan_fallback"))
         is_same_day_momentum = _is_same_day_momentum_candidate(details)
-        if is_per_symbol_forecast:
+        if is_per_symbol_forecast and not paper_allow_all:
             order_size = round(size * cfg.per_symbol_forecast_fallback_size_multiplier, 2)
         elif is_same_day_momentum:
             order_size = round(size * cfg.same_day_momentum_size_multiplier, 2)
@@ -1522,7 +1524,7 @@ def apply_auto_open(
                 _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=quality_block_reason, details=quality_details, engine=db, now=stamp)
                 notes.append(f"{symbol}:blocked:{quality_block_reason}")
                 continue
-        if is_same_day_momentum:
+        if is_same_day_momentum and not paper_allow_all:
             momentum_block_reason = same_day_momentum_block_reason(candidate, details, cfg)
             if momentum_block_reason:
                 blocked += 1
@@ -1530,7 +1532,7 @@ def apply_auto_open(
                 _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=momentum_block_reason, details=momentum_details, engine=db, now=stamp)
                 notes.append(f"{symbol}:blocked:{momentum_block_reason}")
                 continue
-        if (is_per_symbol_forecast or is_near_miss or is_fallback) and holding_reviews:
+        if (is_per_symbol_forecast or is_near_miss or is_fallback) and holding_reviews and not paper_allow_all:
             review = holding_reviews.get(symbol)
             holding_block_reason = holding_review_block_reason(symbol, review, cfg)
             if holding_block_reason:
@@ -1554,32 +1556,32 @@ def apply_auto_open(
                 _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=holding_block_reason, details=holding_details, engine=db, now=stamp)
                 notes.append(f"{symbol}:blocked:{holding_block_reason}")
                 continue
-        if is_fallback and open_positions:
+        if is_fallback and open_positions and not paper_allow_all:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_requires_flat_account", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:fallback_requires_flat_account")
             continue
-        if is_near_miss and cfg.near_miss_fallback_requires_flat_account and open_positions:
+        if is_near_miss and cfg.near_miss_fallback_requires_flat_account and open_positions and not paper_allow_all:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="near_miss_requires_flat_account", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:near_miss_requires_flat_account")
             continue
-        if is_fallback and _todays_fallback_open_count(db, stamp) >= cfg.flat_account_fallback_max_per_day:
+        if is_fallback and _todays_fallback_open_count(db, stamp) >= cfg.flat_account_fallback_max_per_day and not paper_allow_all:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="fallback_daily_cap_reached", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:fallback_daily_cap_reached")
             continue
-        if is_near_miss and _todays_near_miss_open_count(db, stamp) >= cfg.near_miss_fallback_max_per_day:
+        if is_near_miss and _todays_near_miss_open_count(db, stamp) >= cfg.near_miss_fallback_max_per_day and not paper_allow_all:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="near_miss_daily_cap_reached", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:near_miss_daily_cap_reached")
             continue
-        if is_per_symbol_forecast and _todays_per_symbol_forecast_open_count(db, stamp) >= cfg.per_symbol_forecast_fallback_max_per_day:
+        if is_per_symbol_forecast and _todays_per_symbol_forecast_open_count(db, stamp) >= cfg.per_symbol_forecast_fallback_max_per_day and not paper_allow_all:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="per_symbol_forecast_daily_cap_reached", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:per_symbol_forecast_daily_cap_reached")
             continue
-        if is_same_day_momentum and _todays_same_day_momentum_open_count(db, stamp) >= cfg.same_day_momentum_max_per_day:
+        if is_same_day_momentum and _todays_same_day_momentum_open_count(db, stamp) >= cfg.same_day_momentum_max_per_day and not paper_allow_all:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="same_day_momentum_daily_cap_reached", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:same_day_momentum_daily_cap_reached")
@@ -1590,7 +1592,7 @@ def apply_auto_open(
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=size_reason, details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:position_size_below_min")
             continue
-        if details.get("is_first_15_min") or details.get("is_last_30_min"):
+        if (details.get("is_first_15_min") or details.get("is_last_30_min")) and not paper_allow_all:
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason="near_open_close", details=details, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:near_open_close")
@@ -1685,7 +1687,7 @@ def apply_auto_open(
             "session_max_spread_bps": policy.max_spread_bps,
             "session_size_multiplier": policy.size_multiplier,
         }
-        if not policy.allowed:
+        if not policy.allowed and not paper_allow_all:
             blocked += 1
             reason = policy.session_reject_reason or "session_policy_blocked"
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=reason, details=asset_details, engine=db, now=stamp)
@@ -1742,6 +1744,7 @@ def apply_auto_open(
                 order,
                 client=broker,
                 config=PositionIntentConfig(
+                    enabled=not paper_allow_all,
                     minimum_hold_minutes=30,
                     allow_short_selling=getattr(trade_cfg, "allow_short_selling", True),
                 ),
@@ -1749,7 +1752,7 @@ def apply_auto_open(
                 cycle_id=stamp.strftime("%Y%m%d_%H%M%S"),
                 order_source="autopilot_open",
             )
-            if not intent_decision.allowed:
+            if not intent_decision.allowed and not paper_allow_all:
                 blocked += 1
                 position_intent_rows.append(intent_row)
                 report_path = write_position_intent_report(position_intent_rows, stamp=stamp.strftime("%Y%m%d_%H%M%S"))
