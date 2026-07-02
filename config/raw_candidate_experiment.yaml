@@ -1,0 +1,16 @@
+raw_candidate_experiment:
+  enabled: false
+  paper_only: true
+  live_trading_allowed: false
+  max_trades_per_day: 3
+  max_trades_per_cycle: 1
+  max_notional_per_trade: 250
+  max_total_experiment_notional: 750
+  daily_loss_stop_usd: 50
+  allow_shorts: false
+  allow_no_decision_rows: true
+  allow_rejected_candidates: true
+  allow_research_only_candidates: true
+  require_manual_enable_each_day: true
+  separate_ledger: true
+  tag_all_orders: true
