@@ -44,7 +44,7 @@ def _forward_bps(frame: pd.DataFrame, horizon: str) -> pd.Series:
         if column in frame.columns:
             values = _series_num(frame, column)
             return values.where(values.abs().gt(2), values * 10_000)
-    return pd.Series(pd.NA, index=frame.index, dtype="float64")
+    return pd.Series(float("nan"), index=frame.index, dtype="float64")
 
 
 def _side_mask(frame: pd.DataFrame) -> pd.Series:
