@@ -12,6 +12,7 @@ from stockml.trading.ticker_direction_memory import (
     BIAS_TRUST_ORIGINAL,
     TickerDirectionMemoryConfig,
     apply_ticker_direction_memory,
+    load_latest_ticker_direction_memory,
     normalize_direction_outcomes,
     summarize_ticker_direction_memory,
 )
@@ -157,3 +158,17 @@ def test_ticker_direction_memory_runner_writes_reports(tmp_path: Path):
     assert result["inverse_watch"] == 1
     assert Path(result["csv_path"]).exists()
     assert Path(result["markdown_path"]).exists()
+
+
+def test_load_latest_ticker_direction_memory_returns_newest_file(tmp_path: Path):
+    diag = tmp_path / "data" / "trading" / "diagnostics"
+    diag.mkdir(parents=True)
+    old = diag / "ticker_direction_memory_20260101_000000.csv"
+    new = diag / "ticker_direction_memory_20260102_000000.csv"
+    pd.DataFrame({"symbol": ["OLD"], "ticker_direction_bias": [BIAS_TRUST_ORIGINAL]}).to_csv(old, index=False)
+    pd.DataFrame({"symbol": ["NEW"], "ticker_direction_bias": [BIAS_INVERSE_WATCH]}).to_csv(new, index=False)
+
+    path, frame = load_latest_ticker_direction_memory(tmp_path)
+
+    assert path == new
+    assert frame.iloc[0]["symbol"] == "NEW"

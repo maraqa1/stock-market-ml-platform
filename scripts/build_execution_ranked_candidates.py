@@ -7,6 +7,7 @@ from stockml.candidates.execution_ranker import (
     latest_candidate_or_plan,
     write_execution_ranked_candidates,
 )
+from stockml.trading.ticker_direction_memory import apply_ticker_direction_memory, load_latest_ticker_direction_memory
 
 
 def main() -> int:
@@ -20,6 +21,8 @@ def main() -> int:
         print("missing_inputs: latest_candidate_or_plan")
         return 0
 
+    memory_path, memory = load_latest_ticker_direction_memory()
+    candidates = apply_ticker_direction_memory(candidates, memory)
     ranked = build_execution_ranked_candidates(candidates)
     output_path = write_execution_ranked_candidates(candidates, output_dir=args.output_dir)
     executable = ranked[ranked["executable"].eq(True)].copy()
@@ -29,6 +32,7 @@ def main() -> int:
 
     print("execution_ranked_candidates_status: ok")
     print(f"source_path: {source_path}")
+    print(f"ticker_direction_memory_path: {memory_path or ''}")
     print(f"output_path: {output_path}")
     print(f"rows: {len(ranked)}")
     print(f"executable_candidates: {len(executable)}")

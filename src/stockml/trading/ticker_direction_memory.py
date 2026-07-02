@@ -261,3 +261,20 @@ def apply_ticker_direction_memory(candidates: pd.DataFrame, memory: pd.DataFrame
     merged["ticker_inverse_advantage_bps"] = pd.to_numeric(merged["inverse_advantage_bps"], errors="coerce")
     merged["ticker_direction_reason"] = merged["ticker_direction_reason"].fillna("missing_ticker_direction_memory")
     return merged.drop(columns=[column for column in ["sample_count", "inverse_advantage_bps"] if column in merged.columns])
+
+
+def latest_ticker_direction_memory_path(root: Path | str | None = None) -> Path | None:
+    base = Path(root) if root else PROJECT_ROOT
+    diag = base / "data" / "trading" / "diagnostics"
+    files = [path for path in diag.glob("ticker_direction_memory_*.csv") if path.is_file()]
+    return max(files, key=lambda item: item.stat().st_mtime) if files else None
+
+
+def load_latest_ticker_direction_memory(root: Path | str | None = None) -> tuple[Path | None, pd.DataFrame]:
+    path = latest_ticker_direction_memory_path(root)
+    if path is None:
+        return None, pd.DataFrame(columns=MEMORY_COLUMNS)
+    try:
+        return path, pd.read_csv(path, low_memory=False)
+    except Exception:
+        return path, pd.DataFrame(columns=MEMORY_COLUMNS)
