@@ -1,0 +1,82 @@
+<section class="zone trading-zone" data-zone="gate-controls" id="gate-controls">
+  <div class="zone__header">
+    <span>Paper Gate Controls</span>
+    <span class="zone__header-meta">paper only · live trading disabled</span>
+  </div>
+  <div class="zone__body">
+    <p class="zone__description">
+      Shows the current paper-trading blockers and the controls that can enable or disable each configurable gate. Turning a gate off can allow more paper orders through, but model scoring and live-trading policy are not changed here.
+    </p>
+    <div class="table-scroll">
+      <table class="data dense">
+        <thead>
+          <tr>
+            <th>Group</th>
+            <th>Control</th>
+            <th>Status</th>
+            <th class="num">Recent Blocks</th>
+            <th>Description</th>
+            <th>When On</th>
+            <th>When Off</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in gate_controls %}
+            <tr>
+              <td>{{ row.group }}</td>
+              <td>
+                <strong>{{ row.label }}</strong>
+                <div class="text-secondary">{{ row.source }}</div>
+              </td>
+              <td>
+                <span class="badge {{ 'badge-green' if row.enabled else 'badge-yellow' }}">{{ "On" if row.enabled else "Off" }}</span>
+              </td>
+              <td class="num">{{ row.recent_blocks }}</td>
+              <td>{{ row.description }}</td>
+              <td>{{ row.effect_when_on }}</td>
+              <td>{{ row.effect_when_off }}</td>
+              <td>
+                {% if row.editable %}
+                  <form method="post" action="/trading/gate-controls/{{ row.id }}">
+                    <input type="hidden" name="enabled" value="{{ 'false' if row.enabled else 'true' }}">
+                    <button class="btn {{ 'btn-danger' if row.enabled else 'btn-primary' }}" type="submit" data-confirm="{{ 'Turn off ' ~ row.label ~ '?' if row.enabled else 'Turn on ' ~ row.label ~ '?' }}">
+                      {{ "Turn Off" if row.enabled else "Turn On" }}
+                    </button>
+                  </form>
+                {% else %}
+                  <span class="text-secondary">Read only</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <details class="autopilot-log" data-key="gate-control-blockers" open>
+      <summary>Latest Blocker Counts</summary>
+      <div class="table-scroll">
+        <table class="data dense">
+          <thead>
+            <tr>
+              <th>Blocker</th>
+              <th class="num">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if not gate_blockers %}
+              <tr><td colspan="2" class="empty small">No recent blockers found in the latest candidate, plan, result, or tracking files.</td></tr>
+            {% else %}
+              {% for row in gate_blockers %}
+                <tr>
+                  <td>{{ row.reason|replace("_", " ") }}</td>
+                  <td class="num">{{ row.count }}</td>
+                </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</section>

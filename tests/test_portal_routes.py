@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 import shutil
 import json
+import yaml
 from pathlib import Path
 
 from portal.app import create_app
@@ -130,6 +131,31 @@ def test_base_renders_spec25_top_nav_and_search(client):
     assert b"js/nav_search.js" in response.data
     assert b"js/keyboard.js" in response.data
     assert b"js/table_sort.js" in response.data
+
+
+def test_trading_page_exposes_paper_gate_controls(client):
+    response = client.get("/trading")
+    assert response.status_code == 200
+    assert b"Paper Gate Controls" in response.data
+    assert b"Paper broker submission" in response.data
+    assert b"Validation caps" in response.data
+    assert b"Short execution" in response.data
+
+
+def test_gate_control_route_updates_autopilot_config(client):
+    response = client.post("/trading/gate-controls/validation_caps", data={"enabled": "false"})
+    assert response.status_code == 302
+    root = Path("_tmp_portal_routes")
+    payload = yaml.safe_load((root / "config" / "autopilot.yaml").read_text())
+    assert payload["autopilot"]["validation_mode"] is False
+
+    json_response = client.post(
+        "/trading/gate-controls/validation_caps",
+        json={"enabled": True},
+        headers={"Accept": "application/json"},
+    )
+    assert json_response.status_code == 200
+    assert json_response.get_json()["enabled"] is True
 
 
 def test_ase_mobile_page_renders_market_sections(client):

@@ -12,6 +12,7 @@ from portal.services.database_reader import db_available
 from portal.services.data_estate import data_estate_context
 from portal.services.data_quality_service import data_quality_context
 from portal.services.gold_service import gold_context
+from portal.services.gate_controls import gate_controls_context, set_gate_control
 from portal.services.latest_file_reader import count_rows, file_status, latest_file, project_root, readable_reason, safe_read_csv
 from portal.services.near_miss_service import near_miss_context
 from portal.services.per_symbol_forecast_service import per_symbol_forecast_context
@@ -345,6 +346,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "per_symbol_forecast": per_symbol_forecast_context(root),
                 "timer_settings": timer_settings_context(root),
                 "paper_autopilot": autopilot_context(root),
+                **gate_controls_context(root),
             }
         )
         return render_template("trading.html", title="Paper Trading", **context)
@@ -481,6 +483,20 @@ def create_app(root: Path | None = None) -> Flask:
         if request.accept_mimetypes.best == "application/json":
             return jsonify(payload)
         return redirect(url_for("trading", _anchor="paper-autopilot"))
+
+    @app.route("/trading/gate-controls/<control_id>", methods=["POST"])
+    def trading_gate_control(control_id: str):
+        enabled = str(request.form.get("enabled", "")).strip().lower() in {"1", "true", "yes", "on"}
+        if request.is_json:
+            payload_json = request.get_json(silent=True) or {}
+            enabled = str(payload_json.get("enabled", "")).strip().lower() in {"1", "true", "yes", "on"}
+        try:
+            payload = set_gate_control(control_id, enabled, root=root_path())
+        except KeyError:
+            abort(404)
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(payload)
+        return redirect(url_for("trading", _anchor="gate-controls"))
 
     @app.route("/trading/timer-settings", methods=["POST"])
     def trading_timer_settings():
