@@ -8,6 +8,7 @@ import pandas as pd
 
 from stockml.common.logging_utils import log
 from stockml.common.paths import MODEL_OUTPUTS_DIR, ensure_data_dirs, timestamp
+from stockml.models.gold_direction_memory import enrich_gold_direction_memory_fields
 from stockml.models.gold_loader import load_gold_dataset
 from stockml.models.meta_labeling import add_meta_label_predictions, load_meta_label_config, train_meta_label_model
 from stockml.models.meta_label_validation import walk_forward_validate_meta_labels
@@ -18,6 +19,14 @@ from stockml.models.ranking_model import (
     model_config_json,
     train_predict_from_gold,
 )
+
+
+def _enrich_artifact_direction_memory(artifacts: ModelArtifacts) -> ModelArtifacts:
+    artifacts.predictions = enrich_gold_direction_memory_fields(artifacts.predictions)
+    artifacts.signal_table = enrich_gold_direction_memory_fields(artifacts.signal_table)
+    artifacts.top_long = enrich_gold_direction_memory_fields(artifacts.top_long)
+    artifacts.top_short = enrich_gold_direction_memory_fields(artifacts.top_short)
+    return artifacts
 
 
 def _write_artifacts(artifacts: ModelArtifacts, stamp: str, *, publish_latest: bool = True) -> Dict[str, Path]:
@@ -232,6 +241,7 @@ def build_model_outputs(
         log(f"Loaded Gold dataset for model: {len(gold):,} rows")
         artifacts = train_predict_from_gold(gold, top_n=top_n, live_signal_mode=live_signal_mode, baseline_only=baseline_only)
         meta_paths = _add_meta_label_artifacts(artifacts, stamp, skip_validation=live_signal_mode)
+    artifacts = _enrich_artifact_direction_memory(artifacts)
     paths = _write_artifacts(artifacts, stamp, publish_latest=publish_latest)
     paths.update(meta_paths)
     for name, path in paths.items():
