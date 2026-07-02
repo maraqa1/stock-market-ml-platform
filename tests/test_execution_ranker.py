@@ -56,7 +56,7 @@ def test_no_decision_never_receives_execution_rank():
         pd.DataFrame([_row("AAA", 1, action="No Decision", side="", status="approved")]),
         short_policy=ShortSidePolicy(),
     )
-    assert ranked.iloc[0]["status"] == "blocked"
+    assert ranked.iloc[0]["status"] == "research_only"
     assert ranked.iloc[0]["primary_block_reason"] == "source_trade_action_not_executable"
     assert pd.isna(ranked.iloc[0]["execution_rank"])
 

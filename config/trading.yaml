@@ -11,3 +11,21 @@ short_side_policy:
   min_closed_short_trades_for_enablement: 50
   min_short_profit_factor_for_enablement: 1.10
   min_short_win_rate_for_enablement: 0.45
+direction_gate:
+  enabled: true
+  require_source_trade_action: true
+  allow_directional_action_execution: false
+  allow_planner_derived_no_decision_execution: false
+  require_positive_validated_expected_return: true
+  min_validated_profit_factor: 1.05
+  require_meta_label_acceptance: false
+  block_negative_expected_return: true
+  inverse_warning_blocks_execution: true
+  shorts_require_short_policy_pass: true
+short_direction_gate:
+  enabled: true
+  min_short_win_rate: 0.45
+  min_short_profit_factor: 1.10
+  require_positive_short_expected_return: true
+  block_high_squeeze_risk: true
+  default_short_decision: research_only

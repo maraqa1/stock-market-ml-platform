@@ -7,6 +7,7 @@ import pandas as pd
 
 from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_side_policy, short_side_block_reason
 from stockml.common.paths import PROJECT_ROOT, timestamp
+from stockml.trading.direction_gate import evaluate_direction_gate
 
 
 OUTPUT_COLUMNS = [
@@ -27,6 +28,13 @@ OUTPUT_COLUMNS = [
     "validated_expected_return_bps",
     "validated_hit_rate",
     "validated_profit_factor",
+    "direction_gate_status",
+    "direction_gate_pass",
+    "direction_decision",
+    "direction_confidence",
+    "direction_primary_reason",
+    "direction_blocking_reasons",
+    "direction_supporting_reasons",
 ]
 SAFE_EMPTY_REASONS = {"", "nan", "none", "null"}
 
@@ -96,7 +104,7 @@ def _append_reason(reasons: list[str], reason: str) -> list[str]:
 
 
 def _source_action_reason(row: pd.Series) -> str:
-    action = (_text(row.get("source_trade_action")) or _text(row.get("trade_action"))).lower()
+    action = _text(row.get("source_trade_action")).lower()
     if action in {"long", "short"}:
         return ""
     return "source_trade_action_not_executable"
@@ -160,8 +168,19 @@ def build_execution_ranked_candidates(
         research_only = bool(short_reason)
         if short_reason:
             _append_reason(reasons, short_reason)
+        direction_row = row.copy()
+        if policy.enabled and policy.allow_shorts_in_validation:
+            direction_row["short_policy_status"] = direction_row.get("short_policy_status") or "enabled"
+            direction_row["short_side_validation_status"] = direction_row.get("short_side_validation_status") or "pass"
+        direction = evaluate_direction_gate(direction_row)
+        if not bool(direction.get("direction_gate_pass")):
+            _append_reason(reasons, str(direction.get("direction_primary_reason") or "direction_gate_failed"))
+            if direction.get("direction_decision") == "direction_research_only":
+                research_only = True
         status = _status(row, reasons, research_only=research_only)
-        executable = status == "executable"
+        executable = status == "executable" and bool(direction.get("direction_gate_pass")) and direction.get("direction_decision") == "direction_pass"
+        if not executable and status == "executable":
+            status = "blocked"
         rows.append(
             {
                 "__index": idx,
@@ -182,6 +201,13 @@ def build_execution_ranked_candidates(
                 "validated_expected_return_bps": row.get("validated_expected_return_bps", ""),
                 "validated_hit_rate": row.get("validated_hit_rate", ""),
                 "validated_profit_factor": row.get("validated_profit_factor", ""),
+                "direction_gate_status": direction.get("direction_gate_status", ""),
+                "direction_gate_pass": direction.get("direction_gate_pass", False),
+                "direction_decision": direction.get("direction_decision", ""),
+                "direction_confidence": direction.get("direction_confidence", 0.0),
+                "direction_primary_reason": direction.get("direction_primary_reason", ""),
+                "direction_blocking_reasons": direction.get("direction_blocking_reasons", ""),
+                "direction_supporting_reasons": direction.get("direction_supporting_reasons", ""),
             }
         )
     out = pd.DataFrame(rows)
