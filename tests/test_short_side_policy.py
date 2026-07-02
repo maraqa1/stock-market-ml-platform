@@ -28,6 +28,9 @@ def test_short_policy_loads_config(tmp_path: Path):
                 "  allow_shorts_in_validation: true",
                 "  require_short_side_attribution_pass: false",
                 "  research_only_when_disabled: false",
+                "  min_closed_short_trades_for_enablement: 75",
+                "  min_short_profit_factor_for_enablement: 1.25",
+                "  min_short_win_rate_for_enablement: 0.55",
             ]
         ),
         encoding="utf-8",
@@ -37,4 +40,62 @@ def test_short_policy_loads_config(tmp_path: Path):
     assert policy.allow_shorts_in_validation is True
     assert policy.require_short_side_attribution_pass is False
     assert policy.research_only_when_disabled is False
+    assert policy.min_closed_short_trades_for_enablement == 75
+    assert policy.min_short_profit_factor_for_enablement == 1.25
+    assert policy.min_short_win_rate_for_enablement == 0.55
 
+
+def test_short_policy_blocks_basket_order_submission_when_disabled():
+    import pandas as pd
+
+    from stockml.trading.config import AlpacaConfig
+    from stockml.trading.order_planner import build_order_plan
+
+    signals = pd.DataFrame(
+        [
+            {
+                "ticker": "AAA",
+                "trade_action": "Short",
+                "side_probability": 0.8,
+                "probability_edge": -0.2,
+                "risk_adjusted_score": -1.2,
+                "close": 20,
+                "volume": 1_000_000,
+                "avg_dollar_volume_20d": 50_000_000,
+                "market_cap": 5_000_000_000,
+                "volatility_20d": 0.02,
+            }
+        ]
+    )
+    plan = build_order_plan(signals, AlpacaConfig(allow_short_selling=True, max_orders=1))
+    assert not plan.empty
+    assert plan.iloc[0]["side"] == "sell"
+    assert plan.iloc[0]["trade_quality_status"] == "rejected"
+    assert plan.iloc[0]["order_eligible"] is False or str(plan.iloc[0]["order_eligible"]).lower() == "false"
+    assert "short_side_validation_required" in plan.iloc[0]["trade_quality_reason"]
+
+
+def test_short_policy_keeps_long_executable_when_disabled():
+    import pandas as pd
+
+    from stockml.candidates.execution_ranker import build_execution_ranked_candidates
+
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame(
+            [
+                {
+                    "symbol": "AAA",
+                    "side": "buy",
+                    "trade_action": "Long",
+                    "trade_quality_status": "approved",
+                    "order_eligible": True,
+                    "approved_notional": 100,
+                    "suggested_quantity": 1,
+                    "expected_return_quality": "calibrated",
+                    "candidate_rank": 1,
+                }
+            ]
+        )
+    )
+    assert ranked.iloc[0]["status"] == "executable"
+    assert ranked.iloc[0]["execution_rank"] == 1

@@ -8,3 +8,6 @@ short_side_policy:
   allow_shorts_in_validation: false
   require_short_side_attribution_pass: true
   research_only_when_disabled: true
+  min_closed_short_trades_for_enablement: 50
+  min_short_profit_factor_for_enablement: 1.10
+  min_short_win_rate_for_enablement: 0.45

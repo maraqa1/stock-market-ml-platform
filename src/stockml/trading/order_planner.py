@@ -12,6 +12,7 @@ from stockml.trading.config import AlpacaConfig
 from stockml.trading.order_builder import extended_limit_price, order_row
 from stockml.trading.position_sizing import apply_same_day_sizing
 from stockml.trading.trade_quality_gate import apply_trade_quality_gate
+from stockml.candidates.short_side_policy import short_side_block_reason
 
 
 REQUIRED_SIGNAL_COLUMNS = {
@@ -258,6 +259,31 @@ def _enforce_executable_source_action(pool: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _enforce_short_side_policy(pool: pd.DataFrame) -> pd.DataFrame:
+    if pool.empty:
+        return pool
+    out = pool.copy()
+    reasons = out.apply(short_side_block_reason, axis=1)
+    blocked = reasons.astype(str).ne("")
+    if not blocked.any():
+        return out
+    out.loc[blocked, "candidate_status"] = "research_only"
+    out.loc[blocked, "trade_quality_status"] = "rejected"
+    out.loc[blocked, "order_eligible"] = False
+    out.loc[blocked, "approved_notional"] = 0.0
+    out.loc[blocked, "notional"] = 0.0
+    out.loc[blocked, "suggested_quantity"] = 0
+    out.loc[blocked, "research_only"] = True
+    out.loc[blocked, "primary_block_reason"] = reasons[blocked]
+    if "trade_quality_reason" not in out.columns:
+        out["trade_quality_reason"] = ""
+    out.loc[blocked, "trade_quality_reason"] = [
+        _append_reason(existing, reason)
+        for existing, reason in zip(out.loc[blocked, "trade_quality_reason"], reasons[blocked])
+    ]
+    return out
+
+
 def build_candidate_pool(
     signals: pd.DataFrame,
     config: AlpacaConfig,
@@ -286,6 +312,7 @@ def build_candidate_pool(
     pool["candidate_rank"] = range(1, len(pool) + 1)
     pool["candidate_status"] = pool["trade_quality_status"]
     pool = _enforce_executable_source_action(pool)
+    pool = _enforce_short_side_policy(pool)
     pool = apply_same_day_sizing(
         pool,
         account_equity=config.account_equity,

@@ -15,6 +15,9 @@ class ShortSidePolicy:
     allow_shorts_in_validation: bool = False
     require_short_side_attribution_pass: bool = True
     research_only_when_disabled: bool = True
+    min_closed_short_trades_for_enablement: int = 50
+    min_short_profit_factor_for_enablement: float = 1.10
+    min_short_win_rate_for_enablement: float = 0.45
 
 
 def _bool(value: Any, default: bool) -> bool:
@@ -28,6 +31,20 @@ def _bool(value: Any, default: bool) -> bool:
     if text in {"0", "false", "no", "n"}:
         return False
     return default
+
+
+def _int(value: Any, default: int) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def load_short_side_policy(path: Path | str | None = None) -> ShortSidePolicy:
@@ -44,6 +61,9 @@ def load_short_side_policy(path: Path | str | None = None) -> ShortSidePolicy:
         allow_shorts_in_validation=_bool(data.get("allow_shorts_in_validation"), False),
         require_short_side_attribution_pass=_bool(data.get("require_short_side_attribution_pass"), True),
         research_only_when_disabled=_bool(data.get("research_only_when_disabled"), True),
+        min_closed_short_trades_for_enablement=_int(data.get("min_closed_short_trades_for_enablement"), 50),
+        min_short_profit_factor_for_enablement=_float(data.get("min_short_profit_factor_for_enablement"), 1.10),
+        min_short_win_rate_for_enablement=_float(data.get("min_short_win_rate_for_enablement"), 0.45),
     )
 
 
