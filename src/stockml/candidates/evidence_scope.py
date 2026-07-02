@@ -54,13 +54,23 @@ def _side_series(frame: pd.DataFrame) -> pd.Series:
 
 
 def _scope_for_metric(frame: pd.DataFrame, column: str) -> pd.Series:
+    explicit_columns = {
+        "validated_expected_return_bps": "expected_return_scope",
+        "validated_hit_rate": "hit_rate_scope",
+        "validated_profit_factor": "profit_factor_scope",
+    }
+    explicit_column = explicit_columns.get(column, f"{column.removeprefix('validated_')}_scope")
+    if explicit_column in frame.columns:
+        explicit = frame[explicit_column].fillna("").astype(str).str.strip().str.lower()
+    else:
+        explicit = pd.Series("", index=frame.index, dtype="object")
     if column not in frame.columns or frame.empty:
-        return pd.Series("unknown", index=frame.index)
+        return explicit.where(explicit.isin({"ticker", "bucket", "side", "global"}), "unknown")
     values = pd.to_numeric(frame[column], errors="coerce")
     side = _side_series(frame)
     scope = pd.Series("unknown", index=frame.index, dtype="object")
     if values.notna().sum() == 0:
-        return scope
+        return explicit.where(explicit.isin({"ticker", "bucket", "side", "global"}), scope)
     rounded = values.round(8)
     if rounded.nunique(dropna=True) == 1:
         scope.loc[values.notna()] = "global"
@@ -81,7 +91,7 @@ def _scope_for_metric(frame: pd.DataFrame, column: str) -> pd.Series:
         symbol_values = rounded.loc[indexes].dropna()
         if len(symbol_values) > 1 and symbol_values.nunique(dropna=True) == 1:
             scope.loc[list(indexes)] = "ticker"
-    return scope
+    return explicit.where(explicit.isin({"ticker", "bucket", "side", "global"}), scope)
 
 
 def _ticker_memory_status(row: pd.Series, min_samples: int) -> str:
