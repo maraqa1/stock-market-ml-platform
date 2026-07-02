@@ -239,6 +239,11 @@ def apply_ticker_direction_memory(candidates: pd.DataFrame, memory: pd.DataFrame
         text = out[column].fillna("").astype(str).str.strip().str.lower()
         return ~text.isin({"", "nan", "none", "null"})
 
+    def numeric_series(frame: pd.DataFrame, column: str) -> pd.Series:
+        if column not in frame.columns:
+            return pd.Series(pd.NA, index=frame.index, dtype="float64")
+        return pd.to_numeric(frame[column], errors="coerce")
+
     if memory is None or memory.empty:
         existing_bias = has_existing("ticker_direction_bias")
         if "ticker_direction_bias" not in out.columns:
@@ -280,12 +285,12 @@ def apply_ticker_direction_memory(candidates: pd.DataFrame, memory: pd.DataFrame
         fallback = merged[memory_column] if memory_column in merged.columns else pd.Series(pd.NA, index=merged.index)
         merged[column] = existing.combine_first(fallback)
 
-    existing_samples = pd.to_numeric(merged.get("ticker_direction_sample_count"), errors="coerce")
-    memory_samples = pd.to_numeric(merged.get("sample_count"), errors="coerce")
+    existing_samples = numeric_series(merged, "ticker_direction_sample_count")
+    memory_samples = numeric_series(merged, "sample_count")
     merged["ticker_direction_sample_count"] = existing_samples.where(existing_samples.fillna(0).gt(0), memory_samples).fillna(0).astype(int)
 
-    existing_inverse = pd.to_numeric(merged.get("ticker_inverse_advantage_bps"), errors="coerce")
-    memory_inverse = pd.to_numeric(merged.get("inverse_advantage_bps"), errors="coerce")
+    existing_inverse = numeric_series(merged, "ticker_inverse_advantage_bps")
+    memory_inverse = numeric_series(merged, "inverse_advantage_bps")
     merged["ticker_inverse_advantage_bps"] = existing_inverse.combine_first(memory_inverse)
 
     merged["ticker_direction_bias"] = merged["ticker_direction_bias"].fillna(BIAS_INSUFFICIENT_DATA)
