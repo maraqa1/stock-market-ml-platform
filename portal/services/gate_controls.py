@@ -165,7 +165,106 @@ def gate_controls_context(root: Path | str | None = None) -> dict[str, Any]:
         blockers = sum(count for key, count in counts.items() if any(alias in key for alias in control.blocker_keys))
         rows.append({**control.__dict__, "recent_blocks": blockers})
     top_blockers = [{"reason": key, "count": value} for key, value in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:20]]
-    return {"gate_controls": rows, "gate_blockers": top_blockers}
+    return {"gate_controls": rows, "gate_blockers": top_blockers, "paper_override": paper_override_state(base)}
+
+
+def paper_override_state(root: Path | str | None = None) -> dict[str, Any]:
+    base = Path(root or ".")
+    controls = {row.id: row.enabled for row in _control_rows(base)}
+    autopilot = _read_yaml(base / "config" / "autopilot.yaml")
+    section = autopilot.get("autopilot", {}) if isinstance(autopilot.get("autopilot"), dict) else {}
+    active = (
+        controls.get("paper_submit", False)
+        and controls.get("auto_open", False)
+        and not controls.get("validation_caps", True)
+        and not controls.get("holding_review_gate", True)
+        and controls.get("overnight_24_5_submission", False)
+        and not controls.get("overnight_tradable_gate", True)
+        and not controls.get("anti_churn", True)
+        and not controls.get("position_lifecycle_confirmation", True)
+        and int(section.get("max_auto_opens_per_day", 0) or 0) >= 100
+        and int(section.get("max_positions", 0) or 0) >= 100
+    )
+    return {
+        "active": active,
+        "label": "Active" if active else "Inactive",
+        "description": "Paper override removes platform caps/gates for paper execution. Broker, asset, buying-power, and live-disabled safeguards still apply.",
+    }
+
+
+def enable_paper_allow_all_override(*, root: Path | str | None = None) -> dict[str, Any]:
+    base = Path(root or ".")
+    _set_env_value(base, "STOCKML_ALPACA_SUBMIT_ORDERS", "true")
+    _set_env_value(base, "STOCKML_PAPER_TRADING_ENABLED", "true")
+    _set_env_value(base, "STOCKML_LIVE_TRADING_ENABLED", "false")
+    _set_env_value(base, "STOCKML_ALPACA_MAX_ORDERS", "100")
+    _set_env_value(base, "STOCKML_CANDIDATE_POOL_SIZE", "500")
+
+    autopilot_path = base / "config" / "autopilot.yaml"
+    autopilot = _read_yaml(autopilot_path)
+    for key, value in {
+        "open_enabled": True,
+        "rotate_enabled": True,
+        "max_auto_opens_per_day": 100,
+        "max_positions": 100,
+        "max_long_positions": 100,
+        "max_short_positions": 100,
+        "flat_account_fallback_enabled": True,
+        "flat_account_fallback_max_per_day": 100,
+        "near_miss_fallback_enabled": True,
+        "near_miss_fallback_requires_flat_account": False,
+        "near_miss_fallback_max_per_day": 100,
+        "per_symbol_forecast_fallback_enabled": True,
+        "per_symbol_forecast_fallback_max_per_day": 100,
+        "plan_fallback_enabled": True,
+        "same_day_momentum_enabled": True,
+        "same_day_momentum_max_per_day": 100,
+        "holding_review_gate_enabled": False,
+        "validation_mode": False,
+        "validation_max_new_orders_per_cycle": 100,
+        "validation_max_new_orders_per_day": 100,
+        "validation_max_open_positions_total": 100,
+    }.items():
+        _nested_set(autopilot, ("autopilot", key), value)
+    _nested_set(autopilot, ("anti_churn", "enabled"), False)
+    _nested_set(autopilot, ("position_lifecycle", "require_exit_confirmation"), False)
+    _nested_set(autopilot, ("position_lifecycle", "stale_signal_is_exit_reason"), True)
+    _nested_set(autopilot, ("position_lifecycle", "unknown_signal_is_exit_reason"), True)
+    _nested_set(autopilot, ("position_lifecycle", "defensive_close_requires_loss_or_risk_breach"), False)
+    _nested_set(autopilot, ("rotation", "rotate_enabled"), True)
+    _nested_set(autopilot, ("same_day", "same_day_auto_execution"), True)
+    _nested_set(autopilot, ("same_day", "same_day_reversal_close"), True)
+    _nested_set(autopilot, ("extended_hours", "enabled"), True)
+    _write_yaml(autopilot_path, autopilot)
+
+    trading_path = base / "config" / "trading.yaml"
+    trading = _read_yaml(trading_path)
+    _nested_set(trading, ("trading", "mode"), "paper")
+    _nested_set(trading, ("trading", "dry_run"), False)
+    _nested_set(trading, ("trading", "paper_trading_enabled"), True)
+    _nested_set(trading, ("trading", "live_trading_enabled"), False)
+    _nested_set(trading, ("short_side_policy", "enabled"), True)
+    _nested_set(trading, ("short_side_policy", "allow_shorts_in_validation"), True)
+    _nested_set(trading, ("short_side_policy", "require_short_side_attribution_pass"), False)
+    _nested_set(trading, ("short_side_policy", "research_only_when_disabled"), False)
+    _write_yaml(trading_path, trading)
+
+    sessions_path = base / "config" / "session_modes.yaml"
+    sessions = _read_yaml(sessions_path)
+    for mode in ("regular_session", "pre_market", "after_hours", "overnight_24_5"):
+        _nested_set(sessions, ("session_modes", mode, "enabled"), True)
+        _nested_set(sessions, ("session_modes", mode, "allow_order_submission"), True)
+    _nested_set(sessions, ("session_modes", "pre_market", "position_size_multiplier"), 1.0)
+    _nested_set(sessions, ("session_modes", "after_hours", "position_size_multiplier"), 1.0)
+    _nested_set(sessions, ("session_modes", "overnight_24_5", "evaluation_only"), False)
+    _nested_set(sessions, ("session_modes", "overnight_24_5", "require_overnight_tradable"), False)
+    _nested_set(sessions, ("session_modes", "overnight_24_5", "require_not_overnight_halted"), False)
+    _nested_set(sessions, ("session_modes", "overnight_24_5", "position_size_multiplier"), 1.0)
+    _nested_set(sessions, ("session_modes", "overnight_24_5", "max_new_orders_per_cycle"), 100)
+    _nested_set(sessions, ("session_modes", "weekend_closed", "allow_order_submission"), False)
+    _write_yaml(sessions_path, sessions)
+
+    return {"status": "ok", "paper_override": paper_override_state(base)}
 
 
 def set_gate_control(control_id: str, enabled: bool, *, root: Path | str | None = None) -> dict[str, Any]:

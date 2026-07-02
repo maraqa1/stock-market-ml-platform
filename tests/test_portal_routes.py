@@ -137,6 +137,7 @@ def test_trading_page_exposes_paper_gate_controls(client):
     response = client.get("/trading")
     assert response.status_code == 200
     assert b"Paper Gate Controls" in response.data
+    assert b"Allow All Paper Trades" in response.data
     assert b"Paper broker submission" in response.data
     assert b"Validation caps" in response.data
     assert b"Short execution" in response.data
@@ -156,6 +157,29 @@ def test_gate_control_route_updates_autopilot_config(client):
     )
     assert json_response.status_code == 200
     assert json_response.get_json()["enabled"] is True
+
+
+def test_allow_all_paper_override_updates_controls_without_live_trading(client):
+    response = client.post("/trading/gate-controls/override/allow-all-paper", headers={"Accept": "application/json"})
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["paper_override"]["active"] is True
+
+    root = Path("_tmp_portal_routes")
+    autopilot = yaml.safe_load((root / "config" / "autopilot.yaml").read_text())
+    trading = yaml.safe_load((root / "config" / "trading.yaml").read_text())
+    sessions = yaml.safe_load((root / "config" / "session_modes.yaml").read_text())
+    env_text = (root / ".env").read_text()
+
+    assert "STOCKML_ALPACA_SUBMIT_ORDERS=true" in env_text
+    assert "STOCKML_LIVE_TRADING_ENABLED=false" in env_text
+    assert autopilot["autopilot"]["validation_mode"] is False
+    assert autopilot["autopilot"]["max_auto_opens_per_day"] == 100
+    assert autopilot["anti_churn"]["enabled"] is False
+    assert trading["trading"]["live_trading_enabled"] is False
+    assert trading["short_side_policy"]["allow_shorts_in_validation"] is True
+    assert sessions["session_modes"]["overnight_24_5"]["allow_order_submission"] is True
+    assert sessions["session_modes"]["overnight_24_5"]["require_overnight_tradable"] is False
 
 
 def test_ase_mobile_page_renders_market_sections(client):

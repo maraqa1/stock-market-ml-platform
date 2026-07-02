@@ -7,6 +7,18 @@
     <p class="zone__description">
       Shows the current paper-trading blockers and the controls that can enable or disable each configurable gate. Turning a gate off can allow more paper orders through, but model scoring and live-trading policy are not changed here.
     </p>
+    <div class="autopilot-panel__actions">
+      <div>
+        <span class="label">Paper override</span>
+        <strong>{{ paper_override.label }}</strong>
+        <div class="text-secondary">{{ paper_override.description }}</div>
+      </div>
+      <form method="post" action="/trading/gate-controls/override/allow-all-paper">
+        <button class="btn btn-danger" type="submit" data-confirm="Enable Paper Override: Allow All Trades? This removes StockML paper caps and configurable paper gates, but live trading remains disabled and broker/API validity still applies.">
+          Allow All Paper Trades
+        </button>
+      </form>
+    </div>
     <div class="table-scroll">
       <table class="data dense">
         <thead>
