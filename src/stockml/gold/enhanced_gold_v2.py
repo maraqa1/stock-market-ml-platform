@@ -61,6 +61,15 @@ DECISION_COLUMNS = [
     "trade_decision",
     "decision_reason",
     "risk_warning",
+    "ticker_direction_memory_scope",
+    "ticker_direction_memory_status",
+    "ticker_direction_sample_count",
+    "ticker_long_win_rate_5d",
+    "ticker_short_win_rate_5d",
+    "ticker_avg_long_alpha_bps_5d",
+    "ticker_avg_short_alpha_bps_5d",
+    "ticker_direction_bias_gold",
+    "ticker_direction_reason_gold",
 ]
 
 
@@ -90,6 +99,17 @@ FEATURE_FAMILIES = {
         "trade_decision",
         "decision_reason",
         "risk_warning",
+    },
+    "direction_memory": {
+        "ticker_direction_memory_scope",
+        "ticker_direction_memory_status",
+        "ticker_direction_sample_count",
+        "ticker_long_win_rate_5d",
+        "ticker_short_win_rate_5d",
+        "ticker_avg_long_alpha_bps_5d",
+        "ticker_avg_short_alpha_bps_5d",
+        "ticker_direction_bias_gold",
+        "ticker_direction_reason_gold",
     },
 }
 
@@ -179,7 +199,7 @@ def _pct_rank(frame: pd.DataFrame, column: str) -> pd.Series:
     return frame.groupby("date")[column].rank(pct=True)
 
 
-def _ensure_enhanced_columns(frame: pd.DataFrame) -> pd.DataFrame:
+def _ensure_enhanced_columns(frame: pd.DataFrame, *, direction_state: dict[str, dict[str, float]] | None = None) -> pd.DataFrame:
     out = frame.copy()
     out["date"] = pd.to_datetime(out["date"], errors="coerce")
     out["ticker"] = out["ticker"].astype(str).str.upper().str.strip()
@@ -221,9 +241,84 @@ def _ensure_enhanced_columns(frame: pd.DataFrame) -> pd.DataFrame:
         }
     ).fillna("risk_or_quality_filter")
     out["risk_warning"] = ""
+    out = _add_gold_direction_memory(out, state=direction_state)
     for column in DECISION_COLUMNS:
         if column not in out.columns:
             out[column] = pd.NA
+    return out
+
+
+def _add_gold_direction_memory(
+    frame: pd.DataFrame,
+    *,
+    min_samples: int = 20,
+    state: dict[str, dict[str, float]] | None = None,
+) -> pd.DataFrame:
+    """Add ticker-level direction evidence from prior Gold labels only.
+
+    The current row's forward label is shifted out of the expanding window, so
+    these fields are historical evidence, not current-row leakage.
+    """
+    out = frame.sort_values(["date", "ticker"], kind="mergesort").copy()
+    alpha = pd.to_numeric(out.get("forward_5d_alpha_vs_sector"), errors="coerce")
+    alpha_bps = alpha * 10_000.0
+    if state is not None:
+        out["ticker_direction_sample_count"] = 0
+        out["ticker_avg_long_alpha_bps_5d"] = pd.NA
+        out["ticker_avg_short_alpha_bps_5d"] = pd.NA
+        out["ticker_long_win_rate_5d"] = pd.NA
+        out["ticker_short_win_rate_5d"] = pd.NA
+        for idx, row in out.iterrows():
+            ticker = str(row.get("ticker") or "").upper()
+            stats = state.setdefault(ticker, {"count": 0.0, "sum_bps": 0.0, "long_wins": 0.0, "short_wins": 0.0})
+            count = int(stats["count"])
+            out.at[idx, "ticker_direction_sample_count"] = count
+            if count > 0:
+                avg_long = stats["sum_bps"] / count
+                out.at[idx, "ticker_avg_long_alpha_bps_5d"] = avg_long
+                out.at[idx, "ticker_avg_short_alpha_bps_5d"] = -avg_long
+                out.at[idx, "ticker_long_win_rate_5d"] = stats["long_wins"] / count
+                out.at[idx, "ticker_short_win_rate_5d"] = stats["short_wins"] / count
+            value = alpha_bps.loc[idx] if idx in alpha_bps.index else pd.NA
+            if pd.notna(value):
+                stats["count"] += 1.0
+                stats["sum_bps"] += float(value)
+                stats["long_wins"] += 1.0 if float(value) > 0 else 0.0
+                stats["short_wins"] += 1.0 if float(value) < 0 else 0.0
+        return _finalize_gold_direction_memory(out, min_samples=min_samples).sort_index()
+
+    valid = alpha_bps.notna()
+    long_win = alpha_bps.gt(0).where(valid)
+    short_win = alpha_bps.lt(0).where(valid)
+
+    group = out["ticker"]
+    out["ticker_direction_sample_count"] = (
+        valid.astype(int).groupby(group).cumsum().groupby(group).shift(1).fillna(0).astype(int)
+    )
+    out["ticker_avg_long_alpha_bps_5d"] = alpha_bps.groupby(group).transform(lambda series: series.expanding().mean().shift(1))
+    out["ticker_avg_short_alpha_bps_5d"] = -out["ticker_avg_long_alpha_bps_5d"]
+    out["ticker_long_win_rate_5d"] = long_win.astype("float").groupby(group).transform(lambda series: series.expanding().mean().shift(1))
+    out["ticker_short_win_rate_5d"] = short_win.astype("float").groupby(group).transform(lambda series: series.expanding().mean().shift(1))
+    out = _finalize_gold_direction_memory(out, min_samples=min_samples)
+    return out.sort_index()
+
+
+def _finalize_gold_direction_memory(frame: pd.DataFrame, *, min_samples: int) -> pd.DataFrame:
+    out = frame.copy()
+    out["ticker_direction_memory_scope"] = "ticker"
+    out["ticker_direction_memory_status"] = "insufficient_samples"
+    enough = out["ticker_direction_sample_count"].ge(min_samples)
+    out.loc[enough, "ticker_direction_memory_status"] = "available"
+    long_edge = pd.to_numeric(out["ticker_avg_long_alpha_bps_5d"], errors="coerce")
+    short_edge = pd.to_numeric(out["ticker_avg_short_alpha_bps_5d"], errors="coerce")
+    out["ticker_direction_bias_gold"] = "insufficient_data"
+    out.loc[enough & long_edge.gt(25) & long_edge.gt(short_edge), "ticker_direction_bias_gold"] = "trust_long"
+    out.loc[enough & short_edge.gt(25) & short_edge.gt(long_edge), "ticker_direction_bias_gold"] = "trust_short"
+    out.loc[enough & long_edge.le(0) & short_edge.le(0), "ticker_direction_bias_gold"] = "no_trade"
+    out["ticker_direction_reason_gold"] = "insufficient_historical_gold_samples"
+    out.loc[out["ticker_direction_bias_gold"].eq("trust_long"), "ticker_direction_reason_gold"] = "historical_ticker_long_alpha_positive"
+    out.loc[out["ticker_direction_bias_gold"].eq("trust_short"), "ticker_direction_reason_gold"] = "historical_ticker_short_alpha_positive"
+    out.loc[out["ticker_direction_bias_gold"].eq("no_trade"), "ticker_direction_reason_gold"] = "historical_ticker_alpha_not_positive"
     return out
 
 
@@ -375,9 +470,10 @@ def build_enhanced_gold_v2(
     latest_date = pd.NaT
     latest_candidates = pd.DataFrame()
     wrote_header = False
+    direction_state: dict[str, dict[str, float]] = {}
 
     for chunk in _iter_complete_date_chunks(source, chunk_size=chunk_size):
-        enhanced = _ensure_enhanced_columns(chunk)
+        enhanced = _ensure_enhanced_columns(chunk, direction_state=direction_state)
         enhanced.to_csv(decision_path, mode="a", header=not wrote_header, index=False)
         wrote_header = True
         stats.update(enhanced)
