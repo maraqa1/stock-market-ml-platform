@@ -96,8 +96,8 @@ def evaluate_short_side_performance(
         )
 
     side = _side_series(frame)
-    pnl = _num_series(frame, ["realised_pnl", "realized_pnl", "pnl", "realized_pl", "realised_pl"])
-    returns = _num_series(frame, ["net_return_bps", "return_bps", "net_bps", "realized_return_bps"])
+    pnl = _num_series(frame, ["realised_pnl", "realized_pnl", "realized_pnl_usd", "realised_pnl_usd", "pnl", "realized_pl", "realised_pl"])
+    returns = _num_series(frame, ["net_return_bps", "return_bps", "net_bps", "realized_return_bps", "realized_net_bps", "realised_net_bps"])
     shorts = frame[side.eq("short")].copy()
     short_pnl = pnl.loc[shorts.index] if not shorts.empty else pd.Series(dtype="float64")
     short_returns = returns.loc[shorts.index] if not shorts.empty else pd.Series(dtype="float64")

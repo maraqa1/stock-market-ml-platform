@@ -16,8 +16,8 @@ def test_short_side_guard_disables_when_short_samples_below_threshold():
 def test_short_side_guard_disables_when_short_pnl_negative():
     frame = pd.DataFrame(
         [
-            {"symbol": "AAA", "side": "short", "realised_pnl": -10, "net_return_bps": -20},
-            {"symbol": "BBB", "side": "short", "realised_pnl": 2, "net_return_bps": 5},
+            {"symbol": "AAA", "side": "short", "realized_pnl_usd": -10, "realized_net_bps": -20},
+            {"symbol": "BBB", "side": "short", "realized_pnl_usd": 2, "realized_net_bps": 5},
         ]
     )
     out = evaluate_short_side_performance(frame, policy=ShortSidePolicy(min_closed_short_trades_for_enablement=1))
