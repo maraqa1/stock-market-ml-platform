@@ -5,6 +5,31 @@ from pathlib import Path
 from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_side_policy, short_side_block_reason
 
 
+def _alpaca_config(**overrides):
+    from stockml.trading.config import AlpacaConfig
+
+    values = {
+        "api_key": "",
+        "secret_key": "",
+        "base_url": "https://paper-api.alpaca.markets",
+        "submit_orders": False,
+        "extended_hours": False,
+        "max_orders": 2,
+        "max_notional_per_order": 500.0,
+        "max_total_notional": 1000.0,
+        "min_trade_price": 5.0,
+        "max_sector_fraction": 1.0,
+        "min_side_probability": 0.55,
+        "min_abs_probability_edge": 0.05,
+        "min_intraday_volume": 100000,
+        "min_market_cap": 300000000.0,
+        "min_risk_adjusted_score": 0.001,
+        "transaction_cost_bps": 10.0,
+    }
+    values.update(overrides)
+    return AlpacaConfig(**values)
+
+
 def test_short_policy_blocks_short_by_default():
     assert short_side_block_reason({"side": "sell"}, ShortSidePolicy()) == "short_side_validation_required"
 
@@ -48,7 +73,6 @@ def test_short_policy_loads_config(tmp_path: Path):
 def test_short_policy_blocks_basket_order_submission_when_disabled():
     import pandas as pd
 
-    from stockml.trading.config import AlpacaConfig
     from stockml.trading.order_planner import build_order_plan
 
     signals = pd.DataFrame(
@@ -67,7 +91,7 @@ def test_short_policy_blocks_basket_order_submission_when_disabled():
             }
         ]
     )
-    plan = build_order_plan(signals, AlpacaConfig(allow_short_selling=True, max_orders=1))
+    plan = build_order_plan(signals, _alpaca_config(allow_short_selling=True, max_orders=1))
     assert not plan.empty
     assert plan.iloc[0]["side"] == "sell"
     assert plan.iloc[0]["trade_quality_status"] == "rejected"
