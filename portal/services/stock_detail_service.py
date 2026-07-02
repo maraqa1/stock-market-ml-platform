@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from portal.services.database_reader import latest_gold_for_ticker, model_artifacts, price_history_for_ticker
-from portal.services.latest_file_reader import file_status, latest_file, readable_reason, safe_read_csv
+from portal.services.latest_file_reader import file_status, latest_file, latest_row_by_value, readable_reason, safe_read_csv
 
 
 def stock_detail_context(ticker: str, root: Optional[Path] = None) -> dict:
@@ -17,12 +17,7 @@ def stock_detail_context(ticker: str, root: Optional[Path] = None) -> dict:
     using_db = root is None and (bool(latest) or not db_signals.empty)
 
     if not latest:
-        gold = safe_read_csv(gold_file)
-        if not gold.empty and "ticker" in gold.columns:
-            rows = gold[gold["ticker"].astype(str).str.upper().eq(clean)].copy()
-            if not rows.empty:
-                rows = rows.sort_values("date")
-                latest = rows.iloc[-1].to_dict()
+        latest = latest_row_by_value(gold_file, "ticker", clean)
 
     signals = db_signals if not db_signals.empty else safe_read_csv(signal_file)
     if not signals.empty and "ticker" in signals.columns:

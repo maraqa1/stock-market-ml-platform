@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 from sqlalchemy import func, select
 
-from portal.services.latest_file_reader import count_rows, latest_file, readable_reason, safe_read_csv
+from portal.services.latest_file_reader import count_rows_fast, latest_file, readable_reason, safe_read_csv
 from portal.services.trading_service import _position_summary, _status_counts
 from stockml.db.connection import get_engine
 from stockml.db.schema import PIPELINE_STAGE_NAMES, intraday_candidate_snapshots, intraday_promotion_log, pipeline_runs, pipeline_stages, position_events, rotation_recommendation_log
@@ -292,7 +292,7 @@ def _artifact_stage(root: Path, stage_name: str, key: str, pattern: str, detail:
         "status": "success",
         "started_at": None,
         "completed_at": timestamp,
-        "output_count": count_rows(path),
+        "output_count": count_rows_fast(path),
         "output_metadata": {"artifact": path.name, "detail": detail},
         "error": "",
         "detail": detail,
@@ -316,7 +316,7 @@ def _artifact_stage_for_path(stage_name: str, path: Path | None, detail: str) ->
         "status": "success",
         "started_at": None,
         "completed_at": timestamp,
-        "output_count": count_rows(path),
+        "output_count": count_rows_fast(path),
         "output_metadata": {"artifact": path.name, "detail": detail, "artifact_stamp": _stamp_from_artifact(path)},
         "error": "",
         "detail": detail,

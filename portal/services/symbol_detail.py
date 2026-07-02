@@ -103,7 +103,6 @@ def _db_rows(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
 def _security_from_artifacts(root: Path, symbol: str) -> dict[str, Any]:
     for key, pattern, column in [
         ("portal_outputs", "08_alpaca_paper_candidate_pool_*.csv", "symbol"),
-        ("gold", "06_us_gold_ml_dataset_*.csv", "ticker"),
         ("model_outputs", "advanced_model_signal_table_*.csv", "ticker"),
         ("portal_outputs", "08_alpaca_paper_order_plan_*.csv", "symbol"),
         ("portal_outputs", "08_alpaca_paper_positions_*.csv", "symbol"),
@@ -269,8 +268,6 @@ def _latest_price(root: Path, symbol: str) -> dict[str, Any]:
     for key, pattern, column in [
         ("portal_outputs", "08_alpaca_paper_positions_*.csv", "symbol"),
         ("portal_outputs", "08_alpaca_paper_candidate_pool_*.csv", "symbol"),
-        ("gold", "06_us_gold_ml_dataset_*.csv", "ticker"),
-        ("raw", "03_us_price_history_store*.csv", "ticker"),
     ]:
         frame = safe_read_csv(latest_file(root, key, pattern), nrows=5000)
         if frame.empty or column not in frame.columns:

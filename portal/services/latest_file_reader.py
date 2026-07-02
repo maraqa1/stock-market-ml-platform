@@ -74,12 +74,60 @@ def safe_read_csv(path: Optional[Path], nrows: Optional[int] = None, **kwargs) -
         return pd.DataFrame()
 
 
+def latest_row_by_value(
+    path: Optional[Path],
+    column: str,
+    value: str,
+    *,
+    chunksize: int = 100_000,
+    usecols=None,
+) -> dict:
+    if path is None or not path.exists():
+        return {}
+    target = str(value or "").strip().upper()
+    if not target:
+        return {}
+    try:
+        for chunk in pd.read_csv(path, chunksize=chunksize, low_memory=False, usecols=usecols):
+            if column not in chunk.columns:
+                return {}
+            rows = chunk[chunk[column].fillna("").astype(str).str.upper().eq(target)]
+            if not rows.empty:
+                latest = rows.tail(1)
+        return latest.iloc[-1].to_dict() if "latest" in locals() else {}
+    except Exception:
+        return {}
+
+
 def count_rows(path: Optional[Path]) -> int:
     if path is None or not path.exists():
         return 0
     try:
         with path.open("r", encoding="utf-8", errors="ignore") as handle:
             return max(0, sum(1 for _ in handle) - 1)
+    except Exception:
+        return 0
+
+
+def count_rows_fast(path: Optional[Path], *, exact_max_bytes: int = 50_000_000, sample_lines: int = 1000) -> int:
+    if path is None or not path.exists():
+        return 0
+    try:
+        size = path.stat().st_size
+        if size <= exact_max_bytes:
+            return count_rows(path)
+        with path.open("rb") as handle:
+            header = handle.readline()
+            rows = []
+            for _ in range(sample_lines):
+                line = handle.readline()
+                if not line:
+                    break
+                rows.append(line)
+        if not rows:
+            return 0
+        avg_row_bytes = sum(len(line) for line in rows) / len(rows)
+        return max(0, int((size - len(header)) / avg_row_bytes))
     except Exception:
         return 0
 
