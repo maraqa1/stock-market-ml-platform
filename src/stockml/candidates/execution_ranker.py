@@ -8,6 +8,7 @@ import pandas as pd
 from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_side_policy, short_side_block_reason
 from stockml.common.paths import PROJECT_ROOT, timestamp
 from stockml.trading.direction_gate import evaluate_direction_gate
+from stockml.trading.ticker_direction_memory import load_ticker_direction_memory_config
 
 
 OUTPUT_COLUMNS = [
@@ -40,6 +41,12 @@ OUTPUT_COLUMNS = [
     "ticker_direction_sample_count",
     "ticker_inverse_advantage_bps",
     "ticker_direction_reason",
+    "expected_return_scope",
+    "hit_rate_scope",
+    "profit_factor_scope",
+    "ticker_direction_memory_status",
+    "inverse_warning_status",
+    "inverse_warning_actionable",
 ]
 SAFE_EMPTY_REASONS = {"", "nan", "none", "null"}
 
@@ -150,6 +157,44 @@ def _status(row: pd.Series, reasons: list[str], *, research_only: bool) -> str:
     return "blocked"
 
 
+def _metric_scope(row: pd.Series, column: str) -> str:
+    explicit = _text(row.get(f"{column}_scope"))
+    return explicit or "unknown"
+
+
+def _ticker_memory_status(row: pd.Series, min_samples: int) -> str:
+    sample_count = int(_num(row.get("ticker_direction_sample_count")) or 0)
+    bias = _text(row.get("ticker_direction_bias")).lower()
+    reason = _text(row.get("ticker_direction_reason")).lower()
+    if sample_count < min_samples:
+        if sample_count > 0 or bias or reason:
+            return "insufficient_samples"
+        return "missing"
+    if bias in {"inverse_watch", "trust_original", "no_trade"}:
+        return bias
+    return "available"
+
+
+def _infer_metric_scope(frame: pd.DataFrame, metric_column: str, output_column: str) -> pd.DataFrame:
+    if metric_column not in frame.columns or frame.empty:
+        frame[output_column] = "unknown"
+        return frame
+    values = pd.to_numeric(frame[metric_column], errors="coerce")
+    scope = pd.Series("unknown", index=frame.index, dtype="object")
+    rounded = values.round(8)
+    if rounded.nunique(dropna=True) == 1 and values.notna().any():
+        scope.loc[values.notna()] = "global"
+    if "side" in frame.columns:
+        for _, indexes in frame.groupby(frame["side"].fillna("").astype(str).str.lower(), dropna=False).groups.items():
+            side_values = rounded.loc[indexes].dropna()
+            if len(side_values) > 1 and side_values.nunique(dropna=True) == 1:
+                scope.loc[list(indexes)] = "side"
+    frame[output_column] = frame.get(output_column, scope)
+    current = frame[output_column].fillna("").astype(str).str.lower()
+    frame.loc[current.isin(["", "nan", "none", "null", "unknown"]), output_column] = scope.loc[current.isin(["", "nan", "none", "null", "unknown"])]
+    return frame
+
+
 def build_execution_ranked_candidates(
     candidates: pd.DataFrame,
     *,
@@ -158,6 +203,8 @@ def build_execution_ranked_candidates(
     if candidates is None or candidates.empty:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
     policy = short_policy or load_short_side_policy()
+    memory_cfg = load_ticker_direction_memory_config()
+    min_ticker_samples = int(memory_cfg.min_ticker_samples or 20)
     frame = candidates.copy()
     frame["raw_rank"] = _raw_rank(frame)
     frame["model_rank"] = _model_rank(frame)
@@ -178,6 +225,12 @@ def build_execution_ranked_candidates(
             direction_row["short_policy_status"] = direction_row.get("short_policy_status") or "enabled"
             direction_row["short_side_validation_status"] = direction_row.get("short_side_validation_status") or "pass"
         direction = evaluate_direction_gate(direction_row)
+        sample_count = int(_num(row.get("ticker_direction_sample_count")) or 0)
+        inverse_warning = bool(direction.get("direction_inverse_warning")) or _num(row.get("ticker_inverse_advantage_bps")) not in [None, 0]
+        inverse_actionable = bool(inverse_warning and sample_count >= min_ticker_samples)
+        inverse_status = "none"
+        if inverse_warning:
+            inverse_status = "present_sufficient_samples" if inverse_actionable else "present_insufficient_samples"
         if not bool(direction.get("direction_gate_pass")):
             _append_reason(reasons, str(direction.get("direction_primary_reason") or "direction_gate_failed"))
             if direction.get("direction_decision") == "direction_research_only":
@@ -218,9 +271,18 @@ def build_execution_ranked_candidates(
                 "ticker_direction_sample_count": row.get("ticker_direction_sample_count", ""),
                 "ticker_inverse_advantage_bps": row.get("ticker_inverse_advantage_bps", ""),
                 "ticker_direction_reason": row.get("ticker_direction_reason", ""),
+                "expected_return_scope": _metric_scope(row, "expected_return"),
+                "hit_rate_scope": _metric_scope(row, "hit_rate"),
+                "profit_factor_scope": _metric_scope(row, "profit_factor"),
+                "ticker_direction_memory_status": _ticker_memory_status(row, min_ticker_samples),
+                "inverse_warning_status": inverse_status,
+                "inverse_warning_actionable": inverse_actionable,
             }
         )
     out = pd.DataFrame(rows)
+    out = _infer_metric_scope(out, "validated_expected_return_bps", "expected_return_scope")
+    out = _infer_metric_scope(out, "validated_hit_rate", "hit_rate_scope")
+    out = _infer_metric_scope(out, "validated_profit_factor", "profit_factor_scope")
     executable_idx = (
         out[out["executable"].eq(True)]
         .sort_values(["raw_rank", "symbol"], ascending=[True, True], kind="mergesort")
