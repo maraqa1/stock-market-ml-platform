@@ -1224,7 +1224,10 @@ def tick(
                 execution_ranked_candidates = execution_ranked_candidate_loader()
             else:
                 execution_ranked_candidates = execution_ranked_auto_open_candidates(root=root)
-            candidates = _dedupe_auto_open_candidates(execution_ranked_candidates, strong_candidates, ranked_candidates, plan_candidates)
+            if execution_ranked_candidates:
+                candidates = _dedupe_auto_open_candidates(execution_ranked_candidates)
+            else:
+                candidates = _dedupe_auto_open_candidates(strong_candidates, ranked_candidates, plan_candidates)
             if not candidates and open_positions == 0:
                 candidates = fallback_candidate_loader()
             if auto_open_applier is not None:

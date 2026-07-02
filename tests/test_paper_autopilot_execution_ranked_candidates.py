@@ -141,6 +141,33 @@ def test_paper_autopilot_tick_prioritizes_execution_ranked_candidate(monkeypatch
     assert state["phase"] == "waiting_for_fills"
 
 
+def test_paper_autopilot_uses_execution_ranked_candidates_as_authoritative_source(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = _csv(tmp_path / "tracking.csv", [{"symbol": "OLD", "alpaca_status": "filled"}])
+    positions = _csv(tmp_path / "positions.csv", [])
+    calls: list[list[str]] = []
+
+    def open_applier(candidates, open_positions, mode):
+        calls.append([row["symbol"] for row in candidates])
+        return {"autopilot_open_attempted": len(candidates), "autopilot_open_submitted": 0, "autopilot_open_blocked": 0, "autopilot_open_notes": "checked"}
+
+    paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [{"symbol": "RAW1"}],
+        per_symbol_forecast_candidate_loader=lambda: [{"symbol": "FORECAST"}],
+        near_miss_candidate_loader=lambda: [{"symbol": "NEAR"}],
+        plan_candidate_loader=lambda: [{"symbol": "PLAN"}],
+        execution_ranked_candidate_loader=lambda: [{"symbol": "BNY", "execution_rank": 1}],
+        auto_open_applier=open_applier,
+    )
+
+    assert calls == [["BNY"]]
+
+
 def test_runtime_gate_failure_scans_next_candidate_through_auto_open_applier(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)
