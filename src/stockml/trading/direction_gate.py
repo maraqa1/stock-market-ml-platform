@@ -8,6 +8,11 @@ import pandas as pd
 import yaml
 
 from stockml.common.paths import PROJECT_ROOT
+from stockml.trading.ticker_direction_memory import (
+    BIAS_INVERSE_WATCH,
+    BIAS_NO_TRADE,
+    BIAS_TRUST_ORIGINAL,
+)
 
 
 PASS = "direction_pass"
@@ -222,6 +227,10 @@ def evaluate_direction_gate(
     inverse_flag = _bool(row.get("inverse_watch_flag", False) if hasattr(row, "get") else False, False)
     inverse_return = _num(row.get("inverse_return_bps", None) if hasattr(row, "get") else None)
     intraday_state = _clean_action(row.get("intraday_momentum_state", "") if hasattr(row, "get") else "")
+    ticker_bias = _text(row.get("ticker_direction_bias", "") if hasattr(row, "get") else "").strip().lower()
+    ticker_confidence = _num(row.get("ticker_direction_confidence", None) if hasattr(row, "get") else None)
+    ticker_samples = _num(row.get("ticker_direction_sample_count", None) if hasattr(row, "get") else None)
+    ticker_reason = _clean_action(row.get("ticker_direction_reason", "") if hasattr(row, "get") else "")
 
     if cfg.require_source_trade_action and not source:
         return _result(decision=MANUAL_REVIEW, reason="missing_source_trade_action", blocking=["missing_source_trade_action"], source="missing", quality="missing")
@@ -258,6 +267,26 @@ def evaluate_direction_gate(
             source="inverse_diagnostics",
             quality="inverse_warning",
             inverse_warning=True,
+        )
+
+    if ticker_bias == BIAS_INVERSE_WATCH:
+        return _result(
+            decision=INVERSE_WATCH,
+            reason=ticker_reason or "ticker_direction_memory_prefers_inverse",
+            blocking=["ticker_direction_memory_prefers_inverse"],
+            confidence=ticker_confidence or 0.0,
+            source="ticker_direction_memory",
+            quality="inverse_warning",
+            inverse_warning=True,
+        )
+    if ticker_bias == BIAS_NO_TRADE:
+        return _result(
+            decision=BLOCK,
+            reason=ticker_reason or "ticker_direction_memory_blocks_ticker",
+            blocking=["ticker_direction_memory_blocks_ticker"],
+            confidence=ticker_confidence or 0.0,
+            source="ticker_direction_memory",
+            quality="blocked",
         )
 
     if validated_bps is None:
@@ -302,12 +331,22 @@ def evaluate_direction_gate(
     if hit_rate is not None:
         confidence += max(0.0, min(0.2, hit_rate - 0.45))
     confidence += min(0.2, max(0.0, (profit_factor - 1.0) / 5.0))
+    source_name = "source_trade_action"
+    quality_name = "trusted"
+    if ticker_bias == BIAS_TRUST_ORIGINAL:
+        supporting.append("ticker_direction_memory_supports_original")
+        source_name = "source_trade_action+ticker_direction_memory"
+        quality_name = "ticker_supported"
+        if ticker_confidence is not None:
+            confidence = max(confidence, min(0.95, ticker_confidence))
+    if ticker_samples is not None and ticker_samples <= 0:
+        supporting.append("ticker_direction_memory_missing")
     return _result(
         decision=PASS,
         reason="direction_supported",
         supporting=supporting,
         blocking=[],
         confidence=min(confidence, 0.95),
-        source="source_trade_action",
-        quality="trusted",
+        source=source_name,
+        quality=quality_name,
     )

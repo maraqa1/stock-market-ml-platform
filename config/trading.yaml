@@ -22,6 +22,12 @@ direction_gate:
   block_negative_expected_return: true
   inverse_warning_blocks_execution: true
   shorts_require_short_policy_pass: true
+ticker_direction_memory:
+  enabled: true
+  min_ticker_samples: 5
+  min_inverse_advantage_bps: 25
+  min_confidence: 0.60
+  no_trade_loss_bps: -50
 short_direction_gate:
   enabled: true
   min_short_win_rate: 0.45

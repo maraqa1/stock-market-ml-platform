@@ -35,6 +35,11 @@ OUTPUT_COLUMNS = [
     "direction_primary_reason",
     "direction_blocking_reasons",
     "direction_supporting_reasons",
+    "ticker_direction_bias",
+    "ticker_direction_confidence",
+    "ticker_direction_sample_count",
+    "ticker_inverse_advantage_bps",
+    "ticker_direction_reason",
 ]
 SAFE_EMPTY_REASONS = {"", "nan", "none", "null"}
 
@@ -208,6 +213,11 @@ def build_execution_ranked_candidates(
                 "direction_primary_reason": direction.get("direction_primary_reason", ""),
                 "direction_blocking_reasons": direction.get("direction_blocking_reasons", ""),
                 "direction_supporting_reasons": direction.get("direction_supporting_reasons", ""),
+                "ticker_direction_bias": row.get("ticker_direction_bias", ""),
+                "ticker_direction_confidence": row.get("ticker_direction_confidence", ""),
+                "ticker_direction_sample_count": row.get("ticker_direction_sample_count", ""),
+                "ticker_inverse_advantage_bps": row.get("ticker_inverse_advantage_bps", ""),
+                "ticker_direction_reason": row.get("ticker_direction_reason", ""),
             }
         )
     out = pd.DataFrame(rows)
