@@ -236,13 +236,17 @@ def evaluate_direction_gate(
         return _result(decision=MANUAL_REVIEW, reason="missing_source_trade_action", blocking=["missing_source_trade_action"], source="missing", quality="missing")
 
     if source in {"no decision", "no decision"} or source.replace(" ", "_") in {"no_decision"} or source in NO_DECISION:
-        if trade in SOURCE_LONG | SOURCE_SHORT:
+        if trade in SOURCE_LONG | SOURCE_SHORT and cfg.allow_planner_derived_no_decision_execution:
+            source = trade
+        elif trade in SOURCE_LONG | SOURCE_SHORT:
             reason = "planner_derived_action_without_source_approval"
+            return _result(decision=RESEARCH_ONLY, reason=reason, blocking=[reason, "source_trade_action_not_executable"], source="source_trade_action", quality="research_only")
         elif directional in SOURCE_LONG | SOURCE_SHORT:
             reason = "directional_action_research_only"
+            return _result(decision=RESEARCH_ONLY, reason=reason, blocking=[reason, "source_trade_action_not_executable"], source="source_trade_action", quality="research_only")
         else:
             reason = "source_trade_action_not_executable"
-        return _result(decision=RESEARCH_ONLY, reason=reason, blocking=[reason, "source_trade_action_not_executable"], source="source_trade_action", quality="research_only")
+            return _result(decision=RESEARCH_ONLY, reason=reason, blocking=[reason, "source_trade_action_not_executable"], source="source_trade_action", quality="research_only")
 
     source_side = "long" if source in SOURCE_LONG else ("short" if source in SOURCE_SHORT else "")
     trade_side = "long" if trade in SOURCE_LONG else ("short" if trade in SOURCE_SHORT else "")

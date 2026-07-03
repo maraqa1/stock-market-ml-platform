@@ -15,7 +15,7 @@ direction_gate:
   enabled: true
   require_source_trade_action: true
   allow_directional_action_execution: false
-  allow_planner_derived_no_decision_execution: false
+  allow_planner_derived_no_decision_execution: true
   require_positive_validated_expected_return: true
   min_validated_profit_factor: 1.05
   require_meta_label_acceptance: false
