@@ -117,6 +117,7 @@ def load_direction_gate_config(path: Path | str | None = None) -> DirectionGateC
         allow_directional_action_execution=_bool(data.get("allow_directional_action_execution"), False),
         allow_planner_derived_no_decision_execution=_bool(data.get("allow_planner_derived_no_decision_execution"), False),
         require_positive_validated_expected_return=_bool(data.get("require_positive_validated_expected_return"), True),
+        allow_missing_validated_return=_bool(data.get("allow_missing_validated_return"), False),
         min_validated_profit_factor=_float(data.get("min_validated_profit_factor"), 1.05),
         require_meta_label_acceptance=_bool(data.get("require_meta_label_acceptance"), False),
         block_negative_expected_return=_bool(data.get("block_negative_expected_return"), True),
