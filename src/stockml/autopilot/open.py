@@ -656,7 +656,7 @@ def latest_strong_candidates(*, engine: Engine | None = None, limit: int = 20) -
 
 
 
-def latest_flat_account_fallback_candidates(*, engine: Engine | None = None, config: AutoOpenConfig | None = None, limit: int = 5) -> list[dict[str, Any]]:
+def latest_flat_account_fallback_candidates(*, engine: Engine | None = None, config: AutoOpenConfig | None = None, root: Path | str | None = None, limit: int = 5) -> list[dict[str, Any]]:
     cfg = config or load_auto_open_config(root=root)
     if not cfg.flat_account_fallback_enabled:
         return []
