@@ -341,7 +341,8 @@ def evaluate_direction_gate(
     confidence = 0.55
     if hit_rate is not None:
         confidence += max(0.0, min(0.2, hit_rate - 0.45))
-    confidence += min(0.2, max(0.0, (profit_factor - 1.0) / 5.0))
+    if profit_factor is not None:
+        confidence += min(0.2, max(0.0, (profit_factor - 1.0) / 5.0))
     source_name = "source_trade_action"
     quality_name = "trusted"
     if ticker_bias == BIAS_TRUST_ORIGINAL:
