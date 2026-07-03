@@ -17,6 +17,7 @@ direction_gate:
   allow_directional_action_execution: false
   allow_planner_derived_no_decision_execution: true
   require_positive_validated_expected_return: true
+  allow_missing_validated_return: true
   min_validated_profit_factor: 1.05
   require_meta_label_acceptance: false
   block_negative_expected_return: true

@@ -34,6 +34,7 @@ class DirectionGateConfig:
     allow_directional_action_execution: bool = False
     allow_planner_derived_no_decision_execution: bool = False
     require_positive_validated_expected_return: bool = True
+    allow_missing_validated_return: bool = False
     min_validated_profit_factor: float = 1.05
     require_meta_label_acceptance: bool = False
     block_negative_expected_return: bool = True
@@ -297,17 +298,19 @@ def evaluate_direction_gate(
         )
 
     if validated_bps is None:
-        return _result(decision=INSUFFICIENT_DATA, reason="missing_validated_expected_return", blocking=["missing_validated_expected_return"], source="validated_expected_return_bps", quality="missing")
-    if cfg.require_positive_validated_expected_return and validated_bps <= 0:
+        if not cfg.allow_missing_validated_return:
+            return _result(decision=INSUFFICIENT_DATA, reason="missing_validated_expected_return", blocking=["missing_validated_expected_return"], source="validated_expected_return_bps", quality="missing")
+    if cfg.require_positive_validated_expected_return and validated_bps is not None and validated_bps <= 0:
         reasons = ["negative_validated_expected_return"]
         if proposed == "short":
             reasons.append("short_negative_edge")
         return _result(decision=BLOCK, reason="negative_validated_expected_return", blocking=reasons, source="validated_expected_return_bps", quality="blocked")
 
     if profit_factor is None:
-        return _result(decision=INSUFFICIENT_DATA, reason="missing_validated_profit_factor", blocking=["missing_validated_profit_factor"], source="validated_profit_factor", quality="missing")
+        if not cfg.allow_missing_validated_return:
+            return _result(decision=INSUFFICIENT_DATA, reason="missing_validated_profit_factor", blocking=["missing_validated_profit_factor"], source="validated_profit_factor", quality="missing")
     min_pf = short_cfg.min_short_profit_factor if proposed == "short" else cfg.min_validated_profit_factor
-    if profit_factor < min_pf:
+    if profit_factor is not None and profit_factor < min_pf:
         return _result(decision=BLOCK, reason="validated_profit_factor_below_one", blocking=["validated_profit_factor_below_one"], source="validated_profit_factor", quality="blocked")
 
     if quality and quality not in {"usable", "accepted", "calibrated", "weak allowed by config", "weak_allowed_by_config"}:
