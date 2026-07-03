@@ -233,7 +233,10 @@ def evaluate_direction_gate(
     ticker_reason = _clean_action(row.get("ticker_direction_reason", "") if hasattr(row, "get") else "")
 
     if cfg.require_source_trade_action and not source:
-        return _result(decision=MANUAL_REVIEW, reason="missing_source_trade_action", blocking=["missing_source_trade_action"], source="missing", quality="missing")
+        if trade in SOURCE_LONG | SOURCE_SHORT and cfg.allow_planner_derived_no_decision_execution:
+            source = trade  # fall through: treat missing source same as no-decision when flag allows it
+        else:
+            return _result(decision=MANUAL_REVIEW, reason="missing_source_trade_action", blocking=["missing_source_trade_action"], source="missing", quality="missing")
 
     if source in {"no decision", "no decision"} or source.replace(" ", "_") in {"no_decision"} or source in NO_DECISION:
         if trade in SOURCE_LONG | SOURCE_SHORT and cfg.allow_planner_derived_no_decision_execution:
