@@ -28,9 +28,9 @@ REQUIRED_GOLD_COLUMNS = {"date", "ticker", "target_return_5d", "target_trade_lab
 
 
 def latest_gold_file(gold_dir: Path = GOLD_DIR) -> Path:
-    path = latest_file(gold_dir, "06_us_gold_ml_dataset_*.csv")
+    path = latest_file(gold_dir, "gold_stock_decision_daily_*.csv") or latest_file(gold_dir, "06_us_gold_ml_dataset_*.csv")
     if path is None:
-        raise FileNotFoundError("No Gold dataset found. Run scripts/run_gold_pipeline.py first.")
+        raise FileNotFoundError("No Gold dataset found. Run the profile pipeline or scripts/run_gold_pipeline.py first.")
     return path
 
 

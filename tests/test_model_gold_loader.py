@@ -1,6 +1,6 @@
 import pandas as pd
 
-from stockml.models.gold_loader import build_model_matrix, load_gold_dataset, safe_feature_columns
+from stockml.models.gold_loader import build_model_matrix, latest_gold_file, load_gold_dataset, safe_feature_columns
 
 
 def test_safe_feature_columns_exclude_targets_and_outputs():
@@ -63,3 +63,12 @@ def test_load_gold_dataset_filters_shard_from_file(tmp_path):
     combined = sorted(set(shard_0["ticker"]) | set(shard_1["ticker"]))
     assert combined == ["AAA", "BBB", "CCC", "DDD"]
     assert set(shard_0["ticker"]).isdisjoint(set(shard_1["ticker"]))
+
+
+def test_latest_gold_file_prefers_v2_master_dataset(tmp_path):
+    legacy = tmp_path / "06_us_gold_ml_dataset_20240101_000000.csv"
+    v2 = tmp_path / "gold_stock_decision_daily_20240101_000000.csv"
+    legacy.write_text("date,ticker,target_return_5d,target_trade_label_5d\n", encoding="utf-8")
+    v2.write_text("date,ticker,target_return_5d,target_trade_label_5d\n", encoding="utf-8")
+
+    assert latest_gold_file(tmp_path) == v2

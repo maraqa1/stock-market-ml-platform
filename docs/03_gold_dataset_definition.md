@@ -1,6 +1,6 @@
 # Gold Dataset Definition
 
-The Gold dataset is the central model-ready panel for the stock intelligence platform.
+The Gold v2 decision daily dataset is the central model-ready panel for the stock intelligence platform.
 
 Grain: one row per ticker and trading date.
 
@@ -28,4 +28,13 @@ Supporting targets:
 
 All target columns are excluded from model features.
 
-Downstream model training and prediction must read the latest Gold dataset directly from `data/gold/06_us_gold_ml_dataset_*.csv`. The model layer must not train from raw, interim, feature-panel, sentiment, or portal output files.
+Downstream model training, prediction, candidate selection, and trading diagnostics must read the latest Gold v2 master dataset from `data/gold/gold_stock_decision_daily_*.csv`.
+
+The legacy `data/gold/06_us_gold_ml_dataset_*.csv` output is still written for backward compatibility and as the source used to build Gold v2. It must not be the default trading/model input when a matching Gold v2 decision daily file exists, because Gold v2 carries the ticker-level direction-memory fields required by the direction gate and candidate evidence diagnostics.
+
+The profile pipeline therefore writes both:
+
+- `06_us_gold_ml_dataset_*.csv`: compatibility/source artifact.
+- `gold_stock_decision_daily_*.csv`: master model and trading artifact.
+
+The model layer must not train from raw, interim, feature-panel, sentiment, or portal output files.

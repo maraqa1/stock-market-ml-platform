@@ -14,6 +14,7 @@ from stockml.common.exchange_scope import exchange_scope_label
 from stockml.db.loaders import load_latest_outputs
 from stockml.features.build_feature_panel import build_feature_panel
 from stockml.gold.build_gold_dataset import build_gold_dataset
+from stockml.gold.enhanced_gold_v2 import build_enhanced_gold_v2
 from stockml.metadata.build_metadata_enriched import build_metadata_enriched
 from stockml.models.build_model_outputs import build_model_outputs
 from stockml.pipeline.manifest import PipelineManifest
@@ -114,6 +115,22 @@ def _path_metadata(path: Path | str | None, detail: str) -> dict[str, Any]:
         return {"detail": detail}
     candidate = Path(path)
     return {"artifact": candidate.name, "path": str(candidate), "detail": detail}
+
+
+def _build_gold_v2_master(gold_paths: dict[str, Any], run_id: str) -> dict[str, Any]:
+    legacy_gold = gold_paths.get("gold_dataset")
+    if legacy_gold is None:
+        return gold_paths
+    outputs = build_enhanced_gold_v2(Path(legacy_gold), stamp=run_id)
+    return {
+        **gold_paths,
+        "gold_dataset_legacy": legacy_gold,
+        "gold_dataset": outputs.decision_daily,
+        "gold_v2_decision_daily": outputs.decision_daily,
+        "gold_v2_candidates_latest": outputs.candidates_latest,
+        "gold_v2_feature_catalog": outputs.feature_catalog,
+        "gold_v2_data_quality_report": outputs.data_quality_report,
+    }
 
 
 def _record_start(run_id: str, triggered_by: str) -> bool:
@@ -393,13 +410,14 @@ def run_profile(
                 skip_sentiment=bool(profile.get("skip_gold_sentiment", False)),
                 shard_rows=profile.get("gold_shard_rows"),
             )
+            gold_paths = _build_gold_v2_master(gold_paths, manifest.run_id)
             manifest.stage_ok("gold", gold_paths)
             _record_stage_complete(
                 recorder_enabled,
                 manifest.run_id,
                 "gold",
                 output_count=_count_rows(gold_paths.get("gold_dataset")),
-                metadata=_path_metadata(gold_paths.get("gold_dataset"), "gold dataset"),
+                metadata=_path_metadata(gold_paths.get("gold_dataset"), "gold v2 decision daily master dataset"),
             )
             recorder_stage = None
         else:
