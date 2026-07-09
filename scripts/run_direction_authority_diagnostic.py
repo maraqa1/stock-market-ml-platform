@@ -42,9 +42,10 @@ def main() -> int:
     prob = detail.get("probability_calibration_status", pd.Series("", index=detail.index)).fillna("").astype(str)
     executable = detail.get("executable", pd.Series(False, index=detail.index)).fillna(False).astype(bool)
     conflict = detail.get("direction_conflict", pd.Series(False, index=detail.index)).fillna(False).astype(bool)
+    status = detail.get("status", pd.Series("", index=detail.index)).fillna("").astype(str).str.lower()
 
     planner_only = source.eq("NONE") & planner.isin(["LONG", "SHORT"])
-    blank_reasons = primary.str.strip().isin(["", "nan", "None", "NA"])
+    blank_rejected_reasons = status.isin(["blocked", "research_only"]) & primary.str.strip().isin(["", "nan", "None", "NA"])
     lines = [
         "# Direction Authority Diagnostic",
         f"- source_path: `{source_path}`",
@@ -63,7 +64,7 @@ def main() -> int:
         f"- executable_count: {int(executable.sum())}",
         f"- blocked_by_direction_count: {int(primary.isin(['planner_derived_action_without_source_approval', 'direction_memory_conflict', 'direction_memory_insufficient', 'source_trade_action_not_executable']).sum())}",
         f"- blocked_by_short_validation_count: {int(primary.eq('short_side_validation_required').sum())}",
-        f"- rows_with_blank_primary_block_reason: {int(blank_reasons.sum())}",
+        f"- rejected_rows_with_blank_primary_block_reason: {int(blank_rejected_reasons.sum())}",
         f"- rows_with_uncalibrated_probability: {int(prob.eq('uncalibrated').sum())}",
         "\n## executable_direction_status",
         *_counts(detail, "executable_direction_status"),
