@@ -115,7 +115,7 @@ def source_no_decision_reason(row: pd.Series, *, min_direction_samples: int = 20
 
     reasons = _all_reasons(row)
     model_score = _num(row.get("model_score"))
-    rank_overall = _num(row.get("rank_overall")) or _num(row.get("raw_rank"))
+    rank_overall = _num(row.get("rank_overall"))
     directional_strength = _num(row.get("directional_strength"))
     confidence_score = _num(row.get("confidence_score"))
     meta_label_probability = _num(row.get("meta_label_probability"))
