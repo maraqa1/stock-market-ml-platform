@@ -282,7 +282,7 @@ def build_execution_ranked_candidates(
             inverse_status = "present_sufficient_samples" if inverse_actionable else "present_insufficient_samples"
         if not bool(direction.get("direction_gate_pass")):
             _append_reason(reasons, str(direction.get("direction_primary_reason") or "direction_gate_failed"))
-            if direction.get("direction_decision") == "direction_research_only":
+            if direction.get("direction_decision") == "direction_research_only" and authority.get("direction_resolution") != "blocked":
                 research_only = True
         reasons = _normalise_reasons(row, reasons)
         status = _status(row, reasons, research_only=research_only)
