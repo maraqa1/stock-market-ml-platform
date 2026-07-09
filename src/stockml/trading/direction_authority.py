@@ -9,6 +9,11 @@ import yaml
 
 from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_side_policy, short_side_block_reason
 from stockml.common.paths import PROJECT_ROOT
+from stockml.trading.source_approval_expansion import (
+    EXPANSION_FIELDS,
+    SourceApprovalExpansionConfig,
+    evaluate_source_approval_expansion,
+)
 
 
 LONG = "LONG"
@@ -34,6 +39,7 @@ AUTHORITY_COLUMNS = [
     "calibrated_probability_win",
     "probability_calibration_status",
     "probability_usable_for_sizing",
+    *EXPANSION_FIELDS,
 ]
 
 NON_EXECUTABLE_STATUSES = {
@@ -199,6 +205,10 @@ def _base_result(row: Any, source_direction: str, planner_direction: str, final_
         "calibrated_probability_win": calibrated_probability_win,
         "probability_calibration_status": probability_status,
         "probability_usable_for_sizing": probability_usable_for_sizing,
+        "source_expansion_candidate": False,
+        "source_expansion_decision": "not_applicable",
+        "source_expansion_reason": "already_source_approved" if source_direction != NONE else "",
+        "would_upgrade_to_source_long": False,
     }
 
 
@@ -207,6 +217,7 @@ def resolve_direction_authority(
     *,
     config: DirectionAuthorityConfig | None = None,
     short_policy: ShortSidePolicy | None = None,
+    source_expansion_config: SourceApprovalExpansionConfig | None = None,
 ) -> dict[str, Any]:
     cfg = config or load_direction_authority_config()
     source = _direction(row.get("source_trade_action", "") if hasattr(row, "get") else "")
@@ -217,6 +228,17 @@ def resolve_direction_authority(
     result = _base_result(row, source, planner, final_side, cfg)
 
     if source == NONE:
+        expansion = evaluate_source_approval_expansion(row, config=source_expansion_config)
+        result.update(expansion)
+        if expansion["source_expansion_decision"] == "watch_candidate":
+            result.update(
+                final_proposed_side=LONG,
+                executable_direction_status="planner_long_expansion_watch_only",
+                direction_alignment_status="planner_long_expansion",
+                direction_resolution="watch",
+                direction_resolution_reason=expansion["source_expansion_reason"],
+            )
+            return result
         result["final_proposed_side"] = NONE
         if planner != NONE:
             result.update(

@@ -9,6 +9,7 @@ from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_sid
 from stockml.common.paths import PROJECT_ROOT, timestamp
 from stockml.trading.direction_gate import evaluate_direction_gate
 from stockml.trading.direction_authority import AUTHORITY_COLUMNS, resolve_direction_authority
+from stockml.trading.source_approval_expansion import SourceApprovalExpansionConfig
 from stockml.trading.ticker_direction_memory import load_ticker_direction_memory_config
 
 
@@ -244,6 +245,8 @@ def _execution_domain(
     primary_reason: str,
 ) -> tuple[str, bool, str, str, bool, bool]:
     if not _has_source_direction(row):
+        if authority.get("source_expansion_decision") == "watch_candidate":
+            return WATCH_CANDIDATE, False, "watch", _text(authority.get("source_expansion_reason")) or "source_expansion_watch_only", False, True
         return SHADOW_OBSERVATION, False, "shadow", _shadow_reason(row, authority), False, False
     if executable:
         return EXECUTION_CANDIDATE, True, "authorized", "execution_ready", True, False
@@ -339,6 +342,7 @@ def build_execution_ranked_candidates(
     candidates: pd.DataFrame,
     *,
     short_policy: ShortSidePolicy | None = None,
+    source_expansion_config: SourceApprovalExpansionConfig | None = None,
 ) -> pd.DataFrame:
     if candidates is None or candidates.empty:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
@@ -362,7 +366,7 @@ def build_execution_ranked_candidates(
         research_only = False
         if short_reason:
             _append_reason(reasons, short_reason)
-        authority = resolve_direction_authority(row, short_policy=policy)
+        authority = resolve_direction_authority(row, short_policy=policy, source_expansion_config=source_expansion_config)
         authority_status = str(authority.get("executable_direction_status") or "")
         authority_reason = str(authority.get("direction_resolution_reason") or "")
         if authority_status != "source_approved_memory_aligned":

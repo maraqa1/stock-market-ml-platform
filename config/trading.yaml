@@ -22,6 +22,29 @@ direction_authority:
   inverse_min_sample_count: 50
   block_uncalibrated_probability_for_sizing: true
   block_short_side_until_validated: true
+source_approval_expansion:
+  enabled: false
+  mode: diagnostic_only
+  side: LONG_ONLY
+  min_ticker_direction_sample_count: 50
+  require_ticker_direction_bias: trust_long
+  require_positive_validated_expected_return: true
+  require_expected_return_scope_in:
+    - ticker
+    - bucket
+    - side
+  require_risk_tier_not_reject: true
+  require_volatility_not_extreme: true
+  require_source_no_decision_reason_in:
+    - source_threshold_too_strict
+    - weak_confidence
+  block_if:
+    - direction_memory_conflict
+    - meta_label_rejected
+    - model_evidence_missing
+    - risk_gate_failed
+    - asset_not_overnight_tradable
+    - price_below_minimum
 direction_gate:
   enabled: true
   require_source_trade_action: true
