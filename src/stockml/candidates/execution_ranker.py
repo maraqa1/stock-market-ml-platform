@@ -294,6 +294,9 @@ def build_execution_ranked_candidates(
         )
         if not executable and status == "executable":
             status = "blocked"
+        authority = dict(authority)
+        if not executable:
+            authority["final_execution_side"] = "NONE"
         primary_reason = reasons[0] if reasons else ""
         if status == "blocked" and not primary_reason:
             primary_reason = "unknown_rejection_reason"

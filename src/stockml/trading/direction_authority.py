@@ -318,6 +318,14 @@ def apply_authority_to_row(row: pd.Series, *, config: DirectionAuthorityConfig |
     resolution = resolve_direction_authority(out, config=config)
     for key, value in resolution.items():
         out[key] = value
+    existing_status = _text(out.get("trade_quality_status", "")).lower()
+    order_eligible = out.get("order_eligible", True)
+    try:
+        order_eligible = bool(order_eligible) and not pd.isna(order_eligible)
+    except Exception:
+        order_eligible = bool(order_eligible)
+    if existing_status == "rejected" or not order_eligible:
+        out["final_execution_side"] = NONE
     reason = str(resolution.get("direction_resolution_reason") or "")
     status = str(resolution.get("executable_direction_status") or "")
     if status in NON_EXECUTABLE_STATUSES or resolution.get("direction_resolution") in {"blocked", "research_only", "watch"}:
