@@ -33,6 +33,7 @@ AUTHORITY_COLUMNS = [
     "raw_side_score",
     "calibrated_probability_win",
     "probability_calibration_status",
+    "probability_usable_for_sizing",
 ]
 
 NON_EXECUTABLE_STATUSES = {
@@ -176,6 +177,7 @@ def _probability_fields(row: Any) -> tuple[Any, Any, str]:
 
 def _base_result(row: Any, source_direction: str, planner_direction: str, final_side: str, cfg: DirectionAuthorityConfig) -> dict[str, Any]:
     raw_side_score, calibrated_probability_win, probability_status = _probability_fields(row)
+    probability_usable_for_sizing = probability_status == "calibrated" and _num(calibrated_probability_win) is not None
     bias = _text(row.get("ticker_direction_bias", "") if hasattr(row, "get") else "").lower()
     memory_supports, memory_opposes = _memory_support(source_direction, bias)
     return {
@@ -196,6 +198,7 @@ def _base_result(row: Any, source_direction: str, planner_direction: str, final_
         "raw_side_score": raw_side_score,
         "calibrated_probability_win": calibrated_probability_win,
         "probability_calibration_status": probability_status,
+        "probability_usable_for_sizing": probability_usable_for_sizing,
     }
 
 

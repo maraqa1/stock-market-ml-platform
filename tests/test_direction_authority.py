@@ -93,6 +93,7 @@ def test_uncalibrated_side_probability_is_raw_score_not_probability_win():
     assert out["raw_side_score"] == 0.99
     assert out["calibrated_probability_win"] is None
     assert out["probability_calibration_status"] == "uncalibrated"
+    assert out["probability_usable_for_sizing"] is False
 
 
 def test_negative_short_side_validation_blocks_short():
