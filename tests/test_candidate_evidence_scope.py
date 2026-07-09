@@ -64,13 +64,15 @@ def test_research_only_rows_are_separated_from_execution_pool():
         [
             {"symbol": "EXEC", "status": "executable", "executable": True, "research_only": False},
             {"symbol": "RESEARCH", "status": "research_only", "executable": False, "research_only": True},
+            {"symbol": "WATCH", "status": "watch", "executable": False, "research_only": False},
             {"symbol": "BLOCK", "status": "blocked", "executable": False, "research_only": False},
         ]
     )
     splits = split_candidate_pools(frame)
 
     assert splits["execution"]["symbol"].tolist() == ["EXEC"]
-    assert splits["research"]["symbol"].tolist() == ["RESEARCH"]
+    assert splits["shadow"]["symbol"].tolist() == ["RESEARCH"]
+    assert splits["watch"]["symbol"].tolist() == ["WATCH"]
     assert splits["blocked"]["symbol"].tolist() == ["BLOCK"]
 
 

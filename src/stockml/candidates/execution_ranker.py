@@ -22,6 +22,10 @@ OUTPUT_COLUMNS = [
     "status",
     "executable",
     "research_only",
+    "execution_domain",
+    "execution_eligible",
+    "trade_authority_status",
+    "shadow_reason",
     "all_block_reasons",
     "primary_block_reason",
     "risk_tier",
@@ -53,6 +57,10 @@ OUTPUT_COLUMNS = [
     "confidence_bucket",
 ]
 SAFE_EMPTY_REASONS = {"", "nan", "none", "null"}
+EXECUTION_CANDIDATE = "execution_candidate"
+WATCH_CANDIDATE = "watch_candidate"
+BLOCKED_CANDIDATE = "blocked_candidate"
+SHADOW_OBSERVATION = "shadow_observation"
 
 
 def _text(value: Any) -> str:
@@ -204,6 +212,36 @@ def _source_action_reason(row: pd.Series) -> str:
     return "source_trade_action_not_executable"
 
 
+def _source_direction_text(row: pd.Series) -> str:
+    return _text(row.get("source_trade_action")).strip().lower().replace("_", " ")
+
+
+def _has_source_direction(row: pd.Series) -> bool:
+    return _source_direction_text(row) in {"long", "short"}
+
+
+def _shadow_reason(row: pd.Series, authority: dict[str, Any]) -> str:
+    if _has_source_direction(row):
+        return ""
+    reason = _text(authority.get("direction_resolution_reason"))
+    if reason:
+        return reason
+    planner = _text(authority.get("planner_derived_direction"))
+    if planner in {"LONG", "SHORT"}:
+        return "planner_derived_action_without_source_approval"
+    return "source_trade_action_not_executable"
+
+
+def _execution_domain(row: pd.Series, *, status: str, executable: bool, authority: dict[str, Any]) -> tuple[str, bool, str]:
+    if not _has_source_direction(row):
+        return SHADOW_OBSERVATION, False, "shadow"
+    if executable:
+        return EXECUTION_CANDIDATE, True, "authorized"
+    if status == "watch" or authority.get("direction_resolution") == "watch":
+        return WATCH_CANDIDATE, False, "watch"
+    return BLOCKED_CANDIDATE, False, "blocked"
+
+
 def _no_decision_reason(row: pd.Series) -> str:
     action = (_text(row.get("trade_action")) or _text(row.get("source_trade_action"))).lower()
     if action in {"no decision", "no_decision", "none", ""}:
@@ -232,9 +270,11 @@ def _status(row: pd.Series, reasons: list[str], *, research_only: bool) -> str:
     if research_only:
         return "research_only"
     current = _text(row.get("trade_quality_status")).lower() or _text(row.get("candidate_status")).lower()
-    if current in {"approved", "reduced"} and not reasons:
+    notional = _num(row.get("approved_notional")) or _num(row.get("notional")) or 0.0
+    quantity = int(_num(row.get("suggested_quantity")) or 0)
+    if current in {"approved", "reduced"} and not reasons and notional > 0 and quantity > 0:
         return "executable"
-    if not reasons and _num(row.get("approved_notional")) and int(_num(row.get("suggested_quantity")) or 0) > 0:
+    if not reasons and notional > 0 and quantity > 0:
         return "executable"
     return "blocked"
 
@@ -360,6 +400,13 @@ def build_execution_ranked_candidates(
         if status == "blocked" and not primary_reason:
             primary_reason = "unknown_rejection_reason"
             reasons = [primary_reason]
+        execution_domain, execution_eligible, trade_authority_status = _execution_domain(
+            row,
+            status=status,
+            executable=executable,
+            authority=authority,
+        )
+        shadow_reason = _shadow_reason(row, authority) if execution_domain == SHADOW_OBSERVATION else ""
         rows.append(
             {
                 "__index": idx,
@@ -372,6 +419,10 @@ def build_execution_ranked_candidates(
                 "status": status,
                 "executable": executable,
                 "research_only": research_only,
+                "execution_domain": execution_domain,
+                "execution_eligible": execution_eligible,
+                "trade_authority_status": trade_authority_status,
+                "shadow_reason": shadow_reason,
                 "all_block_reasons": "|".join(reasons),
                 "primary_block_reason": primary_reason,
                 "risk_tier": row.get("risk_tier", ""),
@@ -499,8 +550,11 @@ def execution_ranked_auto_open_candidates(
     ranked = frame.sort_values(["execution_rank", "raw_rank", "symbol"], na_position="last", kind="mergesort")
     for _, row in ranked.iterrows():
         status = _text(row.get("status")).lower()
+        domain = _text(row.get("execution_domain")).lower()
         side = _side(row)
         source_action = (_text(row.get("source_trade_action")) or _text(row.get("trade_action"))).lower()
+        if domain != EXECUTION_CANDIDATE:
+            continue
         if status != "executable":
             continue
         if not _rank_present(row.get("execution_rank")):
@@ -510,6 +564,8 @@ def execution_ranked_auto_open_candidates(
         if _boolish(row.get("research_only"), False):
             continue
         if "executable" in frame.columns and not _boolish(row.get("executable"), False):
+            continue
+        if "execution_eligible" in frame.columns and not _boolish(row.get("execution_eligible"), False):
             continue
         if not _safe_block_reasons(row.get("all_block_reasons")):
             continue

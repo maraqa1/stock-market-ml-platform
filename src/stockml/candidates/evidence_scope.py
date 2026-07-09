@@ -152,14 +152,23 @@ def enrich_candidate_evidence_scope(
 def split_candidate_pools(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
     if frame is None or frame.empty:
         empty = pd.DataFrame()
-        return {"research": empty, "execution": empty, "blocked": empty}
+        return {"shadow": empty, "watch": empty, "execution": empty, "blocked": empty}
+    if "execution_domain" in frame.columns:
+        domain = frame["execution_domain"].fillna("").astype(str).str.lower()
+        return {
+            "shadow": frame[domain.eq("shadow_observation")].copy(),
+            "watch": frame[domain.eq("watch_candidate")].copy(),
+            "execution": frame[domain.eq("execution_candidate")].copy(),
+            "blocked": frame[domain.eq("blocked_candidate")].copy(),
+        }
     status = frame.get("status", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
     executable = frame.get("executable", pd.Series(False, index=frame.index)).fillna(False).astype(bool)
     research = frame.get("research_only", pd.Series(False, index=frame.index)).fillna(False).astype(bool) | status.eq("research_only")
     return {
-        "research": frame[research].copy(),
+        "shadow": frame[research].copy(),
+        "watch": frame[status.eq("watch")].copy(),
         "execution": frame[executable & status.eq("executable")].copy(),
-        "blocked": frame[~research & ~(executable & status.eq("executable"))].copy(),
+        "blocked": frame[~research & ~status.eq("watch") & ~(executable & status.eq("executable"))].copy(),
     }
 
 
@@ -174,11 +183,13 @@ def write_candidate_pool_splits(
     run_stamp = stamp or timestamp()
     splits = split_candidate_pools(frame)
     paths = {
-        "research_candidate_pool": out_dir / f"research_candidate_pool_{run_stamp}.csv",
         "execution_candidate_pool": out_dir / f"execution_candidate_pool_{run_stamp}.csv",
+        "watch_candidate_pool": out_dir / f"watch_candidate_pool_{run_stamp}.csv",
         "blocked_candidate_pool": out_dir / f"blocked_candidate_pool_{run_stamp}.csv",
+        "shadow_observation_pool": out_dir / f"shadow_observation_pool_{run_stamp}.csv",
     }
-    splits["research"].to_csv(paths["research_candidate_pool"], index=False)
     splits["execution"].to_csv(paths["execution_candidate_pool"], index=False)
+    splits["watch"].to_csv(paths["watch_candidate_pool"], index=False)
     splits["blocked"].to_csv(paths["blocked_candidate_pool"], index=False)
+    splits["shadow"].to_csv(paths["shadow_observation_pool"], index=False)
     return paths
