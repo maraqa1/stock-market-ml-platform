@@ -20,6 +20,7 @@ AUTHORITY_COLUMNS = [
     "source_approved_direction",
     "planner_derived_direction",
     "final_proposed_side",
+    "final_execution_side",
     "executable_direction_status",
     "direction_alignment_status",
     "direction_conflict",
@@ -168,6 +169,8 @@ def _probability_fields(row: Any) -> tuple[Any, Any, str]:
     status = _text(row.get("probability_calibration_status", "") if hasattr(row, "get") else "").lower()
     if not status:
         status = "calibrated" if _num(calibrated) is not None else "uncalibrated"
+    if status == "uncalibrated" and _num(calibrated) is None:
+        calibrated = None
     return raw, calibrated, status
 
 
@@ -180,6 +183,7 @@ def _base_result(row: Any, source_direction: str, planner_direction: str, final_
         "source_approved_direction": source_direction,
         "planner_derived_direction": planner_direction,
         "final_proposed_side": final_side,
+        "final_execution_side": NONE,
         "executable_direction_status": "",
         "direction_alignment_status": "",
         "direction_conflict": False,
@@ -229,7 +233,6 @@ def resolve_direction_authority(
 
     if trade != NONE and trade != source:
         result.update(
-            final_proposed_side=NONE,
             executable_direction_status="source_approved_memory_conflict",
             direction_alignment_status="conflict",
             direction_conflict=True,
@@ -241,7 +244,6 @@ def resolve_direction_authority(
 
     if directional != NONE and directional != source:
         result.update(
-            final_proposed_side=NONE,
             executable_direction_status="source_approved_memory_conflict",
             direction_alignment_status="conflict",
             direction_conflict=True,
@@ -283,7 +285,6 @@ def resolve_direction_authority(
     validated_bps = _num(row.get("validated_expected_return_bps", "") if hasattr(row, "get") else "")
     if validated_bps is not None and validated_bps <= 0:
         result.update(
-            final_proposed_side=NONE,
             executable_direction_status="side_validation_failed",
             direction_alignment_status="aligned",
             direction_resolution="blocked",
@@ -295,10 +296,9 @@ def resolve_direction_authority(
         reason = short_side_block_reason(row, short_policy or load_short_side_policy())
         if reason:
             result.update(
-                final_proposed_side=NONE,
                 executable_direction_status="side_validation_failed",
                 direction_alignment_status="aligned",
-                direction_resolution="research_only",
+                direction_resolution="blocked",
                 direction_resolution_reason=reason,
             )
             return result
@@ -308,6 +308,7 @@ def resolve_direction_authority(
         direction_alignment_status="aligned",
         direction_resolution="executable_direction",
         direction_resolution_reason="source_trade_action_memory_aligned",
+        final_execution_side=source,
     )
     return result
 

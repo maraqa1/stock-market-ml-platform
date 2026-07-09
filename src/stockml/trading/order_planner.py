@@ -268,13 +268,18 @@ def _enforce_short_side_policy(pool: pd.DataFrame) -> pd.DataFrame:
     blocked = reasons.astype(str).ne("")
     if not blocked.any():
         return out
-    out.loc[blocked, "candidate_status"] = "research_only"
+    source = out.get("source_trade_action", out.get("trade_action", pd.Series("", index=out.index))).fillna("").astype(str).str.strip().str.lower()
+    source_approved_short = blocked & source.eq("short")
+    planner_only_short = blocked & ~source_approved_short
+    out.loc[source_approved_short, "candidate_status"] = "rejected"
+    out.loc[planner_only_short, "candidate_status"] = "research_only"
     out.loc[blocked, "trade_quality_status"] = "rejected"
     out.loc[blocked, "order_eligible"] = False
     out.loc[blocked, "approved_notional"] = 0.0
     out.loc[blocked, "notional"] = 0.0
     out.loc[blocked, "suggested_quantity"] = 0
-    out.loc[blocked, "research_only"] = True
+    out.loc[source_approved_short, "research_only"] = False
+    out.loc[planner_only_short, "research_only"] = True
     out.loc[blocked, "primary_block_reason"] = reasons[blocked]
     if "trade_quality_reason" not in out.columns:
         out["trade_quality_reason"] = ""

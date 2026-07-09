@@ -33,9 +33,10 @@ def test_side_probability_is_not_promoted_to_calibrated_probability_win():
 
     row = ranked.iloc[0]
     assert row["raw_side_score"] == 0.99
-    assert row["calibrated_probability_win"] == ""
+    assert row["calibrated_probability_win"] is None
     assert row["probability_calibration_status"] == "uncalibrated"
     assert row["status"] == "executable"
+    assert row["final_execution_side"] == "LONG"
 
 
 def test_repeated_same_side_validation_metrics_are_not_ticker_scope():

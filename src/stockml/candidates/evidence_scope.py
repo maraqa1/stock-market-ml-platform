@@ -69,8 +69,9 @@ def _scope_for_metric(frame: pd.DataFrame, column: str) -> pd.Series:
     values = pd.to_numeric(frame[column], errors="coerce")
     side = _side_series(frame)
     scope = pd.Series("unknown", index=frame.index, dtype="object")
+    valid_scopes = {"ticker", "bucket", "side", "global"}
     if values.notna().sum() == 0:
-        return explicit.where(explicit.isin({"ticker", "bucket", "side", "global"}), scope)
+        return explicit.where(explicit.isin(valid_scopes), scope)
     rounded = values.round(8)
     if rounded.nunique(dropna=True) == 1:
         scope.loc[values.notna()] = "global"
@@ -91,7 +92,13 @@ def _scope_for_metric(frame: pd.DataFrame, column: str) -> pd.Series:
         symbol_values = rounded.loc[indexes].dropna()
         if len(symbol_values) > 1 and symbol_values.nunique(dropna=True) == 1:
             scope.loc[list(indexes)] = "ticker"
-    return explicit.where(explicit.isin({"ticker", "bucket", "side", "global"}), scope)
+    resolved = explicit.where(explicit.isin(valid_scopes), scope)
+    inferred = scope.fillna("").astype(str).str.lower()
+    inferred_specific = inferred.isin({"side", "global", "bucket"})
+    resolved.loc[inferred_specific] = scope.loc[inferred_specific]
+    missing = resolved.fillna("").astype(str).str.lower().isin({"", "nan", "none", "null", "unknown"})
+    resolved.loc[missing] = scope.loc[missing]
+    return resolved
 
 
 def _ticker_memory_status(row: pd.Series, min_samples: int) -> str:

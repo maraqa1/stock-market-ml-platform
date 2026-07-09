@@ -82,7 +82,10 @@ def test_short_candidates_with_negative_expected_return_remain_blocked():
     )
 
     row = ranked.iloc[0]
-    assert row["status"] == "research_only"
+    assert row["status"] == "blocked"
+    assert bool(row["research_only"]) is False
+    assert row["primary_block_reason"] == "short_side_validation_required"
+    assert row["final_execution_side"] == "NONE"
     assert row["direction_decision"] == "direction_block"
     assert row["expected_return_scope"] in {"unknown", "side", "global"}
 
@@ -96,6 +99,21 @@ def test_bny_style_executable_candidate_allowed_but_labelled_missing_ticker_memo
     assert bool(row["executable"]) is False
     assert row["status"] == "research_only"
     assert row["ticker_direction_memory_status"] == "missing"
+    assert row["final_execution_side"] == "NONE"
+
+
+def test_explicit_ticker_scope_is_corrected_when_metric_is_repeated_by_side():
+    frame = pd.DataFrame(
+        [
+            _candidate(symbol="AAA", expected_return_scope="ticker", hit_rate_scope="ticker", profit_factor_scope="ticker"),
+            _candidate(symbol="BBB", raw_rank=2, expected_return_scope="ticker", hit_rate_scope="ticker", profit_factor_scope="ticker"),
+        ]
+    )
+    out = build_execution_ranked_candidates(frame)
+
+    assert set(out["expected_return_scope"]) == {"side"}
+    assert set(out["hit_rate_scope"]) == {"side"}
+    assert set(out["profit_factor_scope"]) == {"side"}
 
 
 def test_candidate_evidence_scope_runner_writes_outputs(tmp_path: Path):

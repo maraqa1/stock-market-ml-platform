@@ -123,6 +123,31 @@ def _prepend_reason(reasons: list[str], reason: str) -> list[str]:
     return [reason, *[existing for existing in reasons if existing != reason]]
 
 
+def _reduced_reason(row: pd.Series) -> str:
+    risk_tier = _text(row.get("risk_tier")).lower()
+    volatility_tier = _text(row.get("volatility_tier")).lower()
+    approved_notional = _num(row.get("approved_notional")) or _num(row.get("notional")) or 0.0
+    suggested_quantity = int(_num(row.get("suggested_quantity")) or 0)
+    if volatility_tier in {"high", "extreme", "speculative"}:
+        return "reduced_due_to_volatility"
+    if risk_tier and risk_tier not in {"high_quality", "quality", "approved"}:
+        return "reduced_due_to_risk_tier"
+    if approved_notional <= 0 or suggested_quantity <= 0:
+        return "reduced_due_to_low_notional"
+    return "reduced_due_to_position_sizing"
+
+
+def _normalise_reasons(row: pd.Series, reasons: list[str]) -> list[str]:
+    out: list[str] = []
+    for reason in reasons:
+        clean = _text(reason)
+        if clean.lower() == "reduced":
+            clean = _reduced_reason(row)
+        if clean and clean not in out:
+            out.append(clean)
+    return out
+
+
 def _source_action_reason(row: pd.Series) -> str:
     action = _text(row.get("source_trade_action")).lower()
     if action in {"long", "short"}:
@@ -197,9 +222,15 @@ def _infer_metric_scope(frame: pd.DataFrame, metric_column: str, output_column: 
             side_values = rounded.loc[indexes].dropna()
             if len(side_values) > 1 and side_values.nunique(dropna=True) == 1:
                 scope.loc[list(indexes)] = "side"
-    frame[output_column] = frame.get(output_column, scope)
+    if output_column not in frame.columns:
+        frame[output_column] = scope
+        return frame
     current = frame[output_column].fillna("").astype(str).str.lower()
-    frame.loc[current.isin(["", "nan", "none", "null", "unknown"]), output_column] = scope.loc[current.isin(["", "nan", "none", "null", "unknown"])]
+    inferred = scope.fillna("").astype(str).str.lower()
+    inferred_specific = inferred.isin(["side", "global", "bucket"])
+    frame.loc[inferred_specific, output_column] = scope.loc[inferred_specific]
+    missing = current.isin(["", "nan", "none", "null", "unknown"])
+    frame.loc[missing, output_column] = scope.loc[missing]
     return frame
 
 
@@ -225,7 +256,7 @@ def build_execution_ranked_candidates(
         for reason in [_source_action_reason(row), _no_decision_reason(row), _calibration_reason(row)]:
             _append_reason(reasons, reason)
         short_reason = short_side_block_reason(row, policy)
-        research_only = bool(short_reason)
+        research_only = False
         if short_reason:
             _append_reason(reasons, short_reason)
         authority = resolve_direction_authority(row, short_policy=policy)
@@ -253,6 +284,7 @@ def build_execution_ranked_candidates(
             _append_reason(reasons, str(direction.get("direction_primary_reason") or "direction_gate_failed"))
             if direction.get("direction_decision") == "direction_research_only":
                 research_only = True
+        reasons = _normalise_reasons(row, reasons)
         status = _status(row, reasons, research_only=research_only)
         executable = (
             status == "executable"

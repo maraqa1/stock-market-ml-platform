@@ -40,11 +40,17 @@ def main() -> int:
     planner = detail.get("planner_derived_direction", pd.Series("", index=detail.index)).fillna("").astype(str)
     primary = detail.get("primary_block_reason", pd.Series("", index=detail.index)).fillna("").astype(str)
     prob = detail.get("probability_calibration_status", pd.Series("", index=detail.index)).fillna("").astype(str)
+    calibrated_probability = pd.to_numeric(detail.get("calibrated_probability_win", pd.Series(index=detail.index)), errors="coerce")
+    raw_side_score = pd.to_numeric(detail.get("raw_side_score", pd.Series(index=detail.index)), errors="coerce")
     executable = detail.get("executable", pd.Series(False, index=detail.index)).fillna(False).astype(bool)
     conflict = detail.get("direction_conflict", pd.Series(False, index=detail.index)).fillna(False).astype(bool)
     status = detail.get("status", pd.Series("", index=detail.index)).fillna("").astype(str).str.lower()
 
     planner_only = source.eq("NONE") & planner.isin(["LONG", "SHORT"])
+    planner_research = planner_only & status.eq("research_only")
+    source_short_blocked = source.eq("SHORT") & status.eq("blocked") & primary.eq("short_side_validation_required")
+    reduced_watch = status.isin(["watch", "research_only"]) | primary.str.startswith("reduced_due_to")
+    raw_probability_misuse_risk = raw_side_score.notna() & prob.eq("uncalibrated") & calibrated_probability.isna()
     blank_rejected_reasons = status.isin(["blocked", "research_only"]) & primary.str.strip().isin(["", "nan", "None", "NA"])
     lines = [
         "# Direction Authority Diagnostic",
@@ -58,18 +64,28 @@ def main() -> int:
         f"- source_approved_short_count: {int(source.eq('SHORT').sum())}",
         f"- no_decision_count: {int(source.eq('NONE').sum())}",
         f"- planner_derived_only_count: {int(planner_only.sum())}",
+        f"- planner_only_research_count: {int(planner_research.sum())}",
         f"- memory_aligned_count: {int(detail.get('direction_alignment_status', pd.Series('', index=detail.index)).eq('aligned').sum())}",
         f"- memory_conflict_count: {int(conflict.sum())}",
         f"- memory_insufficient_count: {int(detail.get('direction_alignment_status', pd.Series('', index=detail.index)).eq('memory_insufficient').sum())}",
         f"- executable_count: {int(executable.sum())}",
         f"- blocked_by_direction_count: {int(primary.isin(['planner_derived_action_without_source_approval', 'direction_memory_conflict', 'direction_memory_insufficient', 'source_trade_action_not_executable']).sum())}",
         f"- blocked_by_short_validation_count: {int(primary.eq('short_side_validation_required').sum())}",
+        f"- source_approved_shorts_blocked_count: {int(source_short_blocked.sum())}",
+        f"- reduced_or_watch_count: {int(reduced_watch.sum())}",
         f"- rejected_rows_with_blank_primary_block_reason: {int(blank_rejected_reasons.sum())}",
         f"- rows_with_uncalibrated_probability: {int(prob.eq('uncalibrated').sum())}",
+        f"- rows_where_raw_side_score_would_have_been_misused_as_probability: {int(raw_probability_misuse_risk.sum())}",
         "\n## executable_direction_status",
         *_counts(detail, "executable_direction_status"),
         "\n## primary_block_reason",
         *_counts(detail, "primary_block_reason"),
+        "\n## expected_return_scope",
+        *_counts(detail, "expected_return_scope"),
+        "\n## hit_rate_scope",
+        *_counts(detail, "hit_rate_scope"),
+        "\n## profit_factor_scope",
+        *_counts(detail, "profit_factor_scope"),
         "\n## probability_calibration_status",
         *_counts(detail, "probability_calibration_status"),
         "\n## final_executable_list",

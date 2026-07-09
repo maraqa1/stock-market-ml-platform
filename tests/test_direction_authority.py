@@ -30,6 +30,7 @@ def test_source_long_memory_trust_long_is_aligned():
 
     assert out["source_approved_direction"] == "LONG"
     assert out["final_proposed_side"] == "LONG"
+    assert out["final_execution_side"] == "LONG"
     assert out["direction_alignment_status"] == "aligned"
     assert out["executable_direction_status"] == "source_approved_memory_aligned"
 
@@ -43,6 +44,7 @@ def test_source_short_memory_trust_short_is_aligned_when_short_policy_allows():
 
     assert out["source_approved_direction"] == "SHORT"
     assert out["final_proposed_side"] == "SHORT"
+    assert out["final_execution_side"] == "SHORT"
     assert out["direction_alignment_status"] == "aligned"
     assert out["executable_direction_status"] == "source_approved_memory_aligned"
 
@@ -89,7 +91,7 @@ def test_uncalibrated_side_probability_is_raw_score_not_probability_win():
     out = resolve_direction_authority(row(side_probability=0.99), config=CFG)
 
     assert out["raw_side_score"] == 0.99
-    assert out["calibrated_probability_win"] == ""
+    assert out["calibrated_probability_win"] is None
     assert out["probability_calibration_status"] == "uncalibrated"
 
 
@@ -107,5 +109,27 @@ def test_negative_short_side_validation_blocks_short():
         short_policy=ShortSidePolicy(enabled=True, allow_shorts_in_validation=True),
     )
 
-    assert out["final_proposed_side"] == "NONE"
+    assert out["final_proposed_side"] == "SHORT"
+    assert out["final_execution_side"] == "NONE"
     assert out["executable_direction_status"] == "side_validation_failed"
+
+
+def test_source_approved_short_blocked_not_research_only_when_validation_fails():
+    out = resolve_direction_authority(
+        row(
+            source_trade_action="Short",
+            trade_action="Short",
+            directional_action="Short",
+            side="sell",
+            ticker_direction_bias="trust_short",
+            validated_expected_return_bps=-10,
+        ),
+        config=CFG,
+        short_policy=ShortSidePolicy(enabled=True, allow_shorts_in_validation=True),
+    )
+
+    assert out["source_approved_direction"] == "SHORT"
+    assert out["final_proposed_side"] == "SHORT"
+    assert out["final_execution_side"] == "NONE"
+    assert out["direction_resolution"] == "blocked"
+    assert out["direction_resolution_reason"] == "short_side_validation_required"

@@ -31,6 +31,7 @@ def test_dftx_style_row_remains_eligible_if_all_direction_inputs_align():
     assert row["symbol"] == "DFTX"
     assert row["executable_direction_status"] == "source_approved_memory_aligned"
     assert row["direction_alignment_status"] == "aligned"
+    assert row["final_execution_side"] == "LONG"
     assert row["trade_quality_status"] == "approved"
     assert bool(row["order_eligible"]) is True
 
@@ -42,6 +43,28 @@ def test_blze_style_reduced_row_remains_reduced_when_direction_aligns():
     assert row["symbol"] == "BLZE"
     assert row["trade_quality_status"] == "reduced"
     assert row["executable_direction_status"] == "source_approved_memory_aligned"
+    assert row["final_execution_side"] == "LONG"
+
+
+def test_reduced_is_not_used_as_primary_block_reason():
+    out = apply_direction_authority(
+        pd.DataFrame([
+            _candidate(
+                symbol="BLZE",
+                trade_quality_status="rejected",
+                candidate_status="rejected",
+                order_eligible=False,
+                approved_notional=0,
+                suggested_quantity=0,
+                trade_quality_reason="reduced",
+                primary_block_reason="reduced",
+                risk_tier="medium",
+            )
+        ])
+    )
+
+    row = out.iloc[0]
+    assert row["primary_block_reason"] == "reduced_due_to_risk_tier"
 
 
 def test_cast_style_clear_long_can_stay_blocked_by_prior_gate():
@@ -64,6 +87,7 @@ def test_no_decision_with_planner_action_is_research_only_and_blocked():
     assert row["executable_direction_status"] == "planner_only_not_executable"
     assert bool(row["research_only"]) is True
     assert bool(row["order_eligible"]) is False
+    assert row["final_execution_side"] == "NONE"
     assert row["approved_notional"] == 0
     assert "planner_derived_action_without_source_approval" in row["trade_quality_reason"]
 
