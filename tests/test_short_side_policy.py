@@ -110,7 +110,11 @@ def test_short_policy_keeps_long_executable_when_disabled():
                 {
                     "symbol": "AAA",
                     "side": "buy",
+                    "source_trade_action": "Long",
                     "trade_action": "Long",
+                    "directional_action": "Long",
+                    "ticker_direction_bias": "trust_long",
+                    "ticker_direction_sample_count": 100,
                     "trade_quality_status": "approved",
                     "order_eligible": True,
                     "approved_notional": 100,

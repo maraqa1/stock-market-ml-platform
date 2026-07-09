@@ -93,7 +93,8 @@ def test_bny_style_executable_candidate_allowed_but_labelled_missing_ticker_memo
 
     row = scoped.iloc[0]
     assert row["symbol"] == "BNY"
-    assert bool(row["executable"]) is True
+    assert bool(row["executable"]) is False
+    assert row["status"] == "research_only"
     assert row["ticker_direction_memory_status"] == "missing"
 
 

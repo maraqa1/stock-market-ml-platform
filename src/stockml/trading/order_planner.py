@@ -13,6 +13,7 @@ from stockml.trading.order_builder import extended_limit_price, order_row
 from stockml.trading.position_sizing import apply_same_day_sizing
 from stockml.trading.trade_quality_gate import apply_trade_quality_gate
 from stockml.candidates.short_side_policy import short_side_block_reason
+from stockml.trading.candidate_direction_resolution import apply_direction_authority
 
 
 REQUIRED_SIGNAL_COLUMNS = {
@@ -312,6 +313,7 @@ def build_candidate_pool(
     pool["candidate_rank"] = range(1, len(pool) + 1)
     pool["candidate_status"] = pool["trade_quality_status"]
     pool = _enforce_executable_source_action(pool)
+    pool = apply_direction_authority(pool)
     pool = _enforce_short_side_policy(pool)
     pool = apply_same_day_sizing(
         pool,

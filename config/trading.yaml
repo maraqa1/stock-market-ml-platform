@@ -11,6 +11,17 @@ short_side_policy:
   min_closed_short_trades_for_enablement: 50
   min_short_profit_factor_for_enablement: 1.10
   min_short_win_rate_for_enablement: 0.45
+direction_authority:
+  execution_direction_source: source_trade_action
+  allow_planner_derived_execution: false
+  require_source_approval: true
+  require_memory_alignment_for_full_approval: true
+  memory_insufficient_default: watch
+  block_direction_memory_conflict: true
+  allow_inverse_execution: false
+  inverse_min_sample_count: 50
+  block_uncalibrated_probability_for_sizing: true
+  block_short_side_until_validated: true
 direction_gate:
   enabled: true
   require_source_trade_action: true

@@ -8,6 +8,7 @@ import pandas as pd
 from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_side_policy, short_side_block_reason
 from stockml.common.paths import PROJECT_ROOT, timestamp
 from stockml.trading.direction_gate import evaluate_direction_gate
+from stockml.trading.direction_authority import AUTHORITY_COLUMNS, resolve_direction_authority
 from stockml.trading.ticker_direction_memory import load_ticker_direction_memory_config
 
 
@@ -47,6 +48,7 @@ OUTPUT_COLUMNS = [
     "ticker_direction_memory_status",
     "inverse_warning_status",
     "inverse_warning_actionable",
+    *AUTHORITY_COLUMNS,
 ]
 SAFE_EMPTY_REASONS = {"", "nan", "none", "null"}
 
@@ -113,6 +115,12 @@ def _append_reason(reasons: list[str], reason: str) -> list[str]:
     if reason and reason not in reasons:
         reasons.append(reason)
     return reasons
+
+
+def _prepend_reason(reasons: list[str], reason: str) -> list[str]:
+    if not reason:
+        return reasons
+    return [reason, *[existing for existing in reasons if existing != reason]]
 
 
 def _source_action_reason(row: pd.Series) -> str:
@@ -220,6 +228,16 @@ def build_execution_ranked_candidates(
         research_only = bool(short_reason)
         if short_reason:
             _append_reason(reasons, short_reason)
+        authority = resolve_direction_authority(row, short_policy=policy)
+        authority_status = str(authority.get("executable_direction_status") or "")
+        authority_reason = str(authority.get("direction_resolution_reason") or "")
+        if authority_status != "source_approved_memory_aligned":
+            if authority_status == "planner_only_not_executable":
+                reasons = _prepend_reason(reasons, authority_reason or "planner_derived_action_without_source_approval")
+            else:
+                _append_reason(reasons, authority_reason or authority_status or "direction_authority_failed")
+            if authority.get("direction_resolution") in {"research_only", "watch"}:
+                research_only = True
         direction_row = row.copy()
         if policy.enabled and policy.allow_shorts_in_validation:
             direction_row["short_policy_status"] = direction_row.get("short_policy_status") or "enabled"
@@ -236,9 +254,18 @@ def build_execution_ranked_candidates(
             if direction.get("direction_decision") == "direction_research_only":
                 research_only = True
         status = _status(row, reasons, research_only=research_only)
-        executable = status == "executable" and bool(direction.get("direction_gate_pass")) and direction.get("direction_decision") == "direction_pass"
+        executable = (
+            status == "executable"
+            and authority_status == "source_approved_memory_aligned"
+            and bool(direction.get("direction_gate_pass"))
+            and direction.get("direction_decision") == "direction_pass"
+        )
         if not executable and status == "executable":
             status = "blocked"
+        primary_reason = reasons[0] if reasons else ""
+        if status == "blocked" and not primary_reason:
+            primary_reason = "unknown_rejection_reason"
+            reasons = [primary_reason]
         rows.append(
             {
                 "__index": idx,
@@ -252,7 +279,7 @@ def build_execution_ranked_candidates(
                 "executable": executable,
                 "research_only": research_only,
                 "all_block_reasons": "|".join(reasons),
-                "primary_block_reason": reasons[0] if reasons else "",
+                "primary_block_reason": primary_reason,
                 "risk_tier": row.get("risk_tier", ""),
                 "volatility_tier": row.get("volatility_tier", ""),
                 "calibration_quality": row.get("calibration_quality", ""),
@@ -277,6 +304,7 @@ def build_execution_ranked_candidates(
                 "ticker_direction_memory_status": _ticker_memory_status(row, min_ticker_samples),
                 "inverse_warning_status": inverse_status,
                 "inverse_warning_actionable": inverse_actionable,
+                **authority,
             }
         )
     out = pd.DataFrame(rows)

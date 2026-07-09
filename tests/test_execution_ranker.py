@@ -31,6 +31,8 @@ def _row(
         "validated_expected_return_bps": 42.0,
         "validated_hit_rate": 0.57,
         "validated_profit_factor": 1.8,
+        "ticker_direction_bias": "trust_long" if action != "Short" else "trust_short",
+        "ticker_direction_sample_count": 100,
         "risk_tier": "high_quality",
         "volatility_tier": "normal",
         "approved_notional": 100.0,
@@ -57,7 +59,7 @@ def test_no_decision_never_receives_execution_rank():
         short_policy=ShortSidePolicy(),
     )
     assert ranked.iloc[0]["status"] == "research_only"
-    assert ranked.iloc[0]["primary_block_reason"] == "source_trade_action_not_executable"
+    assert ranked.iloc[0]["primary_block_reason"] in {"source_trade_action_not_executable", "planner_derived_action_without_source_approval"}
     assert pd.isna(ranked.iloc[0]["execution_rank"])
 
 
