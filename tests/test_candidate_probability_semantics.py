@@ -37,6 +37,40 @@ def test_side_probability_is_not_promoted_to_calibrated_probability_win():
     assert row["probability_calibration_status"] == "uncalibrated"
     assert row["status"] == "executable"
     assert row["final_execution_side"] == "LONG"
+    assert row["validation_quality"] == "usable"
+
+
+def test_uncalibrated_raw_score_cannot_create_high_confidence_bucket():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame(
+            [
+                {
+                    "symbol": "AAA",
+                    "side": "buy",
+                    "source_trade_action": "Long",
+                    "trade_action": "Long",
+                    "directional_action": "Long",
+                    "ticker_direction_bias": "trust_long",
+                    "trade_quality_status": "approved",
+                    "order_eligible": True,
+                    "approved_notional": 100,
+                    "suggested_quantity": 1,
+                    "expected_return_quality": "calibrated",
+                    "calibration_quality": "usable",
+                    "validated_expected_return_bps": 40,
+                    "validated_hit_rate": 0.55,
+                    "validated_profit_factor": 1.4,
+                    "side_probability": 0.99,
+                    "confidence_bucket": "HIGH",
+                }
+            ]
+        )
+    )
+
+    row = ranked.iloc[0]
+    assert row["probability_calibration_status"] == "uncalibrated"
+    assert row["calibrated_probability_win"] is None
+    assert row["confidence_bucket"] != "HIGH"
 
 
 def test_repeated_same_side_validation_metrics_are_not_ticker_scope():

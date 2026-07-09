@@ -26,6 +26,7 @@ OUTPUT_COLUMNS = [
     "primary_block_reason",
     "risk_tier",
     "volatility_tier",
+    "validation_quality",
     "calibration_quality",
     "validated_expected_return_bps",
     "validated_hit_rate",
@@ -49,6 +50,7 @@ OUTPUT_COLUMNS = [
     "inverse_warning_status",
     "inverse_warning_actionable",
     *AUTHORITY_COLUMNS,
+    "confidence_bucket",
 ]
 SAFE_EMPTY_REASONS = {"", "nan", "none", "null"}
 
@@ -146,6 +148,53 @@ def _normalise_reasons(row: pd.Series, reasons: list[str]) -> list[str]:
         if clean and clean not in out:
             out.append(clean)
     return out
+
+
+SHORT_REASON_PRECEDENCE = [
+    "short_side_validation_required",
+    "negative_validated_expected_return",
+    "direction_memory_conflict",
+    "direction_memory_insufficient",
+    "risk_gate_failed",
+    "reduced_due_to_risk_tier",
+]
+
+
+def _is_source_short(row: pd.Series) -> bool:
+    return _text(row.get("source_trade_action")).lower() == "short"
+
+
+def _source_short_reasons(row: pd.Series, reasons: list[str]) -> list[str]:
+    if not _is_source_short(row):
+        return reasons
+    out = list(reasons)
+    validated_bps = _num(row.get("validated_expected_return_bps"))
+    if validated_bps is not None and validated_bps <= 0:
+        _append_reason(out, "negative_validated_expected_return")
+        _append_reason(out, "short_side_validation_required")
+    if _text(row.get("ticker_direction_bias")).lower() in {"", "insufficient_data"}:
+        _append_reason(out, "direction_memory_insufficient")
+    return out
+
+
+def _ordered_primary_reason(row: pd.Series, reasons: list[str]) -> str:
+    if _is_source_short(row):
+        reason_set = set(reasons)
+        for reason in SHORT_REASON_PRECEDENCE:
+            if reason in reason_set:
+                return reason
+    return reasons[0] if reasons else ""
+
+
+def _validation_quality(row: pd.Series) -> str:
+    return _text(row.get("validation_quality")) or _text(row.get("calibration_quality"))
+
+
+def _confidence_bucket(row: pd.Series, probability_status: str) -> Any:
+    bucket = row.get("confidence_bucket", "")
+    if _text(probability_status).lower() == "uncalibrated" and _text(bucket).upper() == "HIGH":
+        return "UNCALIBRATED"
+    return bucket
 
 
 def _source_action_reason(row: pd.Series) -> str:
@@ -267,7 +316,7 @@ def build_execution_ranked_candidates(
                 reasons = _prepend_reason(reasons, authority_reason or "planner_derived_action_without_source_approval")
             else:
                 _append_reason(reasons, authority_reason or authority_status or "direction_authority_failed")
-            if authority.get("direction_resolution") in {"research_only", "watch"}:
+            if authority.get("direction_resolution") in {"research_only", "watch"} and not _is_source_short(row):
                 research_only = True
         direction_row = row.copy()
         if policy.enabled and policy.allow_shorts_in_validation:
@@ -282,10 +331,20 @@ def build_execution_ranked_candidates(
             inverse_status = "present_sufficient_samples" if inverse_actionable else "present_insufficient_samples"
         if not bool(direction.get("direction_gate_pass")):
             _append_reason(reasons, str(direction.get("direction_primary_reason") or "direction_gate_failed"))
-            if direction.get("direction_decision") == "direction_research_only" and authority.get("direction_resolution") != "blocked":
+            if (
+                direction.get("direction_decision") == "direction_research_only"
+                and authority.get("direction_resolution") != "blocked"
+                and not _is_source_short(row)
+            ):
                 research_only = True
-        reasons = _normalise_reasons(row, reasons)
+        reasons = _normalise_reasons(row, _source_short_reasons(row, reasons))
         status = _status(row, reasons, research_only=research_only)
+        if _is_source_short(row) and status == "research_only":
+            status = "watch" if authority.get("direction_resolution") == "watch" else "blocked"
+            research_only = False
+        if _is_source_short(row) and authority.get("direction_resolution") == "watch":
+            status = "watch"
+            research_only = False
         executable = (
             status == "executable"
             and authority_status == "source_approved_memory_aligned"
@@ -297,7 +356,7 @@ def build_execution_ranked_candidates(
         authority = dict(authority)
         if not executable:
             authority["final_execution_side"] = "NONE"
-        primary_reason = reasons[0] if reasons else ""
+        primary_reason = _ordered_primary_reason(row, reasons)
         if status == "blocked" and not primary_reason:
             primary_reason = "unknown_rejection_reason"
             reasons = [primary_reason]
@@ -317,6 +376,7 @@ def build_execution_ranked_candidates(
                 "primary_block_reason": primary_reason,
                 "risk_tier": row.get("risk_tier", ""),
                 "volatility_tier": row.get("volatility_tier", ""),
+                "validation_quality": _validation_quality(row),
                 "calibration_quality": row.get("calibration_quality", ""),
                 "validated_expected_return_bps": row.get("validated_expected_return_bps", ""),
                 "validated_hit_rate": row.get("validated_hit_rate", ""),
@@ -340,6 +400,7 @@ def build_execution_ranked_candidates(
                 "inverse_warning_status": inverse_status,
                 "inverse_warning_actionable": inverse_actionable,
                 **authority,
+                "confidence_bucket": _confidence_bucket(row, authority.get("probability_calibration_status", "")),
             }
         )
     out = pd.DataFrame(rows)

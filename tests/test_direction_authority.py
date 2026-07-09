@@ -133,3 +133,24 @@ def test_source_approved_short_blocked_not_research_only_when_validation_fails()
     assert out["final_execution_side"] == "NONE"
     assert out["direction_resolution"] == "blocked"
     assert out["direction_resolution_reason"] == "short_side_validation_required"
+
+
+def test_source_approved_short_with_insufficient_memory_is_watch_not_research_only():
+    out = resolve_direction_authority(
+        row(
+            source_trade_action="Short",
+            trade_action="Short",
+            directional_action="Short",
+            side="sell",
+            ticker_direction_bias="insufficient_data",
+            validated_expected_return_bps=35,
+        ),
+        config=CFG,
+        short_policy=ShortSidePolicy(enabled=True, allow_shorts_in_validation=True),
+    )
+
+    assert out["source_approved_direction"] == "SHORT"
+    assert out["final_proposed_side"] == "SHORT"
+    assert out["final_execution_side"] == "NONE"
+    assert out["direction_resolution"] == "watch"
+    assert out["direction_resolution_reason"] == "direction_memory_insufficient"
