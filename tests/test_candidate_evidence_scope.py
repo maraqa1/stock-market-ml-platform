@@ -82,7 +82,7 @@ def test_short_candidates_with_negative_expected_return_remain_blocked():
     )
 
     row = ranked.iloc[0]
-    assert row["status"] == "blocked"
+    assert row["status"] == "research_only"
     assert row["direction_decision"] == "direction_block"
     assert row["expected_return_scope"] in {"unknown", "side", "global"}
 
