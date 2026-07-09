@@ -77,7 +77,14 @@ def test_research_only_rows_are_separated_from_execution_pool():
 def test_short_candidates_with_negative_expected_return_remain_blocked():
     ranked = build_execution_ranked_candidates(
         pd.DataFrame([
-            _candidate(symbol="SHORT", side="sell", source_trade_action="Short", trade_action="Short", validated_expected_return_bps=-29.7)
+            _candidate(
+                symbol="SHORT",
+                side="sell",
+                source_trade_action="Short",
+                trade_action="Short",
+                ticker_direction_bias="trust_short",
+                validated_expected_return_bps=-29.7,
+            )
         ])
     )
 
