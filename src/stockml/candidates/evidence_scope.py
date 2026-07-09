@@ -155,10 +155,26 @@ def split_candidate_pools(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
         return {"shadow": empty, "watch": empty, "execution": empty, "blocked": empty}
     if "execution_domain" in frame.columns:
         domain = frame["execution_domain"].fillna("").astype(str).str.lower()
+        execution_eligible = frame.get("execution_eligible", pd.Series(False, index=frame.index)).fillna(False).astype(bool)
+        final_side = frame.get("final_execution_side", pd.Series("", index=frame.index)).fillna("").astype(str).str.upper()
+        source_direction = frame.get("source_approved_direction", pd.Series("", index=frame.index)).fillna("").astype(str).str.upper()
+        notional = pd.to_numeric(frame.get("approved_notional", pd.Series(0, index=frame.index)), errors="coerce").fillna(0)
+        quantity = pd.to_numeric(frame.get("suggested_quantity", pd.Series(0, index=frame.index)), errors="coerce").fillna(0)
+        primary = frame.get("primary_block_reason", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+        primary_blank = primary.isin({"", "nan", "none", "null", "na"})
+        execution_filter = (
+            domain.eq("execution_candidate")
+            & execution_eligible
+            & final_side.isin(["LONG", "SHORT"])
+            & source_direction.isin(["LONG", "SHORT"])
+            & notional.gt(0)
+            & quantity.gt(0)
+            & primary_blank
+        )
         return {
             "shadow": frame[domain.eq("shadow_observation")].copy(),
             "watch": frame[domain.eq("watch_candidate")].copy(),
-            "execution": frame[domain.eq("execution_candidate")].copy(),
+            "execution": frame[execution_filter].copy(),
             "blocked": frame[domain.eq("blocked_candidate")].copy(),
         }
     status = frame.get("status", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()

@@ -8,7 +8,20 @@ from stockml.trading.candidate_pool_export import write_direction_authority_cand
 def test_direction_authority_candidate_pool_split_outputs(tmp_path):
     frame = pd.DataFrame(
         [
-            {"symbol": "EXEC", "execution_domain": "execution_candidate", "status": "executable", "executable": True, "research_only": False},
+            {
+                "symbol": "EXEC",
+                "execution_domain": "execution_candidate",
+                "status": "executable",
+                "executable": True,
+                "execution_eligible": True,
+                "execution_pool_eligible": True,
+                "final_execution_side": "LONG",
+                "source_approved_direction": "LONG",
+                "approved_notional": 100,
+                "suggested_quantity": 1,
+                "primary_block_reason": "",
+                "research_only": False,
+            },
             {"symbol": "WATCH", "execution_domain": "watch_candidate", "status": "watch", "executable": False, "research_only": False},
             {"symbol": "SHADOW", "execution_domain": "shadow_observation", "status": "research_only", "executable": False, "research_only": True},
             {"symbol": "BLOCK", "execution_domain": "blocked_candidate", "status": "blocked", "executable": False, "research_only": False},
@@ -22,3 +35,50 @@ def test_direction_authority_candidate_pool_split_outputs(tmp_path):
     assert pd.read_csv(paths["watch_candidate_pool"])["symbol"].tolist() == ["WATCH"]
     assert pd.read_csv(paths["blocked_candidate_pool"])["symbol"].tolist() == ["BLOCK"]
     assert pd.read_csv(paths["shadow_observation_pool"])["symbol"].tolist() == ["SHADOW"]
+
+
+def test_execution_candidate_export_requires_execution_only_contract(tmp_path):
+    frame = pd.DataFrame(
+        [
+            {
+                "symbol": "GOOD",
+                "execution_domain": "execution_candidate",
+                "status": "executable",
+                "executable": True,
+                "execution_eligible": True,
+                "final_execution_side": "LONG",
+                "source_approved_direction": "LONG",
+                "approved_notional": 100,
+                "suggested_quantity": 1,
+                "primary_block_reason": "",
+            },
+            {
+                "symbol": "NO_SIDE",
+                "execution_domain": "execution_candidate",
+                "status": "executable",
+                "executable": True,
+                "execution_eligible": True,
+                "final_execution_side": "NONE",
+                "source_approved_direction": "LONG",
+                "approved_notional": 100,
+                "suggested_quantity": 1,
+                "primary_block_reason": "",
+            },
+            {
+                "symbol": "BLOCKED_REASON",
+                "execution_domain": "execution_candidate",
+                "status": "executable",
+                "executable": True,
+                "execution_eligible": True,
+                "final_execution_side": "LONG",
+                "source_approved_direction": "LONG",
+                "approved_notional": 100,
+                "suggested_quantity": 1,
+                "primary_block_reason": "quote_stale",
+            },
+        ]
+    )
+
+    paths = write_direction_authority_candidate_splits(frame, output_dir=tmp_path, stamp="20260709_120000")
+
+    assert pd.read_csv(paths["execution_candidate_pool"])["symbol"].tolist() == ["GOOD"]

@@ -26,6 +26,7 @@ def _row(**overrides):
         "executable": True,
         "execution_domain": "execution_candidate",
         "execution_eligible": True,
+        "execution_pool_eligible": True,
         "final_execution_side": "LONG",
         "research_only": False,
         "all_block_reasons": "",
@@ -59,3 +60,28 @@ def test_execution_engine_accepts_only_execution_candidate_domain(tmp_path: Path
     rows = execution_ranked_auto_open_candidates(root=tmp_path)
     assert [row["symbol"] for row in rows] == ["DFTX"]
 
+
+def test_execution_engine_rejects_execution_candidate_without_final_side(tmp_path: Path):
+    _write_ranked(
+        tmp_path,
+        [
+            _row(symbol="BAD", final_execution_side="NONE"),
+            _row(symbol="GOOD", final_execution_side="LONG", execution_rank=2, raw_rank=2),
+        ],
+    )
+
+    rows = execution_ranked_auto_open_candidates(root=tmp_path)
+    assert [row["symbol"] for row in rows] == ["GOOD"]
+
+
+def test_execution_engine_rejects_execution_candidate_not_pool_eligible(tmp_path: Path):
+    _write_ranked(
+        tmp_path,
+        [
+            _row(symbol="BAD", execution_pool_eligible=False),
+            _row(symbol="GOOD", execution_pool_eligible=True, execution_rank=2, raw_rank=2),
+        ],
+    )
+
+    rows = execution_ranked_auto_open_candidates(root=tmp_path)
+    assert [row["symbol"] for row in rows] == ["GOOD"]
