@@ -13,3 +13,9 @@ eod:
   t_minus_5_min: 5
   t_minus_1_min: 1
   market_close_time_local: "16:00"
+eod_flatten:
+  enabled: true
+  timezone: America/New_York
+  flatten_start_time: "15:55"
+  flatten_end_time: "16:00"
+  allow_intraday_flatten: false

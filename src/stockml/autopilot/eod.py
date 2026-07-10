@@ -37,6 +37,15 @@ class EODConfig:
     market_close_time_local: str = "16:00"
 
 
+@dataclass(frozen=True)
+class EODFlattenWindowConfig:
+    enabled: bool = True
+    timezone: str = "America/New_York"
+    flatten_start_time: str = "15:55"
+    flatten_end_time: str = "16:00"
+    allow_intraday_flatten: bool = False
+
+
 def load_config(path: Path | str = CONFIG_PATH) -> EODConfig:
     payload = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     data = dict(payload.get("eod") or {})
@@ -56,6 +65,34 @@ def load_config(path: Path | str = CONFIG_PATH) -> EODConfig:
         t_minus_1_min=int(data.get("t_minus_1_min", 1)),
         market_close_time_local=str(data.get("market_close_time_local", "16:00")),
     )
+
+
+def load_flatten_window_config(path: Path | str = CONFIG_PATH) -> EODFlattenWindowConfig:
+    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    data = dict(payload.get("eod_flatten") or {})
+    return EODFlattenWindowConfig(
+        enabled=bool(data.get("enabled", True)),
+        timezone=str(data.get("timezone", "America/New_York") or "America/New_York"),
+        flatten_start_time=str(data.get("flatten_start_time", "15:55") or "15:55"),
+        flatten_end_time=str(data.get("flatten_end_time", "16:00") or "16:00"),
+        allow_intraday_flatten=bool(data.get("allow_intraday_flatten", False)),
+    )
+
+
+def _parse_hhmm(value: str) -> time:
+    hour, minute = [int(part) for part in str(value).split(":", 1)]
+    return time(hour, minute)
+
+
+def eod_flatten_window_active(now: datetime, config: EODFlattenWindowConfig | None = None) -> bool:
+    cfg = config or load_flatten_window_config()
+    if not cfg.enabled:
+        return False
+    tz = ZoneInfo(cfg.timezone)
+    local_now = now.astimezone(tz) if now.tzinfo else now.replace(tzinfo=tz)
+    start = datetime.combine(local_now.date(), _parse_hhmm(cfg.flatten_start_time), tzinfo=tz)
+    end = datetime.combine(local_now.date(), _parse_hhmm(cfg.flatten_end_time), tzinfo=tz)
+    return start <= local_now <= end
 
 
 def _local(value: datetime) -> datetime:
@@ -325,6 +362,7 @@ def run_eod_tick(
     open_orders: int = 0,
     close_func: Callable[[str, str], dict[str, Any]] | None = None,
     close_at: datetime | None = None,
+    flatten_window_config: EODFlattenWindowConfig | None = None,
 ) -> dict[str, Any]:
     cfg = config or load_config()
     stage = eod_state(now, cfg, close_at=close_at)
@@ -373,6 +411,12 @@ def run_eod_tick(
     if open_orders > 0 and symbols_to_close:
         notes.append("skipped:open_orders_in_flight")
         symbols_to_close = []
+
+    if stage in {"flatten", "verify"} and symbols_to_close:
+        window_cfg = flatten_window_config or load_flatten_window_config()
+        if not window_cfg.allow_intraday_flatten and not eod_flatten_window_active(now, window_cfg):
+            notes.extend(f"{symbol}:eod_flatten_outside_window:blocked" for symbol in symbols_to_close[:10])
+            symbols_to_close = []
 
     for symbol in symbols_to_close:
         result = guarded_paper_close(symbol, source=f"eod_{stage}", action_func=close_func)

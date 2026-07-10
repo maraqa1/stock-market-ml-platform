@@ -41,7 +41,11 @@ class AntiChurnConfig:
     minimum_hold_minutes: int = 30
     cooldown_minutes_after_close: int = 60
     block_same_cycle_open_close: bool = True
+    block_same_symbol_reopen_same_day: bool = True
     block_reverse_same_symbol_same_day: bool = True
+    max_opens_per_symbol_per_day: int = 1
+    max_closes_per_symbol_per_day: int = 1
+    max_reopens_per_symbol_per_day: int = 0
     allow_early_close_reasons: set[str] = field(default_factory=lambda: set(DEFAULT_ALLOWED_EARLY_CLOSE_REASONS))
 
 
@@ -158,6 +162,43 @@ def _last_trade_side(row: dict[str, Any]) -> str:
     return position_side(row.get("side") or row.get("direction") or row.get("last_trade_side") or row.get("qty"))
 
 
+def _trade_action(row: dict[str, Any]) -> str:
+    action = _text(row.get("action") or row.get("event_type") or row.get("source_action") or row.get("lifecycle_state")).lower()
+    if action in {"open", "opened", "filled_open", "candidate_submitted"}:
+        return "open"
+    if action in {"close", "closed", "filled_close", "flattened"}:
+        return "close"
+    if _text(row.get("opened_at")) and not _text(row.get("closed_at")):
+        return "open"
+    if _text(row.get("closed_at")):
+        return "close"
+    return action
+
+
+def _same_day_symbol_counts(symbol: str, trades: Iterable[dict[str, Any]], stamp: datetime) -> tuple[int, int]:
+    opens = 0
+    closes = 0
+    for row in trades:
+        if _symbol(row) != symbol:
+            continue
+        opened = _aware(row.get("opened_at") or row.get("submitted_at") or row.get("filled_at"))
+        closed = _aware(row.get("closed_at"))
+        action = _trade_action(row)
+        if opened and opened.date() == stamp.date():
+            opens += 1
+        elif action == "open":
+            event_at = _last_trade_at(row)
+            if event_at and event_at.date() == stamp.date():
+                opens += 1
+        if closed and closed.date() == stamp.date():
+            closes += 1
+        elif action == "close":
+            event_at = _last_trade_at(row)
+            if event_at and event_at.date() == stamp.date():
+                closes += 1
+    return opens, closes
+
+
 def _opposite(a: str, b: str) -> bool:
     return {a, b} == {"buy", "sell"}
 
@@ -239,6 +280,16 @@ def guard_actions(
                 blocked_indexes.add(index)
                 report.append(_report_row(symbol, "close", "minimum_hold_not_met", age, last_trade, attempted_side, cycle))
         elif is_open_action(action):
+            opens_today, closes_today = _same_day_symbol_counts(symbol, trades, stamp)
+            if cfg.max_opens_per_symbol_per_day >= 0 and opens_today >= cfg.max_opens_per_symbol_per_day:
+                blocked_indexes.add(index)
+                report.append(_report_row(symbol, "open", "same_symbol_daily_open_limit_reached", age, last_trade, attempted_side, cycle))
+                continue
+            if cfg.block_same_symbol_reopen_same_day and closes_today > 0:
+                blocked_indexes.add(index)
+                reason = "same_symbol_daily_reopen_limit_reached" if closes_today > cfg.max_reopens_per_symbol_per_day else "same_symbol_reopen_same_day_blocked"
+                report.append(_report_row(symbol, "open", reason, age, last_trade, attempted_side, cycle))
+                continue
             last_at = _last_trade_at(last_trade or {})
             if last_at and (stamp - last_at).total_seconds() / 60.0 < cfg.cooldown_minutes_after_close:
                 blocked_indexes.add(index)
@@ -307,9 +358,11 @@ def load_recent_trade_history(*, root: Path | str | None = None, limit: int = 10
                 rows.append(
                     {
                         "symbol": row.get("symbol"),
+                        "opened_at": row.get("opened_at"),
                         "closed_at": row.get("closed_at"),
                         "side": row.get("direction"),
                         "direction": row.get("direction"),
+                        "action": "close",
                         "source": "closed_trades_attribution",
                     }
                 )

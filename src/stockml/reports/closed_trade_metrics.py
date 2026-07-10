@@ -52,6 +52,10 @@ def normalize_direction(value: Any) -> str:
 
 def classify_close_reason(value: Any = None, details: dict[str, Any] | None = None) -> str:
     details = details or {}
+    raw_value = str(value or "").strip().lower()
+    raw_source = str(details.get("source") or details.get("trigger_source") or "").strip().lower()
+    if raw_value in {"snapshot_flattened", "flattened_from_snapshot"} or raw_source == "position_snapshot_reconstruction":
+        return "OTHER"
     haystack = " ".join(
         str(item or "")
         for item in [

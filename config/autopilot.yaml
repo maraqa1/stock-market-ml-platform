@@ -82,6 +82,7 @@ anti_churn:
   minimum_hold_minutes: 30
   cooldown_minutes_after_close: 60
   block_same_cycle_open_close: true
+  block_same_symbol_reopen_same_day: true
   block_reverse_same_symbol_same_day: true
   allow_early_close_reasons:
     - hard_stop_hit
@@ -92,10 +93,16 @@ anti_churn:
     - emergency_risk_breach
 
 position_lifecycle:
+  minimum_hold_minutes: 30
   require_exit_confirmation: true
   stale_signal_is_exit_reason: false
   unknown_signal_is_exit_reason: false
   defensive_close_requires_loss_or_risk_breach: true
+
+same_symbol_limits:
+  max_opens_per_symbol_per_day: 1
+  max_closes_per_symbol_per_day: 1
+  max_reopens_per_symbol_per_day: 0
 
 rotation:
   rotate_enabled: true

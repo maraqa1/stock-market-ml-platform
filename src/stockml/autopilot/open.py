@@ -22,7 +22,7 @@ from stockml.services.events import position_id_for_symbol, record_event_once
 from stockml.safety.paper_only_guard import paper_only_guard
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
-from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
+from stockml.trading.anti_churn_guard import AntiChurnConfig, guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.activity_journal import enrich_activity_details
 from stockml.trading.execution_engine import submit_paper_order_payload
 from stockml.trading.gate_override import paper_allow_all_override_active
@@ -1078,6 +1078,38 @@ def _todays_open_count(engine: Engine, now: datetime) -> int:
         )
 
 
+def _todays_symbol_open_rows(engine: Engine, now: datetime, symbol: str) -> list[dict[str, Any]]:
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    clean = str(symbol or "").upper()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(autopilot_open_log.c.logged_at, autopilot_open_log.c.symbol)
+            .where(autopilot_open_log.c.logged_at >= start)
+            .where(autopilot_open_log.c.verdict == "opened")
+            .where(autopilot_open_log.c.symbol == clean)
+        ).mappings().all()
+    return [{"symbol": row["symbol"], "opened_at": row["logged_at"], "side": "buy", "action": "open", "source": "autopilot_open_log"} for row in rows]
+
+
+def _anti_churn_config(root: Path | str | None = None) -> AntiChurnConfig:
+    payload = _read_payload(auto_open_config_path(root))
+    anti = payload.get("anti_churn") if isinstance(payload.get("anti_churn"), dict) else {}
+    limits = payload.get("same_symbol_limits") if isinstance(payload.get("same_symbol_limits"), dict) else {}
+    allowed = anti.get("allow_early_close_reasons") if isinstance(anti.get("allow_early_close_reasons"), list) else None
+    return AntiChurnConfig(
+        enabled=bool(anti.get("enabled", True)),
+        minimum_hold_minutes=int(anti.get("minimum_hold_minutes", 30)),
+        cooldown_minutes_after_close=int(anti.get("cooldown_minutes_after_close", 60)),
+        block_same_cycle_open_close=bool(anti.get("block_same_cycle_open_close", True)),
+        block_same_symbol_reopen_same_day=bool(anti.get("block_same_symbol_reopen_same_day", True)),
+        block_reverse_same_symbol_same_day=bool(anti.get("block_reverse_same_symbol_same_day", True)),
+        max_opens_per_symbol_per_day=int(limits.get("max_opens_per_symbol_per_day", 1)),
+        max_closes_per_symbol_per_day=int(limits.get("max_closes_per_symbol_per_day", 1)),
+        max_reopens_per_symbol_per_day=int(limits.get("max_reopens_per_symbol_per_day", 0)),
+        allow_early_close_reasons=set(allowed) if allowed else AntiChurnConfig().allow_early_close_reasons,
+    )
+
+
 def _todays_detail_open_count(engine: Engine, now: datetime, detail_key: str) -> int:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     with engine.connect() as conn:
@@ -1733,6 +1765,31 @@ def apply_auto_open(
             blocked += 1
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=validation.reason, details={**asset_details, "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:blocked:{validation.reason}")
+            continue
+        anti_history = load_recent_trade_history(root=root) + _todays_symbol_open_rows(db, stamp, symbol)
+        anti_allowed, anti_report = guard_actions(
+            [{"symbol": symbol, "action": "open", "side": side, "reason": "paper_autopilot_open"}],
+            open_positions=open_positions,
+            trade_history=anti_history,
+            now=stamp,
+            config=_anti_churn_config(root),
+            cycle_id=cycle_id,
+        )
+        if not anti_allowed:
+            blocked += 1
+            anti_path = str(write_anti_churn_report(anti_report, root=root, stamp=cycle_id)) if not anti_report.empty else ""
+            reason = str(anti_report.iloc[0]["reason"] if not anti_report.empty else "anti_churn_blocked")
+            _record_open(
+                symbol=symbol,
+                promotion_score=candidate.get("promotion_score"),
+                size_usd=order_size,
+                verdict="blocked",
+                block_reason=reason,
+                details={**asset_details, "order": order, "anti_churn_report_path": anti_path},
+                engine=db,
+                now=stamp,
+            )
+            notes.append(f"{symbol}:blocked:{reason}")
             continue
         if not trade_cfg.submit_orders:
             blocked += 1
