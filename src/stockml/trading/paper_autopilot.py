@@ -706,6 +706,11 @@ def _positions_for_position_management(root: Path | None, positions: pd.DataFram
             "signal_alignment",
             "rank_status",
             "rank_change",
+            "replacement_symbol",
+            "replacement_reason",
+            "replacement_edge_bps",
+            "replacement_quality_status",
+            "replacement_risk_tier",
         ]:
             if column in latest.columns:
                 out[column] = out["__symbol"].map(latest[column]).where(

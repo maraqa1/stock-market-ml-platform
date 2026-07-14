@@ -57,6 +57,11 @@ OUTPUT_COLUMNS = [
     "recommended_delta_qty",
     "recommended_delta_notional",
     "recommended_fraction_to_reduce",
+    "replacement_symbol",
+    "replacement_reason",
+    "replacement_edge_bps",
+    "replacement_quality_status",
+    "replacement_risk_tier",
     "primary_reason",
     "supporting_reasons",
     "blocking_guard",
@@ -76,6 +81,7 @@ class PositionManagementConfig:
     max_spread_bps: float = 25.0
     default_max_position_qty_multiplier: float = 2.0
     short_add_enabled: bool = False
+    profitable_replacement_min_edge_bps: float = 0.0
 
 
 def _now() -> datetime:
@@ -267,6 +273,11 @@ def _base_output(row: dict[str, Any], now: datetime, config: PositionManagementC
         "recommended_delta_qty": 0.0,
         "recommended_delta_notional": 0.0,
         "recommended_fraction_to_reduce": 0.0,
+        "replacement_symbol": _text(row.get("replacement_symbol")).upper(),
+        "replacement_reason": _text(row.get("replacement_reason")),
+        "replacement_edge_bps": _float(row.get("replacement_edge_bps")),
+        "replacement_quality_status": _lower(row.get("replacement_quality_status")),
+        "replacement_risk_tier": _lower(row.get("replacement_risk_tier")),
         "primary_reason": "no_action_required",
         "supporting_reasons": "",
         "blocking_guard": "",
@@ -379,6 +390,26 @@ def decide_position(row: dict[str, Any], *, now: datetime | None = None, config:
     meaningful_profit = pnl >= cfg.meaningful_profit_pct or peak >= cfg.meaningful_profit_pct
     material_giveback = giveback >= cfg.moderate_giveback_pct
     severe_giveback = giveback >= cfg.severe_giveback_pct
+    replacement_symbol = _text(out.get("replacement_symbol")).upper()
+    replacement_edge = _float(out.get("replacement_edge_bps"), 0.0) or 0.0
+    replacement_quality = _lower(out.get("replacement_quality_status"))
+    replacement_is_eligible = bool(
+        replacement_symbol
+        and replacement_symbol != symbol
+        and replacement_quality in {"approved", "reduced"}
+        and replacement_edge > cfg.profitable_replacement_min_edge_bps
+    )
+
+    if pnl > 0 and replacement_is_eligible and (weakening or monitor_decision in {"replace", "rotate"}):
+        support.extend(
+            [
+                "profitable_position",
+                "eligible_replacement_available",
+                f"replacement={replacement_symbol}",
+                f"replacement_edge_bps={replacement_edge:.2f}",
+            ]
+        )
+        return _finalize(out, "close", "take_profit_hit", level=4, strength="high", confidence="medium", support=support)
 
     if meaningful_profit and material_giveback:
         support.extend(["meaningful_profit", f"giveback={giveback:.4f}"])

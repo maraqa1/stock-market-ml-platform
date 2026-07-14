@@ -97,6 +97,38 @@ def test_profitable_weakening_edge_recommends_reduce():
     assert decision["recommended_action"] == "reduce"
 
 
+def test_profitable_weakening_position_with_replacement_takes_profit():
+    decision = action(
+        pos(
+            unrealized_plpc=0.03,
+            peak_pnl_pct=0.03,
+            holding_quality="avoid",
+            replacement_symbol="SNOW",
+            replacement_edge_bps=225,
+            replacement_quality_status="approved",
+            replacement_risk_tier="high_quality",
+        )
+    )
+    assert decision["recommended_action"] == "close"
+    assert decision["primary_reason"] == "take_profit_hit"
+    assert decision["replacement_symbol"] == "SNOW"
+    assert "eligible_replacement_available" in decision["supporting_reasons"]
+
+
+def test_profitable_replacement_requires_eligible_candidate():
+    decision = action(
+        pos(
+            unrealized_plpc=0.03,
+            peak_pnl_pct=0.03,
+            holding_quality="avoid",
+            replacement_symbol="SNOW",
+            replacement_edge_bps=225,
+            replacement_quality_status="rejected",
+        )
+    )
+    assert decision["recommended_action"] == "reduce"
+
+
 def test_profitable_strong_aligned_signal_can_increase_when_below_cap():
     decision = action(pos(unrealized_plpc=0.03, peak_pnl_pct=0.03, qty=100, max_allowed_position_qty=150))
     assert decision["recommended_action"] in {"hold", "increase"}
