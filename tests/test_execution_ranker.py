@@ -103,6 +103,34 @@ def test_raw_rank_is_preserved_and_execution_rank_is_stable():
     assert ordered == ["BBB", "AAA", "ZZZ"]
 
 
+def test_qualified_volatility_opportunity_reduced_long_receives_execution_rank():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame(
+            [
+                _row(
+                    "CRNX",
+                    3,
+                    status="reduced",
+                    reason="reduced",
+                    volatility_tier="extreme",
+                    risk_tier="speculative",
+                    volatility_opportunity_status="qualified_reduced",
+                    volatility_opportunity_reason="volatility_extreme_offset_by_validated_edge",
+                    volatility_opportunity_allows_reduced_trade=True,
+                )
+            ]
+        ),
+        short_policy=ShortSidePolicy(),
+    )
+
+    row = ranked.iloc[0]
+    assert row["status"] == "executable"
+    assert row["execution_domain"] == "execution_candidate"
+    assert row["execution_rank"] == 1
+    assert row["all_block_reasons"] == ""
+    assert row["volatility_opportunity_status"] == "qualified_reduced"
+
+
 def test_writer_outputs_expected_schema(tmp_path: Path):
     path = write_execution_ranked_candidates(
         pd.DataFrame([_row("BNY", 1)]),

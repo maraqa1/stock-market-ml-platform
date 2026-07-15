@@ -34,6 +34,9 @@ OUTPUT_COLUMNS = [
     "primary_block_reason",
     "risk_tier",
     "volatility_tier",
+    "volatility_opportunity_status",
+    "volatility_opportunity_reason",
+    "volatility_opportunity_allows_reduced_trade",
     "validation_quality",
     "calibration_quality",
     "validated_expected_return_bps",
@@ -287,11 +290,27 @@ def _status(row: pd.Series, reasons: list[str], *, research_only: bool) -> str:
     quantity = int(_num(row.get("suggested_quantity")) or 0)
     if current == "approved" and not reasons and notional > 0 and quantity > 0:
         return "executable"
+    if _is_qualified_volatility_opportunity(row) and notional > 0 and quantity > 0:
+        return "executable"
     if current == "reduced" and notional > 0 and quantity > 0 and all(reason.startswith("reduced_due_") for reason in reasons):
         return "watch"
     if not reasons and notional > 0 and quantity > 0:
         return "executable"
     return "blocked"
+
+
+def _is_qualified_volatility_opportunity(row: pd.Series) -> bool:
+    if _text(row.get("volatility_opportunity_status")).lower() != "qualified_reduced":
+        return False
+    if not _boolish(row.get("volatility_opportunity_allows_reduced_trade"), False):
+        return False
+    return _text(row.get("trade_quality_status")).lower() == "reduced"
+
+
+def _execution_reasons(row: pd.Series, reasons: list[str]) -> list[str]:
+    if not _is_qualified_volatility_opportunity(row):
+        return reasons
+    return [reason for reason in reasons if reason != "reduced_due_to_volatility"]
 
 
 def _metric_scope(row: pd.Series, column: str) -> str:
@@ -395,7 +414,7 @@ def build_execution_ranked_candidates(
                 and not _is_source_short(row)
             ):
                 research_only = True
-        reasons = _normalise_reasons(row, _source_short_reasons(row, reasons))
+        reasons = _execution_reasons(row, _normalise_reasons(row, _source_short_reasons(row, reasons)))
         status = _status(row, reasons, research_only=research_only)
         if _is_source_short(row) and status == "research_only":
             status = "watch" if authority.get("direction_resolution") == "watch" else "blocked"
@@ -449,6 +468,9 @@ def build_execution_ranked_candidates(
                 "primary_block_reason": primary_reason,
                 "risk_tier": row.get("risk_tier", ""),
                 "volatility_tier": row.get("volatility_tier", ""),
+                "volatility_opportunity_status": row.get("volatility_opportunity_status", ""),
+                "volatility_opportunity_reason": row.get("volatility_opportunity_reason", ""),
+                "volatility_opportunity_allows_reduced_trade": row.get("volatility_opportunity_allows_reduced_trade", ""),
                 "validation_quality": _validation_quality(row),
                 "calibration_quality": row.get("calibration_quality", ""),
                 "validated_expected_return_bps": row.get("validated_expected_return_bps", ""),
