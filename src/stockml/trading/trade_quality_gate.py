@@ -61,7 +61,11 @@ def _apply_expected_return_calibration(signals: pd.DataFrame, calibration: Optio
         "calibration_quality",
         "expected_return_quality",
     ]:
-        out[column] = mapped[column].reindex(out.index)
+        mapped_values = mapped[column].reindex(out.index)
+        if column in out.columns:
+            out[column] = mapped_values.combine_first(out[column])
+        else:
+            out[column] = mapped_values
     return out
 
 
