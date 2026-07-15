@@ -90,7 +90,8 @@ def test_speculative_stock_gets_reduced_notional():
     assert 0 < row["approved_notional"] < 1000
 
 
-def test_extreme_volatility_long_with_validated_edge_gets_reduced_opportunity():
+def test_extreme_volatility_long_with_validated_edge_gets_reduced_opportunity(monkeypatch):
+    monkeypatch.setattr(trade_quality_gate, "latest_expected_return_calibration", lambda: pd.DataFrame())
     row = apply_trade_quality_gate(
         pd.DataFrame(
             [
@@ -123,7 +124,8 @@ def test_extreme_volatility_long_with_validated_edge_gets_reduced_opportunity():
     assert "volatility_extreme" not in row["trade_quality_reason"]
 
 
-def test_extreme_volatility_long_with_weak_edge_stays_rejected():
+def test_extreme_volatility_long_with_weak_edge_stays_rejected(monkeypatch):
+    monkeypatch.setattr(trade_quality_gate, "latest_expected_return_calibration", lambda: pd.DataFrame())
     row = apply_trade_quality_gate(
         pd.DataFrame(
             [
@@ -149,7 +151,8 @@ def test_extreme_volatility_long_with_weak_edge_stays_rejected():
     assert row["volatility_opportunity_reason"] == "validated_expected_return_too_low"
 
 
-def test_extreme_volatility_planner_only_row_stays_rejected():
+def test_extreme_volatility_planner_only_row_stays_rejected(monkeypatch):
+    monkeypatch.setattr(trade_quality_gate, "latest_expected_return_calibration", lambda: pd.DataFrame())
     row = apply_trade_quality_gate(
         pd.DataFrame(
             [
@@ -174,7 +177,8 @@ def test_extreme_volatility_planner_only_row_stays_rejected():
     assert row["volatility_opportunity_reason"] == "not_source_approved_long"
 
 
-def test_extreme_volatility_direction_conflict_stays_rejected():
+def test_extreme_volatility_direction_conflict_stays_rejected(monkeypatch):
+    monkeypatch.setattr(trade_quality_gate, "latest_expected_return_calibration", lambda: pd.DataFrame())
     row = apply_trade_quality_gate(
         pd.DataFrame(
             [
