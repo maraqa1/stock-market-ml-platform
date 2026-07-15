@@ -50,7 +50,7 @@ volatility_opportunity:
   side: LONG_ONLY
   min_validated_expected_return_bps: 40
   min_validated_profit_factor: 1.10
-  min_validated_hit_rate: 0.50
+  min_validated_hit_rate: 0.45
   min_ticker_direction_sample_count: 5
   require_ticker_direction_bias: trust_long
   allowed_expected_return_scopes:

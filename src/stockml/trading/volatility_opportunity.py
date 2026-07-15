@@ -19,7 +19,7 @@ class VolatilityOpportunityConfig:
     side: str = "LONG_ONLY"
     min_validated_expected_return_bps: float = 40.0
     min_validated_profit_factor: float = 1.10
-    min_validated_hit_rate: float = 0.50
+    min_validated_hit_rate: float = 0.45
     min_ticker_direction_sample_count: int = 5
     require_ticker_direction_bias: str = "trust_long"
     allowed_expected_return_scopes: tuple[str, ...] = DEFAULT_ALLOWED_SCOPES
@@ -114,7 +114,7 @@ def load_volatility_opportunity_config(path: Path | str | None = None) -> Volati
         side=_text(data.get("side")) or "LONG_ONLY",
         min_validated_expected_return_bps=_float(data.get("min_validated_expected_return_bps"), 40.0),
         min_validated_profit_factor=_float(data.get("min_validated_profit_factor"), 1.10),
-        min_validated_hit_rate=_float(data.get("min_validated_hit_rate"), 0.50),
+        min_validated_hit_rate=_float(data.get("min_validated_hit_rate"), 0.45),
         min_ticker_direction_sample_count=_int(data.get("min_ticker_direction_sample_count"), 5),
         require_ticker_direction_bias=_text(data.get("require_ticker_direction_bias")) or "trust_long",
         allowed_expected_return_scopes=_tuple(data.get("allowed_expected_return_scopes"), DEFAULT_ALLOWED_SCOPES),
