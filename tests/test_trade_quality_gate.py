@@ -90,6 +90,115 @@ def test_speculative_stock_gets_reduced_notional():
     assert 0 < row["approved_notional"] < 1000
 
 
+def test_extreme_volatility_long_with_validated_edge_gets_reduced_opportunity():
+    row = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(
+                    ticker="VOLT",
+                    close=20,
+                    open=19.8,
+                    high=21,
+                    low=19,
+                    source_trade_action="Long",
+                    expected_return_scope="side",
+                    validated_expected_return_bps=80,
+                    validated_hit_rate=0.56,
+                    validated_profit_factor=1.4,
+                    ticker_direction_bias="trust_long",
+                    ticker_direction_sample_count=12,
+                    volatility_20d=0.13,
+                )
+            ]
+        ),
+        config(),
+    ).iloc[0]
+
+    assert row["trade_quality_status"] == "reduced"
+    assert row["risk_tier"] == "speculative"
+    assert row["approved_notional"] > 0
+    assert row["suggested_quantity"] > 0
+    assert row["volatility_opportunity_status"] == "qualified_reduced"
+    assert bool(row["volatility_opportunity_allows_reduced_trade"]) is True
+    assert "volatility_extreme" not in row["trade_quality_reason"]
+
+
+def test_extreme_volatility_long_with_weak_edge_stays_rejected():
+    row = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(
+                    ticker="WEAK",
+                    source_trade_action="Long",
+                    expected_return_scope="side",
+                    validated_expected_return_bps=10,
+                    validated_hit_rate=0.56,
+                    validated_profit_factor=1.4,
+                    ticker_direction_bias="trust_long",
+                    ticker_direction_sample_count=12,
+                    volatility_20d=0.13,
+                )
+            ]
+        ),
+        config(),
+    ).iloc[0]
+
+    assert row["trade_quality_status"] == "rejected"
+    assert "volatility_extreme" in row["trade_quality_reason"]
+    assert row["volatility_opportunity_status"] == "blocked"
+    assert row["volatility_opportunity_reason"] == "validated_expected_return_too_low"
+
+
+def test_extreme_volatility_planner_only_row_stays_rejected():
+    row = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(
+                    ticker="PLAN",
+                    source_trade_action="No Decision",
+                    expected_return_scope="side",
+                    validated_expected_return_bps=100,
+                    validated_hit_rate=0.56,
+                    validated_profit_factor=1.4,
+                    ticker_direction_bias="trust_long",
+                    ticker_direction_sample_count=12,
+                    volatility_20d=0.13,
+                )
+            ]
+        ),
+        config(),
+    ).iloc[0]
+
+    assert row["trade_quality_status"] == "rejected"
+    assert "volatility_extreme" in row["trade_quality_reason"]
+    assert row["volatility_opportunity_reason"] == "not_source_approved_long"
+
+
+def test_extreme_volatility_direction_conflict_stays_rejected():
+    row = apply_trade_quality_gate(
+        pd.DataFrame(
+            [
+                signal(
+                    ticker="CONFLICT",
+                    source_trade_action="Long",
+                    expected_return_scope="side",
+                    validated_expected_return_bps=100,
+                    validated_hit_rate=0.56,
+                    validated_profit_factor=1.4,
+                    ticker_direction_bias="trust_short",
+                    ticker_direction_sample_count=12,
+                    volatility_20d=0.13,
+                )
+            ]
+        ),
+        config(),
+    ).iloc[0]
+
+    assert row["trade_quality_status"] == "rejected"
+    assert "volatility_extreme" in row["trade_quality_reason"]
+    assert row["volatility_opportunity_reason"] == "ticker_direction_bias_not_trust_long"
+
+
 def test_higher_risk_profile_sizes_larger_paper_orders():
     cfg = config(account_equity=100_000, max_orders=20, max_total_notional=50_000, max_position_pct=0.05)
     rows = apply_trade_quality_gate(

@@ -12,6 +12,7 @@ from stockml.trading.position_sizing import approved_notional, base_notional, su
 from stockml.trading.risk_checks import liquidity_tier, numeric, reject_reasons, risk_tier, volatility_tier
 from stockml.trading.spread_edge import evaluate_spread_edge, expected_move_bps_from
 from stockml.trading.stop_take_profit import stop_take_profit_prices
+from stockml.trading.volatility_opportunity import evaluate_volatility_opportunity
 
 
 PRICE_COLUMNS = ["date", "ticker", "open", "high", "low", "close", "adj_close", "volume"]
@@ -280,6 +281,10 @@ def apply_trade_quality_gate(
     base = base_notional(config.account_equity, config.max_position_pct, config.max_total_notional, config.max_orders)
     for _, row in out.iterrows():
         reasons = reject_reasons(row, config)
+        volatility_opportunity = evaluate_volatility_opportunity(row, reasons)
+        if volatility_opportunity["volatility_opportunity_allows_reduced_trade"]:
+            reasons = [reason for reason in reasons if reason != "volatility_extreme"]
+            row["risk_tier"] = "speculative"
         side = "sell" if str(row.get("trade_action", "")).lower() == "short" else "buy"
         hard_reject = bool(reasons) or row["risk_tier"] == "reject"
         notional = approved_notional(base, row["risk_tier"], numeric(row.get("side_probability"), default=0)) if not hard_reject else 0.0
@@ -320,6 +325,7 @@ def apply_trade_quality_gate(
                 "position_sizing_reason": sizing_reason if status in {"approved", "reduced"} else "rejected",
                 **spread_edge.details(),
                 **stop,
+                **volatility_opportunity,
                 "trade_quality_status": status,
                 "trade_quality_reason": status if status in {"approved", "reduced"} else "|".join(dict.fromkeys(reasons or ["risk_tier_reject"])),
                 "order_eligible": bool(status in {"approved", "reduced"} and quantity >= 1),

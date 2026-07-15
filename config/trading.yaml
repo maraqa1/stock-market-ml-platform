@@ -45,6 +45,18 @@ source_approval_expansion:
     - risk_gate_failed
     - asset_not_overnight_tradable
     - price_below_minimum
+volatility_opportunity:
+  enabled: true
+  side: LONG_ONLY
+  min_validated_expected_return_bps: 40
+  min_validated_profit_factor: 1.10
+  min_validated_hit_rate: 0.50
+  min_ticker_direction_sample_count: 5
+  require_ticker_direction_bias: trust_long
+  allowed_expected_return_scopes:
+    - ticker
+    - bucket
+    - side
 direction_gate:
   enabled: true
   require_source_trade_action: true
