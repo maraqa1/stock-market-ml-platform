@@ -17,8 +17,9 @@ def _row(
     reason: str = "",
     side: str | None = None,
     expected_quality: str = "calibrated",
+    **overrides,
 ) -> dict:
-    return {
+    row = {
         "symbol": symbol,
         "rank_overall": rank,
         "trade_action": action,
@@ -38,6 +39,8 @@ def _row(
         "approved_notional": 100.0,
         "suggested_quantity": 1,
     }
+    row.update(overrides)
+    return row
 
 
 def test_approved_long_receives_first_execution_rank_after_rejected_raw_rank_one():
