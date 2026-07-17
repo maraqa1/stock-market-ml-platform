@@ -127,7 +127,7 @@ def test_extreme_volatility_long_with_validated_edge_is_rejected_when_opportunit
     ).iloc[0]
 
     assert row["trade_quality_status"] == "rejected"
-    assert row["risk_tier"] == "speculative"
+    assert row["risk_tier"] == "reject"
     assert row["approved_notional"] == 0
     assert row["suggested_quantity"] == 0
     assert row["volatility_opportunity_status"] == "disabled"

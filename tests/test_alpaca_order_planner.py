@@ -156,7 +156,12 @@ def test_build_order_plan_balances_eligible_long_and_short_orders_when_shorting_
 
     assert plan["trade_action"].value_counts().to_dict() == {"Long": 2, "Short": 2}
     assert set(plan.loc[plan["trade_action"].eq("Short"), "side"]) == {"sell"}
-    assert set(plan["trade_quality_status"]) == {"approved"}
+    long_rows = plan[plan["trade_action"].eq("Long")]
+    short_rows = plan[plan["trade_action"].eq("Short")]
+    assert set(long_rows["trade_quality_status"]) == {"approved"}
+    assert set(short_rows["trade_quality_status"]) == {"rejected"}
+    assert short_rows["trade_quality_reason"].str.contains("short_side_validation_required").all()
+    assert short_rows["order_eligible"].eq(False).all()
 
 
 def test_build_order_plan_keeps_rejected_short_rows_visible_for_operator_review():
