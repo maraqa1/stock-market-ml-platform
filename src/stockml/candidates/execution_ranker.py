@@ -418,6 +418,8 @@ def build_execution_ranked_candidates(
         authority = resolve_direction_authority(row, short_policy=policy, source_expansion_config=source_expansion_config)
         authority_status = str(authority.get("executable_direction_status") or "")
         authority_reason = str(authority.get("direction_resolution_reason") or "")
+        if not _has_source_direction(row) and authority.get("source_expansion_decision") != "watch_candidate":
+            research_only = True
         if authority_status != "source_approved_memory_aligned":
             if authority_status == "planner_only_not_executable":
                 reasons = _prepend_reason(reasons, authority_reason or "planner_derived_action_without_source_approval")
