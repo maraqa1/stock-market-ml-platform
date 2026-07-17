@@ -23,6 +23,7 @@ from stockml.prices.download_price_history import download_price_history
 from stockml.prices.validate_price_history import build_price_quality_report
 from stockml.reports.pipeline_quality_checks import build_pipeline_quality_report
 from stockml.sentiment.build_sentiment_panel import build_sentiment_panel
+from stockml.trading.forward_paper_manifest import write_forward_paper_manifest
 from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.paper_trader import run_paper_trading
 from stockml.universe.build_tradable_universe import build_us_equity_universe
@@ -458,6 +459,14 @@ def run_profile(
             readiness = run_trading_day_readiness_gate(manifest.run_id, recorder_enabled=recorder_enabled, manifest_data=manifest_snapshot)
             manifest.stage_ok("trading_day_readiness", readiness)
             log(f"Trading day readiness complete: {readiness}")
+
+        current_stage = "forward_paper_manifest"
+        forward_manifest = write_forward_paper_manifest(
+            pipeline_manifest_path=manifest.path,
+            pipeline_run_id=manifest.run_id,
+        )
+        manifest.stage_ok("forward_paper_manifest", {"forward_paper_manifest": forward_manifest.get("path", "")})
+        log(f"Forward paper manifest complete: {forward_manifest.get('path', '')}")
 
         manifest.complete()
         _record_run_complete(recorder_enabled, manifest.run_id, "success")
