@@ -46,7 +46,7 @@ source_approval_expansion:
     - asset_not_overnight_tradable
     - price_below_minimum
 volatility_opportunity:
-  enabled: true
+  enabled: false
   side: LONG_ONLY
   min_validated_expected_return_bps: 40
   min_validated_profit_factor: 1.10
