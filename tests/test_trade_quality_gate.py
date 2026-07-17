@@ -23,7 +23,8 @@ def config(**overrides):
         "min_side_probability": 0.55,
         "min_abs_probability_edge": 0.05,
         "min_intraday_volume": 100000,
-        "min_market_cap": 300000000.0,
+        "min_market_cap": 500000000.0,
+        "min_avg_dollar_volume_20d": 20_000_000.0,
         "min_risk_adjusted_score": 0.005,
         "transaction_cost_bps": 10.0,
     }
@@ -38,6 +39,7 @@ def signal(**overrides):
         "sector": "Technology",
         "date": "2026-05-08",
         "trade_action": "Long",
+        "source_trade_action": "Long",
         "side_probability": 0.75,
         "probability_edge": 0.25,
         "expected_trade_return": 0.02,
@@ -50,6 +52,13 @@ def signal(**overrides):
         "avg_dollar_volume_20d": 100_000_000,
         "market_cap": 20_000_000_000,
         "volatility_20d": 0.02,
+        "expected_return_quality": "usable",
+        "calibration_quality": "usable",
+        "validated_expected_return_bps": 42,
+        "validated_hit_rate": 0.56,
+        "validated_profit_factor": 1.2,
+        "ticker_direction_bias": "trust_long",
+        "ticker_direction_sample_count": 100,
     }
     row.update(overrides)
     return row
@@ -84,13 +93,13 @@ def test_intraday_issue_is_explained():
 
 
 def test_speculative_stock_gets_reduced_notional():
-    row = apply_trade_quality_gate(pd.DataFrame([signal(market_cap=600_000_000, avg_dollar_volume_20d=6_000_000, volume=120_000, volatility_20d=0.06)]), config()).iloc[0]
+    row = apply_trade_quality_gate(pd.DataFrame([signal(market_cap=600_000_000, avg_dollar_volume_20d=25_000_000, volume=120_000, volatility_20d=0.06)]), config()).iloc[0]
     assert row["trade_quality_status"] == "reduced"
     assert row["risk_tier"] == "speculative"
     assert 0 < row["approved_notional"] < 1000
 
 
-def test_extreme_volatility_long_with_validated_edge_gets_reduced_opportunity(monkeypatch):
+def test_extreme_volatility_long_with_validated_edge_is_rejected_when_opportunity_disabled(monkeypatch):
     monkeypatch.setattr(trade_quality_gate, "latest_expected_return_calibration", lambda: pd.DataFrame())
     row = apply_trade_quality_gate(
         pd.DataFrame(
@@ -117,13 +126,13 @@ def test_extreme_volatility_long_with_validated_edge_gets_reduced_opportunity(mo
         config(),
     ).iloc[0]
 
-    assert row["trade_quality_status"] == "reduced"
+    assert row["trade_quality_status"] == "rejected"
     assert row["risk_tier"] == "speculative"
-    assert row["approved_notional"] > 0
-    assert row["suggested_quantity"] > 0
-    assert row["volatility_opportunity_status"] == "qualified_reduced"
-    assert bool(row["volatility_opportunity_allows_reduced_trade"]) is True
-    assert "volatility_extreme" not in row["trade_quality_reason"]
+    assert row["approved_notional"] == 0
+    assert row["suggested_quantity"] == 0
+    assert row["volatility_opportunity_status"] == "disabled"
+    assert bool(row["volatility_opportunity_allows_reduced_trade"]) is False
+    assert "volatility_extreme" in row["trade_quality_reason"]
 
 
 def test_extreme_volatility_long_with_weak_edge_stays_rejected(monkeypatch):
@@ -151,8 +160,8 @@ def test_extreme_volatility_long_with_weak_edge_stays_rejected(monkeypatch):
 
     assert row["trade_quality_status"] == "rejected"
     assert "volatility_extreme" in row["trade_quality_reason"]
-    assert row["volatility_opportunity_status"] == "blocked"
-    assert row["volatility_opportunity_reason"] == "validated_expected_return_too_low"
+    assert row["volatility_opportunity_status"] == "disabled"
+    assert row["volatility_opportunity_reason"] == "volatility_opportunity_disabled"
 
 
 def test_extreme_volatility_planner_only_row_stays_rejected(monkeypatch):
@@ -180,7 +189,7 @@ def test_extreme_volatility_planner_only_row_stays_rejected(monkeypatch):
 
     assert row["trade_quality_status"] == "rejected"
     assert "volatility_extreme" in row["trade_quality_reason"]
-    assert row["volatility_opportunity_reason"] == "not_source_approved_long"
+    assert row["volatility_opportunity_reason"] == "volatility_opportunity_disabled"
 
 
 def test_extreme_volatility_direction_conflict_stays_rejected(monkeypatch):
@@ -208,7 +217,7 @@ def test_extreme_volatility_direction_conflict_stays_rejected(monkeypatch):
 
     assert row["trade_quality_status"] == "rejected"
     assert "volatility_extreme" in row["trade_quality_reason"]
-    assert row["volatility_opportunity_reason"] == "ticker_direction_bias_not_trust_long"
+    assert row["volatility_opportunity_reason"] == "volatility_opportunity_disabled"
 
 
 def test_higher_risk_profile_sizes_larger_paper_orders():
@@ -218,7 +227,7 @@ def test_higher_risk_profile_sizes_larger_paper_orders():
             [
                 signal(ticker="HQ", side_probability=0.80),
                 signal(ticker="MED", side_probability=0.80, market_cap=2_000_000_000, avg_dollar_volume_20d=25_000_000),
-                signal(ticker="SPEC", side_probability=0.80, market_cap=600_000_000, avg_dollar_volume_20d=6_000_000, volume=120_000, volatility_20d=0.06),
+                signal(ticker="SPEC", side_probability=0.80, market_cap=600_000_000, avg_dollar_volume_20d=25_000_000, volume=120_000, volatility_20d=0.06),
             ]
         ),
         cfg,
@@ -278,8 +287,8 @@ def test_directional_round_up_does_not_apply_to_speculative_candidates():
                     trade_action="Long",
                     directional_action="Long",
                     directional_strength=0.99,
-                    market_cap=600_000_000,
-                    avg_dollar_volume_20d=6_000_000,
+                        market_cap=600_000_000,
+                        avg_dollar_volume_20d=25_000_000,
                     volume=120_000,
                 )
             ]

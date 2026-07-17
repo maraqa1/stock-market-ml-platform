@@ -19,7 +19,8 @@ def config(**overrides):
         "min_side_probability": 0.55,
         "min_abs_probability_edge": 0.05,
         "min_intraday_volume": 100000,
-        "min_market_cap": 300000000.0,
+        "min_market_cap": 500000000.0,
+        "min_avg_dollar_volume_20d": 20_000_000.0,
         "min_risk_adjusted_score": 0.001,
         "transaction_cost_bps": 10.0,
     }
@@ -120,6 +121,7 @@ def trade_signal(ticker, action, score, **overrides):
         "ticker": ticker,
         "date": "2026-05-08",
         "trade_action": action,
+        "source_trade_action": action,
         "side_probability": 0.8,
         "probability_edge": 0.2 if action == "Long" else -0.2,
         "expected_trade_return": 0.02,
@@ -133,6 +135,13 @@ def trade_signal(ticker, action, score, **overrides):
         "volatility_20d": 0.02,
         "risk_adjusted_score": score,
         "sector": "Technology" if action == "Long" else "Healthcare",
+        "expected_return_quality": "usable",
+        "calibration_quality": "usable",
+        "validated_expected_return_bps": 42 if action == "Long" else 25,
+        "validated_hit_rate": 0.56,
+        "validated_profit_factor": 1.2,
+        "ticker_direction_bias": "trust_short" if action == "Short" else "trust_long",
+        "ticker_direction_sample_count": 100,
     }
     values.update(overrides)
     return values
@@ -288,6 +297,9 @@ def test_build_order_plan_uses_notional_paper_orders():
             "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 10, "open": 9.8,
             "high": 10.2, "low": 9.7, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000,
             "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.5,
+            "source_trade_action": "Long", "expected_return_quality": "usable", "calibration_quality": "usable",
+            "validated_expected_return_bps": 42, "validated_hit_rate": 0.56, "validated_profit_factor": 1.2,
+            "ticker_direction_bias": "trust_long", "ticker_direction_sample_count": 100,
         }]
     )
     plan = build_order_plan(signals, config(max_notional_per_order=250.0, extended_hours=True))
@@ -320,8 +332,8 @@ def test_order_plan_applies_price_and_total_notional_guards():
     signals = pd.DataFrame(
         [
             {"ticker": "AAA", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "close": 2, "risk_adjusted_score": 0.9},
-            {"ticker": "BBB", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 20, "open": 20, "high": 21, "low": 19, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.8},
-            {"ticker": "CCC", "trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 30, "open": 30, "high": 31, "low": 29, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.7},
+            {"ticker": "BBB", "trade_action": "Long", "source_trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 20, "open": 20, "high": 21, "low": 19, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.8, "expected_return_quality": "usable", "calibration_quality": "usable", "validated_expected_return_bps": 42, "validated_hit_rate": 0.56, "validated_profit_factor": 1.2, "ticker_direction_bias": "trust_long", "ticker_direction_sample_count": 100},
+            {"ticker": "CCC", "trade_action": "Long", "source_trade_action": "Long", "side_probability": 0.8, "probability_edge": 0.2, "expected_trade_return": 0.02, "close": 30, "open": 30, "high": 31, "low": 29, "volume": 1_000_000, "avg_dollar_volume_20d": 60_000_000, "market_cap": 20_000_000_000, "volatility_20d": 0.02, "risk_adjusted_score": 0.7, "expected_return_quality": "usable", "calibration_quality": "usable", "validated_expected_return_bps": 42, "validated_hit_rate": 0.56, "validated_profit_factor": 1.2, "ticker_direction_bias": "trust_long", "ticker_direction_sample_count": 100},
         ]
     )
     plan = build_order_plan(signals, config(max_orders=3, max_notional_per_order=500.0, max_total_notional=500.0))
