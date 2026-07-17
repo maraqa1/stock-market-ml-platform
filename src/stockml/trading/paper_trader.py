@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -25,12 +26,28 @@ from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, latest_signal_table
 from stockml.trading.position_intent_guard import PositionIntentConfig, guard_order_submission, record_position_intent_block, write_position_intent_report
 from stockml.trading.shortlist_snapshots import write_shortlist_snapshot
+from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_side_policy
 from stockml.trading.submission_guards import asset_is_overnight_tradable, load_submission_context, validate_order
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
     value = os.environ.get(name, "").strip().lower()
     return default if not value else value in {"1", "true", "yes", "y"}
+
+
+def warn_if_broker_short_enabled_while_policy_blocks(config, policy: ShortSidePolicy | None = None) -> bool:
+    active_policy = policy or load_short_side_policy()
+    policy_blocks_shorts = not (active_policy.enabled and active_policy.allow_shorts_in_validation)
+    if bool(getattr(config, "allow_short_selling", False)) and policy_blocks_shorts:
+        LOGGER.critical(
+            "broker_short_selling_enabled_while_short_side_policy_blocks: "
+            "set STOCKML_ALLOW_SHORT_SELLING=false or enable/validate short_side_policy before paper submission"
+        )
+        return True
+    return False
 
 
 def latest_model_freshness(signal_file: Optional[Path] = None) -> tuple[bool, str, str]:
@@ -334,6 +351,7 @@ def _write_tracking_snapshot(results: pd.DataFrame, config, stamp: str) -> tuple
 def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = False) -> dict[str, Path | int | bool]:
     ensure_data_dirs()
     config = alpaca_config()
+    warn_if_broker_short_enabled_while_policy_blocks(config)
     paper_only_guard(live_trading_enabled=config.live_trading_enabled)
     model_fresh, model_fresh_reason, model_signal_path = latest_model_freshness(signal_file)
     if not model_fresh and config.submit_orders and not plan_only and not _bool_env("STOCKML_ALLOW_STALE_MODEL_TRADING", False):

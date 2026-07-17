@@ -127,3 +127,29 @@ def test_short_policy_keeps_long_executable_when_disabled():
     )
     assert ranked.iloc[0]["status"] == "executable"
     assert ranked.iloc[0]["execution_rank"] == 1
+
+
+def test_paper_trader_warns_when_broker_shorts_enabled_but_policy_blocks(caplog):
+    from stockml.trading.paper_trader import warn_if_broker_short_enabled_while_policy_blocks
+
+    cfg = _alpaca_config(allow_short_selling=True)
+    policy = ShortSidePolicy(enabled=False, allow_shorts_in_validation=False)
+
+    with caplog.at_level("CRITICAL"):
+        warned = warn_if_broker_short_enabled_while_policy_blocks(cfg, policy)
+
+    assert warned is True
+    assert "broker_short_selling_enabled_while_short_side_policy_blocks" in caplog.text
+
+
+def test_paper_trader_does_not_warn_when_broker_shorts_disabled(caplog):
+    from stockml.trading.paper_trader import warn_if_broker_short_enabled_while_policy_blocks
+
+    cfg = _alpaca_config(allow_short_selling=False)
+    policy = ShortSidePolicy(enabled=False, allow_shorts_in_validation=False)
+
+    with caplog.at_level("CRITICAL"):
+        warned = warn_if_broker_short_enabled_while_policy_blocks(cfg, policy)
+
+    assert warned is False
+    assert "broker_short_selling_enabled_while_short_side_policy_blocks" not in caplog.text
