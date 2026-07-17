@@ -25,6 +25,32 @@ def analysis_note(row: pd.Series) -> str:
     return f"REVIEW: {domain or 'unknown'}"
 
 
+def markdown_counts(series: pd.Series) -> str:
+    rows = [("| value | count |"), ("|---|---:|")]
+    for value, count in series.items():
+        rows.append(f"| {str(value).replace('|', '/')} | {int(count)} |")
+    return "\n".join(rows)
+
+
+def markdown_frame(frame: pd.DataFrame) -> str:
+    if frame.empty:
+        return "_No rows._"
+    columns = list(frame.columns)
+    rows = [
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join(["---"] * len(columns)) + " |",
+    ]
+    for _, row in frame.iterrows():
+        values = []
+        for column in columns:
+            value = row.get(column, "")
+            if pd.isna(value):
+                value = ""
+            values.append(str(value).replace("|", "/").replace("\n", " "))
+        rows.append("| " + " | ".join(values) + " |")
+    return "\n".join(rows)
+
+
 def main() -> int:
     portal_dir = Path("data/portal_outputs")
     source = latest_file(portal_dir, "execution_ranked_candidates_*.csv")
@@ -134,8 +160,8 @@ def main() -> int:
     for column in ["execution_domain", "status", "primary_block_reason", "volatility_opportunity_status", "side"]:
         if column in out.columns:
             counts = out[column].fillna("NA").astype(str).value_counts().head(20)
-            lines.extend(["", f"## {column}", "", counts.to_markdown()])
-    lines.extend(["", "## Top Rows", "", out[preview_columns].head(30).to_markdown(index=False)])
+            lines.extend(["", f"## {column}", "", markdown_counts(counts)])
+    lines.extend(["", "## Top Rows", "", markdown_frame(out[preview_columns].head(30))])
     md_path.write_text("\n".join(lines), encoding="utf-8")
 
     print(f"source_path: {source}")
