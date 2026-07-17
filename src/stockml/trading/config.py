@@ -26,7 +26,7 @@ class AlpacaConfig:
     transaction_cost_bps: float
     account_equity: float = 33333.34
     max_position_pct: float = 0.03
-    min_avg_dollar_volume_20d: float = 5_000_000.0
+    min_avg_dollar_volume_20d: float = 20_000_000.0
     allow_short_selling: bool = False
     min_expected_trade_return: float = 0.002
     live_trading_enabled: bool = False
@@ -91,12 +91,12 @@ def alpaca_config() -> AlpacaConfig:
         min_side_probability=float(os.environ.get("STOCKML_ALPACA_MIN_SIDE_PROBABILITY", "0.55")),
         min_abs_probability_edge=float(os.environ.get("STOCKML_ALPACA_MIN_ABS_PROBABILITY_EDGE", "0.05")),
         min_intraday_volume=int(os.environ.get("STOCKML_ALPACA_MIN_INTRADAY_VOLUME", "100000")),
-        min_market_cap=float(os.environ.get("STOCKML_ALPACA_MIN_MARKET_CAP", "300000000")),
+        min_market_cap=float(os.environ.get("STOCKML_ALPACA_MIN_MARKET_CAP", "500000000")),
         min_risk_adjusted_score=float(os.environ.get("STOCKML_ALPACA_MIN_RISK_ADJUSTED_SCORE", "0.005")),
         transaction_cost_bps=float(os.environ.get("STOCKML_ALPACA_TRANSACTION_COST_BPS", "10")),
         account_equity=float(os.environ.get("STOCKML_ACCOUNT_EQUITY", "33333.34")),
         max_position_pct=float(os.environ.get("STOCKML_MAX_POSITION_PCT", "0.05")),
-        min_avg_dollar_volume_20d=float(os.environ.get("STOCKML_MIN_AVG_DOLLAR_VOLUME_20D", "5000000")),
+        min_avg_dollar_volume_20d=float(os.environ.get("STOCKML_MIN_AVG_DOLLAR_VOLUME_20D", "20000000")),
         allow_short_selling=_bool_env("STOCKML_ALLOW_SHORT_SELLING", default=False),
         min_expected_trade_return=float(os.environ.get("STOCKML_MIN_EXPECTED_TRADE_RETURN", "0.002")),
         live_trading_enabled=_bool_env("STOCKML_LIVE_TRADING_ENABLED", default=False),

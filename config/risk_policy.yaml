@@ -1,7 +1,7 @@
 risk_policy:
   min_price: 5.0
-  min_market_cap: 300000000
-  min_avg_dollar_volume_20d: 5000000
+  min_market_cap: 500000000
+  min_avg_dollar_volume_20d: 20000000
   max_position_pct: 0.03
   max_sector_pct: 0.20
   max_basket_notional: 10000
