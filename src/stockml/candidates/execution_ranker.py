@@ -40,6 +40,8 @@ OUTPUT_COLUMNS = [
     "validation_quality",
     "calibration_quality",
     "validated_expected_return_bps",
+    "estimated_execution_cost_bps",
+    "net_expected_return_bps",
     "validated_hit_rate",
     "validated_profit_factor",
     "direction_gate_status",
@@ -217,6 +219,34 @@ def _source_action_reason(row: pd.Series) -> str:
     if action in {"long", "short"}:
         return ""
     return "source_trade_action_not_executable"
+
+
+def _estimated_execution_cost_bps(row: pd.Series) -> float:
+    explicit = _num(row.get("estimated_execution_cost_bps"))
+    if explicit is not None:
+        return max(0.0, explicit)
+    for column in ["estimated_total_cost_bps", "spread_edge_cost_bps", "estimated_cost_bps", "cost_bps"]:
+        value = _num(row.get(column))
+        if value is not None:
+            return max(0.0, value)
+    transaction = _num(row.get("transaction_cost_bps"))
+    transaction = 10.0 if transaction is None else max(0.0, transaction)
+    spread = _num(row.get("estimated_spread_cost_bps"))
+    if spread is None:
+        spread = _num(row.get("spread_bps"))
+    spread = max(0.0, spread or 0.0)
+    slippage = max(0.0, _num(row.get("estimated_slippage_bps")) or 0.0)
+    borrow = 0.0
+    if _side(row) == "sell":
+        borrow = max(0.0, _num(row.get("borrow_cost_estimate_bps")) or 0.0)
+    return transaction + spread + slippage + borrow
+
+
+def _net_expected_return_bps(row: pd.Series, estimated_cost_bps: float) -> float | None:
+    gross = _num(row.get("validated_expected_return_bps"))
+    if gross is None:
+        return None
+    return gross - estimated_cost_bps
 
 
 def _source_direction_text(row: pd.Series) -> str:
@@ -437,6 +467,8 @@ def build_execution_ranked_candidates(
         if status == "blocked" and not primary_reason:
             primary_reason = "unknown_rejection_reason"
             reasons = [primary_reason]
+        estimated_cost_bps = _estimated_execution_cost_bps(row)
+        net_expected_return_bps = _net_expected_return_bps(row, estimated_cost_bps)
         execution_domain, execution_eligible, trade_authority_status, execution_domain_reason, execution_pool_eligible, watchlist_eligible = _execution_domain(
             row,
             status=status,
@@ -474,6 +506,8 @@ def build_execution_ranked_candidates(
                 "validation_quality": _validation_quality(row),
                 "calibration_quality": row.get("calibration_quality", ""),
                 "validated_expected_return_bps": row.get("validated_expected_return_bps", ""),
+                "estimated_execution_cost_bps": estimated_cost_bps,
+                "net_expected_return_bps": net_expected_return_bps if net_expected_return_bps is not None else "",
                 "validated_hit_rate": row.get("validated_hit_rate", ""),
                 "validated_profit_factor": row.get("validated_profit_factor", ""),
                 "direction_gate_status": direction.get("direction_gate_status", ""),
@@ -502,11 +536,13 @@ def build_execution_ranked_candidates(
     out = _infer_metric_scope(out, "validated_expected_return_bps", "expected_return_scope")
     out = _infer_metric_scope(out, "validated_hit_rate", "hit_rate_scope")
     out = _infer_metric_scope(out, "validated_profit_factor", "profit_factor_scope")
-    executable_idx = (
-        out[out["executable"].eq(True)]
-        .sort_values(["raw_rank", "symbol"], ascending=[True, True], kind="mergesort")
-        .index
-    )
+    executable_rows = out[out["executable"].eq(True)].copy()
+    executable_rows["__net_rank_value"] = pd.to_numeric(executable_rows["net_expected_return_bps"], errors="coerce").fillna(float("-inf"))
+    executable_idx = executable_rows.sort_values(
+        ["__net_rank_value", "raw_rank", "symbol"],
+        ascending=[False, True, True],
+        kind="mergesort",
+    ).index
     out.loc[executable_idx, "execution_rank"] = range(1, len(executable_idx) + 1)
     return out.drop(columns=["__index"]).reindex(columns=OUTPUT_COLUMNS)
 

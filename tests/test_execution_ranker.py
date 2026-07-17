@@ -76,14 +76,14 @@ def test_uncalibrated_expected_return_never_receives_execution_rank():
     assert pd.isna(ranked.iloc[0]["execution_rank"])
 
 
-def test_short_candidate_becomes_research_only_when_policy_disabled():
+def test_short_candidate_is_blocked_when_policy_disabled():
     ranked = build_execution_ranked_candidates(
         pd.DataFrame([_row("CRCL", 1, action="Short")]),
         short_policy=ShortSidePolicy(enabled=False),
     )
     row = ranked.iloc[0]
-    assert row["status"] == "research_only"
-    assert bool(row["research_only"]) is True
+    assert row["status"] == "blocked"
+    assert bool(row["research_only"]) is False
     assert row["primary_block_reason"] == "short_side_validation_required"
     assert pd.isna(row["execution_rank"])
 
@@ -104,6 +104,25 @@ def test_raw_rank_is_preserved_and_execution_rank_is_stable():
     assert ranked["raw_rank"].tolist() == [5, 5, 3]
     ordered = ranked.sort_values("execution_rank", kind="mergesort")["symbol"].tolist()
     assert ordered == ["BBB", "AAA", "ZZZ"]
+
+
+def test_execution_rank_uses_net_expected_return_after_cost():
+    frame = pd.DataFrame(
+        [
+            _row("RAW1", 1, validated_expected_return_bps=55.0, spread_bps=50.0, transaction_cost_bps=10.0),
+            _row("NET1", 20, validated_expected_return_bps=48.0, spread_bps=5.0, transaction_cost_bps=10.0),
+        ]
+    )
+
+    ranked = build_execution_ranked_candidates(frame, short_policy=ShortSidePolicy())
+    raw = ranked[ranked["symbol"].eq("RAW1")].iloc[0]
+    net = ranked[ranked["symbol"].eq("NET1")].iloc[0]
+
+    assert raw["raw_rank"] == 1
+    assert raw["net_expected_return_bps"] == -5.0
+    assert net["net_expected_return_bps"] == 33.0
+    assert net["execution_rank"] == 1
+    assert raw["execution_rank"] == 2
 
 
 def test_qualified_volatility_opportunity_reduced_long_receives_execution_rank():
