@@ -20,6 +20,7 @@ from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.anti_churn_guard import guard_actions, load_recent_trade_history, write_anti_churn_report
 from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, autopilot_conflicting_symbols, reconcile_autopilot_state_from_tracking
 from stockml.trading.config import alpaca_config
+from stockml.trading.counterfactual_log import write_counterfactual_candidates
 from stockml.trading.execution_owner import LEGACY_BLOCK_REASON, legacy_paper_trader_can_submit
 from stockml.trading.lifecycle_ids import LINEAGE_FIELDS, candidate_lineage, fill_lineage, order_lineage
 from stockml.trading.order_builder import validate_order_payload
@@ -404,6 +405,15 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
     candidate_pool.to_csv(candidate_pool_path, index=False)
     write_shortlist_snapshot(candidate_pool_path.stem, candidate_pool)
     plan.to_csv(plan_path, index=False)
+    counterfactual = write_counterfactual_candidates(
+        candidate_pool,
+        plan=plan,
+        cycle_id=stamp,
+        pipeline_run_id=pipeline_run_id,
+        candidate_source_path=candidate_pool_path,
+        order_plan_path=plan_path,
+        stamp=stamp,
+    )
     for selected in plan.to_dict("records"):
         selected_eligible = bool(selected.get("order_eligible")) and int(selected.get("suggested_quantity", 0) or 0) >= 1
         if str(selected.get("trade_quality_status", "")).lower() in {"approved", "reduced"} and selected_eligible:
@@ -620,6 +630,7 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
         "model_fresh_reason": model_fresh_reason,
         "model_signal_path": model_signal_path,
         "candidate_pool_path": candidate_pool_path,
+        "counterfactual_candidate_path": counterfactual.path,
         "plan_path": plan_path,
         "result_path": result_path,
         "tracking_path": tracking_path,
