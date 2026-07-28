@@ -578,7 +578,7 @@ def test_paper_autopilot_mode_protects_unknown_signal_winners_that_give_back(mon
     assert "AAA:reduce:profit_giveback_with_weakening_edge:submitted:auto_reduce" in state["autopilot_action_notes"]
 
 
-def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabled(monkeypatch, tmp_path):
+def test_paper_autopilot_central_brain_closes_replace_recommendations(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
@@ -596,7 +596,16 @@ def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabl
     decisions.mkdir(parents=True)
     pd.DataFrame(
         [
-            {"symbol": "AAA", "decision": "replace", "decision_reason": "signal_stale|replacement_rank_improvement", "replacement_symbol": "CCC"},
+            {
+                "symbol": "AAA",
+                "decision": "replace",
+                "decision_reason": "replacement_rank_improvement",
+                "unrealized_plpc": -0.025,
+                "holding_quality": "avoid",
+                "replacement_symbol": "CCC",
+                "replacement_edge_bps": 125,
+                "replacement_quality_status": "approved",
+            },
             {"symbol": "BBB", "decision": "watch", "decision_reason": "signal_stale", "unrealized_plpc": -0.010},
         ]
     ).to_csv(decisions / "position_decisions_1.csv", index=False)
@@ -613,10 +622,10 @@ def test_paper_autopilot_mode_closes_replace_recommendations_when_rotation_enabl
         ),
     )
 
-    assert state["phase"] == "monitoring_positions"
-    assert state["autopilot_close_submitted"] == 0
-    assert state["autopilot_replace_close_submitted"] == 0
-    assert "monitor_replace:submitted" not in state.get("autopilot_action_notes", "")
+    assert state["phase"] == "waiting_for_fills"
+    assert state["autopilot_close_submitted"] == 1
+    assert state["autopilot_replace_close_submitted"] == 1
+    assert "AAA:replace:central_brain_replace_weak_position:submitted:auto_close" in state.get("autopilot_action_notes", "")
 
 
 def test_paper_autopilot_does_not_close_replace_when_rotation_disabled(monkeypatch, tmp_path):

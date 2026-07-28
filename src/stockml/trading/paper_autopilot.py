@@ -883,8 +883,9 @@ def apply_paper_autopilot_decisions(
 
     The unified position-management decision engine is the single source of
     truth for automatic close decisions. It always writes diagnostics first.
-    Rows with recommended_action in {close, reduce, increase} are eligible for
-    broker action. Replace, hold, and manual_review remain non-submitting.
+    Rows with recommended_action in {close, reduce, increase, replace} are eligible for
+    broker action. Replace closes the held symbol; the replacement open waits for
+    the guarded open path on a later tick after the close/fill is visible.
     """
     management_positions = _positions_for_position_management(root, positions, state)
     decisions = build_position_management_decisions(management_positions, now=datetime.now(timezone.utc))
@@ -893,7 +894,7 @@ def apply_paper_autopilot_decisions(
     if decisions.empty:
         candidates = pd.DataFrame()
     else:
-        candidates = decisions[decisions["recommended_action"].astype(str).str.lower().isin({"close", "reduce", "increase"})].copy()
+        candidates = decisions[decisions["recommended_action"].astype(str).str.lower().isin({"close", "reduce", "increase", "replace"})].copy()
         candidates["__symbol"] = candidates["symbol"].astype(str).str.upper()
         candidates["__autopilot_action"] = candidates["recommended_action"].astype(str).str.lower()
         candidates["__autopilot_close_reason"] = candidates["primary_reason"].fillna("position_management_action")
@@ -972,10 +973,11 @@ def apply_paper_autopilot_decisions(
             continue
         seen.add(symbol)
         action = str(row.get("__autopilot_action") or row.get("recommended_action") or "").lower()
+        submit_action = "close" if action == "replace" else action
         if action_func is not None:
-            result = action_func(symbol, action)
+            result = action_func(symbol, submit_action)
         else:
-            result = apply_position_management_paper_action(row, action)
+            result = apply_position_management_paper_action(row, submit_action)
         actions += 1
         status = str(result.get("status") or "")
         message = str(result.get("message") or "")
@@ -988,6 +990,8 @@ def apply_paper_autopilot_decisions(
                 increase_submitted += 1
             else:
                 close_submitted += 1
+                if action == "replace":
+                    replace_submitted += 1
                 if reason == "defensive_stale_loss":
                     defensive_submitted += 1
                 elif reason == "hard_stop_loss" or bucket == "hard_stop":
@@ -996,7 +1000,7 @@ def apply_paper_autopilot_decisions(
                     health_submitted += 1
                 elif reason in {"trailing_profit_giveback", "fresh_signal_profit_giveback"} or bucket == "trailing":
                     trailing_submitted += 1
-                elif reason == "monitor_replace":
+                elif action != "replace" and (reason == "monitor_replace" or reason == "central_brain_replace_weak_position"):
                     replace_submitted += 1
         elif status == "dry_run":
             dry_run += 1

@@ -342,7 +342,10 @@ def _finalize(
             action = "hold"
             reason = "position_cap_reached"
             target = qty
-    elif action in {"hold", "manual_review", "replace"}:
+    elif action == "replace":
+        target = 0.0
+        fraction = 1.0
+    elif action in {"hold", "manual_review"}:
         target = qty
         fraction = 0.0
     delta = target - qty
@@ -455,7 +458,18 @@ def decide_position(row: dict[str, Any], *, now: datetime | None = None, config:
         and replacement_edge > cfg.profitable_replacement_min_edge_bps
     )
 
-    if pnl > 0 and replacement_is_eligible and (weakening or monitor_decision in {"replace", "rotate"}):
+    if replacement_is_eligible and monitor_decision in {"replace", "rotate"} and (weakening or pnl <= cfg.loss_threshold_pct):
+        support.extend(
+            [
+                "central_brain_replacement",
+                "eligible_replacement_available",
+                f"replacement={replacement_symbol}",
+                f"replacement_edge_bps={replacement_edge:.2f}",
+            ]
+        )
+        return _finalize(out, "replace", "central_brain_replace_weak_position", level=4, strength="high", confidence="medium", support=support)
+
+    if pnl > 0 and replacement_is_eligible and weakening:
         support.extend(
             [
                 "profitable_position",

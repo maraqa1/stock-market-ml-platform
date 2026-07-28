@@ -198,6 +198,27 @@ def test_profitable_replacement_requires_eligible_candidate():
     assert decision["recommended_action"] == "reduce"
 
 
+def test_central_brain_replace_closes_weak_position_with_eligible_replacement():
+    decision = action(
+        pos(
+            decision="replace",
+            decision_reason="replacement_rank_improvement",
+            unrealized_plpc=-0.025,
+            holding_quality="avoid",
+            replacement_symbol="SNOW",
+            replacement_edge_bps=225,
+            replacement_quality_status="approved",
+            replacement_risk_tier="high_quality",
+        )
+    )
+
+    assert decision["recommended_action"] == "replace"
+    assert decision["primary_reason"] == "central_brain_replace_weak_position"
+    assert decision["recommended_target_qty"] == 0
+    assert decision["recommended_delta_qty"] == -100
+    assert "central_brain_replacement" in decision["supporting_reasons"]
+
+
 def test_profitable_strong_aligned_signal_can_increase_when_below_cap():
     decision = action(pos(unrealized_plpc=0.03, peak_pnl_pct=0.03, qty=100, max_allowed_position_qty=150))
     assert decision["recommended_action"] in {"hold", "increase"}
