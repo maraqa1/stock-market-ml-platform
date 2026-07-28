@@ -546,7 +546,10 @@ def attach_holding_review_to_positions(positions: pd.DataFrame, root: Path | Non
         "review_after_days",
         "max_holding_days",
         "holding_quality",
+        "holding_gate_pass",
         "holding_gate_reason",
+        "approved_notional",
+        "suggested_quantity",
     ]:
         if column not in out.columns:
             out[column] = ""
@@ -560,7 +563,10 @@ def attach_holding_review_to_positions(positions: pd.DataFrame, root: Path | Non
             "review_after_days",
             "max_holding_days",
             "holding_quality",
+            "holding_gate_pass",
             "holding_gate_reason",
+            "approved_notional",
+            "suggested_quantity",
         ]:
             out.at[idx, column] = review.get(column, "")
     return out
@@ -684,8 +690,23 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
 def _positions_for_position_management(root: Path | None, positions: pd.DataFrame, state: dict[str, Any] | None = None) -> pd.DataFrame:
     if positions.empty or "symbol" not in positions.columns:
         return positions
-    out = positions.copy()
+    out = attach_holding_review_to_positions(positions.copy(), root)
     out["__symbol"] = out["symbol"].fillna("").astype(str).str.upper()
+    plan = _read_csv(_latest_csv(_portal_outputs_dir(root), "08_alpaca_paper_order_plan_*.csv"))
+    if not plan.empty and "symbol" in plan.columns:
+        latest_plan = plan.copy()
+        latest_plan["__symbol"] = latest_plan["symbol"].fillna("").astype(str).str.upper()
+        latest_plan = latest_plan.drop_duplicates("__symbol", keep="last").set_index("__symbol")
+        if "suggested_quantity" in latest_plan.columns:
+            out["planned_suggested_quantity"] = out["__symbol"].map(latest_plan["suggested_quantity"]).where(
+                out.get("planned_suggested_quantity", pd.Series("", index=out.index)).fillna("").astype(str).eq(""),
+                out.get("planned_suggested_quantity", pd.Series("", index=out.index)),
+            )
+        if "approved_notional" in latest_plan.columns:
+            out["planned_approved_notional"] = out["__symbol"].map(latest_plan["approved_notional"]).where(
+                out.get("planned_approved_notional", pd.Series("", index=out.index)).fillna("").astype(str).eq(""),
+                out.get("planned_approved_notional", pd.Series("", index=out.index)),
+            )
     peaks = (state or {}).get("position_peak_plpc") if isinstance((state or {}).get("position_peak_plpc"), dict) else {}
     if peaks:
         out["peak_pnl_pct"] = out["__symbol"].map(lambda symbol: peaks.get(symbol, ""))
@@ -711,6 +732,12 @@ def _positions_for_position_management(root: Path | None, positions: pd.DataFram
             "replacement_edge_bps",
             "replacement_quality_status",
             "replacement_risk_tier",
+            "holding_quality",
+            "holding_gate_pass",
+            "holding_gate_reason",
+            "trading_stream",
+            "recommended_holding_days",
+            "max_holding_days",
         ]:
             if column in latest.columns:
                 out[column] = out["__symbol"].map(latest[column]).where(

@@ -97,6 +97,75 @@ def test_profitable_weakening_edge_recommends_reduce():
     assert decision["recommended_action"] == "reduce"
 
 
+def test_same_day_avoid_loser_recommends_close():
+    decision = action(
+        pos(
+            trading_stream="same_day",
+            max_holding_days=1,
+            holding_quality="avoid",
+            holding_gate_pass=False,
+            holding_gate_reason="holding_edge_not_confirmed",
+            unrealized_plpc=-0.001,
+        )
+    )
+
+    assert decision["recommended_action"] == "close"
+    assert decision["primary_reason"] == "same_day_holding_edge_failed"
+    assert decision["holding_gate_pass"] is False
+    assert decision["holding_gate_reason"] == "holding_edge_not_confirmed"
+    assert_read_only(decision)
+
+
+def test_same_day_avoid_winner_recommends_reduce():
+    decision = action(
+        pos(
+            trading_stream="same_day",
+            max_holding_days=1,
+            holding_quality="avoid",
+            holding_gate_pass=False,
+            holding_gate_reason="holding_edge_not_confirmed",
+            unrealized_plpc=0.004,
+        )
+    )
+
+    assert decision["recommended_action"] == "reduce"
+    assert decision["primary_reason"] == "same_day_holding_edge_failed_profitable"
+    assert decision["recommended_delta_qty"] < 0
+
+
+def test_same_day_avoid_with_confirmed_reversal_recommends_close():
+    decision = action(
+        pos(
+            trading_stream="same_day",
+            holding_quality="avoid",
+            holding_gate_pass=False,
+            holding_gate_reason="holding_edge_not_confirmed",
+            confirmed_model_reversal=True,
+            signal_alignment="reversed",
+            unrealized_plpc=0.004,
+        )
+    )
+
+    assert decision["recommended_action"] == "close"
+    assert decision["primary_reason"] == "confirmed_model_reversal"
+
+
+def test_oversized_position_reduces_to_planned_quantity():
+    decision = action(pos(qty=347, planned_suggested_quantity=34, unrealized_plpc=0.001))
+
+    assert decision["recommended_action"] == "reduce"
+    assert decision["primary_reason"] == "position_exceeds_approved_plan_size"
+    assert decision["recommended_target_qty"] == 34
+    assert decision["recommended_delta_qty"] == -313
+
+
+def test_missing_holding_review_does_not_force_close():
+    decision = action(pos(holding_quality="", holding_gate_pass="", holding_gate_reason="", trading_stream="same_day", unrealized_plpc=-0.001))
+
+    assert decision["recommended_action"] != "close"
+    assert decision["primary_reason"] != "same_day_holding_edge_failed"
+
+
 def test_profitable_weakening_position_with_replacement_takes_profit():
     decision = action(
         pos(

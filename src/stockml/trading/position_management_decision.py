@@ -29,7 +29,10 @@ OUTPUT_COLUMNS = [
     "directional_action",
     "model_signal_state",
     "signal_alignment",
+    "trading_stream",
     "holding_quality",
+    "holding_gate_pass",
+    "holding_gate_reason",
     "holding_review_reason",
     "rank_status",
     "rank_change",
@@ -46,6 +49,8 @@ OUTPUT_COLUMNS = [
     "last_position_action_at",
     "position_cap_status",
     "max_allowed_position_qty",
+    "planned_suggested_quantity",
+    "planned_approved_notional",
     "short_risk_status",
     "borrow_status",
     "data_quality_status",
@@ -120,6 +125,15 @@ def _bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return _lower(value) in {"1", "true", "yes", "y", "on"}
+
+
+def _bool_or_none(value: Any) -> bool | None:
+    text = _lower(value)
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
 
 
 def _time(value: Any) -> datetime | None:
@@ -245,7 +259,10 @@ def _base_output(row: dict[str, Any], now: datetime, config: PositionManagementC
         "directional_action": _text(row.get("directional_action")),
         "model_signal_state": _lower(row.get("model_signal_state") or row.get("latest_signal_status") or row.get("signal_state") or "fresh"),
         "signal_alignment": _lower(row.get("signal_alignment") or row.get("side_alignment") or ""),
+        "trading_stream": _lower(row.get("trading_stream") or row.get("strategy_stream")),
         "holding_quality": _lower(row.get("holding_quality")),
+        "holding_gate_pass": _bool_or_none(row.get("holding_gate_pass")),
+        "holding_gate_reason": _text(row.get("holding_gate_reason") or row.get("holding_review_reason")),
         "holding_review_reason": _text(row.get("holding_review_reason") or row.get("holding_gate_reason")),
         "rank_status": _lower(row.get("rank_status") or row.get("candidate_rank_status")),
         "rank_change": _float(row.get("rank_change")),
@@ -262,6 +279,8 @@ def _base_output(row: dict[str, Any], now: datetime, config: PositionManagementC
         "last_position_action_at": _text(row.get("last_position_action_at")),
         "position_cap_status": _lower(row.get("position_cap_status")),
         "max_allowed_position_qty": max_qty,
+        "planned_suggested_quantity": _float(row.get("planned_suggested_quantity") or row.get("approved_target_quantity")),
+        "planned_approved_notional": _float(row.get("planned_approved_notional") or row.get("approved_notional")),
         "short_risk_status": _lower(row.get("short_risk_status")),
         "borrow_status": _lower(row.get("borrow_status") or row.get("shortable_status")),
         "data_quality_status": "ok",
@@ -287,7 +306,19 @@ def _base_output(row: dict[str, Any], now: datetime, config: PositionManagementC
     }
 
 
-def _finalize(out: dict[str, Any], action: str, reason: str, *, level: int, strength: str = "medium", confidence: str = "medium", guard: str = "", support: list[str] | None = None, fraction: float = 0.0) -> dict[str, Any]:
+def _finalize(
+    out: dict[str, Any],
+    action: str,
+    reason: str,
+    *,
+    level: int,
+    strength: str = "medium",
+    confidence: str = "medium",
+    guard: str = "",
+    support: list[str] | None = None,
+    fraction: float = 0.0,
+    target_qty: float | None = None,
+) -> dict[str, Any]:
     qty = _float(out.get("qty"), 0.0) or 0.0
     last = _float(out.get("last_price"), 0.0) or 0.0
     target = qty
@@ -295,8 +326,12 @@ def _finalize(out: dict[str, Any], action: str, reason: str, *, level: int, stre
         target = 0.0
         fraction = 1.0
     elif action == "reduce":
-        fraction = fraction or 0.5
-        target = max(1.0, math.floor(qty * (1.0 - fraction))) if qty > 1 else 0.0
+        if target_qty is not None:
+            target = max(0.0, min(qty, math.floor(target_qty)))
+            fraction = 1.0 if qty <= 0 else max(0.0, min(1.0, (qty - target) / qty))
+        else:
+            fraction = fraction or 0.5
+            target = max(1.0, math.floor(qty * (1.0 - fraction))) if qty > 1 else 0.0
         if target <= 0:
             action = "close"
             fraction = 1.0
@@ -385,6 +420,26 @@ def decide_position(row: dict[str, Any], *, now: datetime | None = None, config:
     holding_quality = out["holding_quality"]
     holding_reason = _lower(out["holding_review_reason"])
     edge_failed = holding_quality in {"avoid", "fail", "failed", "reject"} or "holding_edge_not_confirmed" in holding_reason or "holding_edge_failed" in holding_reason
+    max_holding_days_for_stream = _float(row.get("max_holding_days") or row.get("max_hold_days"))
+    same_day_stream = out["trading_stream"] == "same_day" or max_holding_days_for_stream == 1
+    holding_gate_failed = out["holding_gate_pass"] is False or "holding_edge_not_confirmed" in holding_reason or "holding_edge_failed" in holding_reason
+    if same_day_stream and edge_failed and holding_gate_failed:
+        support.extend(["same_day_position", "holding_edge_failed"])
+        if pnl <= 0:
+            return _finalize(out, "close", "same_day_holding_edge_failed", level=4, strength="high", confidence="medium", support=support)
+        return _finalize(out, "reduce", "same_day_holding_edge_failed_profitable", level=4, strength="medium", confidence="medium", support=support, fraction=0.5)
+    planned_qty = _float(out.get("planned_suggested_quantity"))
+    if planned_qty is not None and planned_qty > 0 and qty > planned_qty * 1.05:
+        return _finalize(
+            out,
+            "reduce",
+            "position_exceeds_approved_plan_size",
+            level=4,
+            strength="high",
+            confidence="high",
+            support=["actual_qty_above_planned_suggested_quantity"],
+            target_qty=planned_qty,
+        )
     weakening = edge_failed or holding_quality == "watch" or alignment in {"weakening", "not_aligned"} or out["rank_status"] in {"deteriorated", "dropped", "weak"} or (_float(out["rank_change"]) is not None and (_float(out["rank_change"]) or 0) < 0)
     fresh_aligned = signal_state in {"fresh", "fresh_or_unflagged", "aligned"} and (source_side == side or alignment in {"aligned", "fresh_aligned"})
     meaningful_profit = pnl >= cfg.meaningful_profit_pct or peak >= cfg.meaningful_profit_pct
@@ -558,6 +613,10 @@ def enrich_positions(
             for key in ("source_trade_action", "trade_action", "directional_action", "rank_status", "rank_change", "risk_tier", "spread_bps", "liquidity_status"):
                 if key in plans[symbol] and not merged.get(key):
                     merged[key] = plans[symbol][key]
+            if "suggested_quantity" in plans[symbol]:
+                merged["planned_suggested_quantity"] = plans[symbol]["suggested_quantity"]
+            if "approved_notional" in plans[symbol]:
+                merged["planned_approved_notional"] = plans[symbol]["approved_notional"]
         if symbol in orders:
             order = orders[symbol]
             merged["open_order_status"] = order.get("alpaca_status") or order.get("status") or "open"

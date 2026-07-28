@@ -348,6 +348,44 @@ def test_paper_autopilot_mode_auto_closes_position_health_candidates(monkeypatch
     assert "FWRD:close:losing_position_edge_failed:submitted:auto_close" in state["autopilot_action_notes"]
 
 
+def test_paper_autopilot_auto_closes_same_day_avoid_loser(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame([{"symbol": "ATAI", "alpaca_status": "filled"}]).to_csv(tracking, index=False)
+    pd.DataFrame([_position("ATAI", qty=347, unrealized_plpc=-0.00139)]).to_csv(positions, index=False)
+    holding_dir = tmp_path / "data" / "trading" / "holding_period"
+    holding_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [{
+            "symbol": "ATAI",
+            "trading_stream": "same_day",
+            "holding_quality": "avoid",
+            "holding_gate_pass": False,
+            "holding_gate_reason": "holding_edge_not_confirmed",
+            "recommended_holding_days": 1,
+            "max_holding_days": 1,
+        }]
+    ).to_csv(holding_dir / "holding_review_1.csv", index=False)
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 1, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        autopilot_decision_applier=lambda root, frame, state: paper_autopilot.apply_paper_autopilot_decisions(
+            root,
+            frame,
+            state=state,
+            action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+        ),
+    )
+
+    assert state["autopilot_close_submitted"] == 1
+    assert "ATAI:close:same_day_holding_edge_failed:submitted:auto_close" in state["autopilot_action_notes"]
+
+
 def test_paper_autopilot_review_only_does_not_auto_close_health_candidates(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)
