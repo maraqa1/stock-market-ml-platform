@@ -76,6 +76,7 @@ def test_auto_trader_delegates_to_paper_autopilot_owner(monkeypatch):
 
     monkeypatch.setattr(auto_trader, "paper_autopilot_tick", autopilot_tick)
     monkeypatch.setattr(auto_trader, "paper_autopilot_context", lambda: {"open_orders": 1, "open_positions": 2, "last_error": ""})
+    monkeypatch.setattr(auto_trader, "_write_owner_counterfactual", lambda: {"counterfactual_status": "ok", "counterfactual_candidate_rows": 1})
     monkeypatch.setattr(auto_trader, "run_paper_trading", legacy_run)
 
     result = run_auto_trader()

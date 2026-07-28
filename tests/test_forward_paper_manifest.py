@@ -42,3 +42,23 @@ def test_forward_paper_manifest_detects_config_change(tmp_path: Path, monkeypatc
     assert first["config_hash"] != second["config_hash"]
     assert second["material_change_flag"] == "true"
     assert second["paper_program_status"] == "segmented_by_material_change"
+
+
+def test_forward_paper_manifest_adds_execution_integrity_metrics(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("stockml.trading.forward_paper_manifest.PROJECT_ROOT", tmp_path)
+    _write(tmp_path / "config" / "trading.yaml", "alpaca: {}\n")
+    _write(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_candidate_pool_20260720_144500.csv",
+        "symbol,final_execution_side,executable,status\nAAA,LONG,true,executable\nBBB,NONE,false,blocked\n",
+    )
+    _write(
+        tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_results_20260720_144500.csv",
+        "symbol,status,alpaca_status,message\nAAA,submitted,filled,\n",
+    )
+
+    result = write_forward_paper_manifest(root=tmp_path, run_date="20260720")
+
+    assert result["executable_candidate_count"] == "1"
+    assert result["submitted_order_count"] == "1"
+    assert result["filled_order_count"] == "1"
+    assert result["executable_not_submitted_count"] == "0"

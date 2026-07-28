@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from stockml.common.paths import GOLD_DIR, MODEL_OUTPUTS_DIR, PIPELINE_RUNS_DIR, PORTAL_OUTPUTS_DIR, PROJECT_ROOT, TRADING_DIR, ensure_data_dirs, latest_file
 from stockml.trading.config import alpaca_config
 from stockml.trading.config_fingerprint import config_fingerprints, fingerprint_json
@@ -77,6 +79,64 @@ def _previous_manifest(output_dir: Path, current_path: Path) -> dict[str, str]:
     return {}
 
 
+def _read_csv(path: str | Path | None) -> pd.DataFrame:
+    if not path:
+        return pd.DataFrame()
+    source = Path(path)
+    if not source.exists() or not source.is_file() or source.stat().st_size == 0:
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(source, low_memory=False)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _boolish(value: Any) -> bool:
+    if value in [None, ""]:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except Exception:
+        pass
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
+
+def _execution_metrics(candidate_path: str, order_results_path: str) -> dict[str, str]:
+    candidates = _read_csv(candidate_path)
+    results = _read_csv(order_results_path)
+    executable = 0
+    if not candidates.empty:
+        final_side = candidates.get("final_execution_side", pd.Series("", index=candidates.index)).fillna("").astype(str).str.upper()
+        executable_flag = candidates.get("executable", pd.Series(False, index=candidates.index)).map(_boolish)
+        status = candidates.get("status", pd.Series("", index=candidates.index)).fillna("").astype(str).str.lower()
+        executable = int(((final_side.isin(["LONG", "SHORT"])) | executable_flag | status.eq("executable")).sum())
+    submitted = 0
+    filled = 0
+    not_submitted_reason = ""
+    if not results.empty:
+        status = results.get("status", pd.Series("", index=results.index)).fillna("").astype(str).str.lower()
+        alpaca = results.get("alpaca_status", pd.Series("", index=results.index)).fillna("").astype(str).str.lower()
+        submitted = int((status.isin(["submitted"]) | alpaca.isin(["new", "accepted", "partially_filled", "filled"])).sum())
+        filled = int(alpaca.eq("filled").sum())
+        if executable > submitted:
+            messages = results.get("message", pd.Series("", index=results.index)).fillna("").astype(str)
+            not_submitted_reason = "; ".join([f"{k}:{v}" for k, v in messages.value_counts().head(5).items() if k])
+    submitted_ratio = (submitted / executable) if executable else 0.0
+    filled_ratio = (filled / submitted) if submitted else 0.0
+    return {
+        "executable_candidate_count": str(executable),
+        "submitted_order_count": str(submitted),
+        "filled_order_count": str(filled),
+        "submitted_to_executable_ratio": f"{submitted_ratio:.6f}",
+        "filled_to_submitted_ratio": f"{filled_ratio:.6f}",
+        "executable_not_submitted_count": str(max(executable - submitted, 0)),
+        "executable_not_submitted_reasons": not_submitted_reason,
+    }
+
+
 def build_forward_paper_manifest(
     *,
     root: Path | None = None,
@@ -96,6 +156,7 @@ def build_forward_paper_manifest(
     tracking_path = _latest(base / "data" / "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
     positions_path = _latest(base / "data" / "portal_outputs", "08_alpaca_paper_positions_*.csv")
     cfg = alpaca_config()
+    execution_metrics = _execution_metrics(candidate_path, order_results_path)
     return {
         "manifest_created_at": _now(),
         "run_date": run_date or datetime.now(timezone.utc).strftime("%Y%m%d"),
@@ -119,6 +180,7 @@ def build_forward_paper_manifest(
         "order_results_path": order_results_path,
         "order_tracking_path": tracking_path,
         "positions_path": positions_path,
+        **execution_metrics,
         "activity_journal_export_path": _latest(base / "data" / "trading" / "exports", "activity_journal_*.csv"),
         "trade_ledger_path": _latest(base / "data" / "trading" / "diagnostics", "trade_ledger_*.csv"),
         "profitability_attribution_path": _latest(base / "data" / "trading" / "diagnostics", "profitability_attribution_*.csv"),

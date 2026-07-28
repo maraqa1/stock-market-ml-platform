@@ -5,9 +5,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
+from stockml.common.paths import PROJECT_ROOT, latest_file
 from stockml.db.connection import _hydrate_environment
 from stockml.trading.autopilot_guard import AUTOPILOT_BASKET_BLOCK_REASON
 from stockml.trading.config import alpaca_config
+from stockml.trading.counterfactual_log import write_counterfactual_candidates
 from stockml.trading.execution_owner import normalize_execution_owner
 from stockml.trading.paper_autopilot import context as paper_autopilot_context
 from stockml.trading.paper_autopilot import tick as paper_autopilot_tick
@@ -39,6 +43,26 @@ def _within_auto_trade_window(now: Optional[datetime] = None) -> bool:
     return start <= current <= end
 
 
+def _write_owner_counterfactual(root: Path | None = None) -> dict[str, object]:
+    base = root or PROJECT_ROOT
+    candidate_path = latest_file(base / "data" / "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
+    order_plan_path = latest_file(base / "data" / "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
+    if candidate_path is None:
+        return {"counterfactual_candidate_path": "", "counterfactual_candidate_rows": 0, "counterfactual_status": "missing_candidate_pool"}
+    try:
+        candidates = pd.read_csv(candidate_path, low_memory=False)
+        plan = pd.read_csv(order_plan_path, low_memory=False) if order_plan_path and order_plan_path.exists() else None
+        output = write_counterfactual_candidates(
+            candidates,
+            plan=plan,
+            candidate_source_path=candidate_path,
+            order_plan_path=order_plan_path or "",
+        )
+    except Exception as exc:
+        return {"counterfactual_candidate_path": "", "counterfactual_candidate_rows": 0, "counterfactual_status": f"error:{exc}"}
+    return {"counterfactual_candidate_path": str(output.path), "counterfactual_candidate_rows": output.rows, "counterfactual_status": "ok"}
+
+
 def run_auto_trader(signal_file: Optional[Path] = None, force: bool = False) -> dict:
     enabled = auto_trading_enabled()
     in_window = _within_auto_trade_window()
@@ -64,8 +88,10 @@ def run_auto_trader(signal_file: Optional[Path] = None, force: bool = False) -> 
         if owner == "paper_autopilot":
             state = paper_autopilot_tick()
             view = paper_autopilot_context()
+            counterfactual = _write_owner_counterfactual()
             return {
                 **state,
+                **counterfactual,
                 "auto_trade_enabled": enabled,
                 "auto_trade_mode": "paper_autopilot_tick",
                 "execution_owner": owner,

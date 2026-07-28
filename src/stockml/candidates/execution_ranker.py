@@ -9,6 +9,7 @@ from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_sid
 from stockml.common.paths import PROJECT_ROOT, timestamp
 from stockml.trading.direction_gate import evaluate_direction_gate
 from stockml.trading.direction_authority import AUTHORITY_COLUMNS, resolve_direction_authority
+from stockml.trading.session_mode import classify_session_mode
 from stockml.trading.source_approval_expansion import SourceApprovalExpansionConfig
 from stockml.trading.ticker_direction_memory import load_ticker_direction_memory_config
 
@@ -30,6 +31,11 @@ OUTPUT_COLUMNS = [
     "execution_pool_eligible",
     "watchlist_eligible",
     "shadow_reason",
+    "active_session_mode",
+    "regular_session_eligible",
+    "overnight_24_5_eligible",
+    "tradable_session_set",
+    "session_reject_reason",
     "all_block_reasons",
     "primary_block_reason",
     "risk_tier",
@@ -392,12 +398,14 @@ def build_execution_ranked_candidates(
     *,
     short_policy: ShortSidePolicy | None = None,
     source_expansion_config: SourceApprovalExpansionConfig | None = None,
+    active_session_mode: str | None = None,
 ) -> pd.DataFrame:
     if candidates is None or candidates.empty:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
     policy = short_policy or load_short_side_policy()
     memory_cfg = load_ticker_direction_memory_config()
     min_ticker_samples = int(memory_cfg.min_ticker_samples or 20)
+    session_mode = active_session_mode or classify_session_mode()
     frame = candidates.copy()
     frame["raw_rank"] = _raw_rank(frame)
     frame["model_rank"] = _model_rank(frame)
@@ -407,6 +415,8 @@ def build_execution_ranked_candidates(
         reasons = _split_reasons(row.get("trade_quality_reason"))
         if not reasons:
             reasons = _split_reasons(row.get("message"))
+        regular_session_eligible, overnight_eligible, tradable_sessions, session_reject_reason = _session_eligibility(row, session_mode)
+        _append_reason(reasons, session_reject_reason)
         if _text(row.get("trade_quality_status")).lower() == "reduced" and not reasons:
             _append_reason(reasons, _reduced_reason(row))
         for reason in [_source_action_reason(row), _no_decision_reason(row), _calibration_reason(row)]:
@@ -498,6 +508,11 @@ def build_execution_ranked_candidates(
                 "execution_pool_eligible": execution_pool_eligible,
                 "watchlist_eligible": watchlist_eligible,
                 "shadow_reason": shadow_reason,
+                "active_session_mode": session_mode,
+                "regular_session_eligible": regular_session_eligible,
+                "overnight_24_5_eligible": overnight_eligible,
+                "tradable_session_set": tradable_sessions,
+                "session_reject_reason": session_reject_reason,
                 "all_block_reasons": "|".join(reasons),
                 "primary_block_reason": primary_reason,
                 "risk_tier": row.get("risk_tier", ""),
@@ -609,6 +624,20 @@ def _rank_present(value: Any) -> bool:
 
 def _safe_block_reasons(value: Any) -> bool:
     return _text(value).lower() in SAFE_EMPTY_REASONS
+
+
+def _session_eligibility(row: pd.Series, active_session_mode: str) -> tuple[bool, bool, str, str]:
+    regular = True
+    overnight = _boolish(row.get("overnight_tradable"), False)
+    sessions = ["regular"] if regular else []
+    if overnight:
+        sessions.append("overnight_24_5")
+    reason = ""
+    if active_session_mode == "overnight_24_5" and not overnight:
+        reason = "asset_not_overnight_tradable"
+    elif active_session_mode == "weekend_closed":
+        reason = "weekend_closed"
+    return regular, overnight, "|".join(sessions), reason
 
 
 def execution_ranked_auto_open_candidates(

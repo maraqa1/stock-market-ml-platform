@@ -169,3 +169,29 @@ def test_execution_ranker_does_not_add_live_trading_path():
     source = Path("src/stockml/candidates/execution_ranker.py").read_text(encoding="utf-8")
     assert "submit_order" not in source
     assert "live_trading" not in source
+
+
+def test_overnight_ineligible_asset_is_not_executable_in_overnight_mode():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame([_row("ATAI", 1, overnight_tradable=False)]),
+        short_policy=ShortSidePolicy(),
+        active_session_mode="overnight_24_5",
+    )
+    row = ranked.iloc[0]
+    assert row["final_execution_side"] == "NONE"
+    assert row["status"] == "blocked"
+    assert bool(row["regular_session_eligible"]) is True
+    assert bool(row["overnight_24_5_eligible"]) is False
+    assert row["session_reject_reason"] == "asset_not_overnight_tradable"
+
+
+def test_overnight_tradable_asset_can_remain_executable_in_overnight_mode():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame([_row("ATAI", 1, overnight_tradable=True)]),
+        short_policy=ShortSidePolicy(),
+        active_session_mode="overnight_24_5",
+    )
+    row = ranked.iloc[0]
+    assert row["final_execution_side"] == "LONG"
+    assert row["status"] == "executable"
+    assert bool(row["overnight_24_5_eligible"]) is True
