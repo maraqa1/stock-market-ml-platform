@@ -796,10 +796,21 @@ def test_monitor_decision_summary_reads_latest_position_decisions(tmp_path):
     assert summary["monitor_rotate"] == 1
 
 
-def test_paper_autopilot_appends_fallback_candidates_after_strong_candidate(monkeypatch, tmp_path):
+def test_paper_autopilot_blocks_fallback_candidate_brains_by_default(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "autopilot.yaml").write_text(
+        "version: 1\n"
+        "execution_owner: paper_autopilot\n"
+        "daily_trading_authority:\n"
+        "  enabled: true\n"
+        "  decision_owner: paper_autopilot\n"
+        "  allow_fallback_candidate_brains: false\n",
+        encoding="utf-8",
+    )
     tracking = tmp_path / "tracking.csv"
     positions = tmp_path / "positions.csv"
     pd.DataFrame(columns=["symbol", "alpaca_status"]).to_csv(tracking, index=False)
@@ -829,9 +840,54 @@ def test_paper_autopilot_appends_fallback_candidates_after_strong_candidate(monk
     )
 
     assert captured["mode"] == "paper_autopilot"
-    assert captured["symbols"] == ["LPRO", "RXT", "BNY"]
-    assert state["autopilot_open_attempted"] == 3
-    assert state["autopilot_open_blocked"] == 3
+    assert captured["symbols"] == []
+    assert state["autopilot_open_attempted"] == 0
+    assert state["autopilot_open_blocked"] == 0
+    assert state["autopilot_open_notes"] == "all_blocked_for_test"
+
+
+def test_paper_autopilot_blocks_auto_rotation_when_single_brain_enabled(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "autopilot.yaml").write_text(
+        "version: 1\n"
+        "execution_owner: paper_autopilot\n"
+        "daily_trading_authority:\n"
+        "  enabled: true\n"
+        "  decision_owner: paper_autopilot\n"
+        "  allow_auto_rotations: false\n",
+        encoding="utf-8",
+    )
+    tracking = tmp_path / "tracking.csv"
+    positions = tmp_path / "positions.csv"
+    pd.DataFrame(columns=["symbol", "alpaca_status"]).to_csv(tracking, index=False)
+    pd.DataFrame([_position("AAA")]).to_csv(positions, index=False)
+    calls = []
+
+    def apply_rotation(rows):
+        calls.append(rows)
+        return {"auto_rotations_attempted": 1, "auto_rotations_confirmed": 1, "auto_rotation_notes": "should_not_run"}
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        auto_rotation_applier=apply_rotation,
+        auto_open_applier=lambda candidates, positions, mode: {
+            "autopilot_open_attempted": 0,
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "",
+        },
+    )
+
+    assert calls == []
+    assert state["auto_rotations_attempted"] == 0
+    assert state["auto_rotations_confirmed"] == 0
+    assert state["auto_rotation_notes"] == "daily_trading_single_brain_blocks_secondary_decision_path"
 
 
 def test_paper_autopilot_clears_stale_basket_pause_when_auto_open_hits_cap(monkeypatch, tmp_path):

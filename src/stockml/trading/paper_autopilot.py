@@ -31,6 +31,7 @@ from stockml.db.schema import intraday_decisions
 from stockml.trading.alpaca_client import AlpacaAPIError, AlpacaPaperClient
 from stockml.trading.config import AlpacaConfig, alpaca_config
 from stockml.trading.anti_churn_guard import enrich_open_positions_with_order_history, guard_actions, load_recent_trade_history, write_anti_churn_report
+from stockml.trading.daily_trading_authority import load_daily_trading_authority, secondary_decision_path_allowed
 from stockml.trading.holding_period import generate_holding_period_report
 from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.order_builder import extended_limit_price
@@ -1132,6 +1133,7 @@ def tick(
                 open_orders = max(tracked_open_orders, broker_open_orders)
                 open_positions = int(len(positions))
         update_position_peaks(state, positions)
+        daily_authority = load_daily_trading_authority(Path(root) / "config" / "autopilot.yaml" if root is not None else None)
         if open_positions > 0 and load_monitor_decisions(root).empty:
             build_fresh_monitor_decisions(root, positions, now=datetime.now(timezone.utc))
         monitor_summary = monitor_decision_loader(root)
@@ -1225,13 +1227,17 @@ def tick(
             and open_positions > 0
             and eod_state == "inactive"
         ):
-            positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
-            if auto_rotation_applier is not None:
-                auto_rotation_result = auto_rotation_applier(positions_records)
+            rotation_allowed, rotation_block_reason = secondary_decision_path_allowed("auto_rotation", daily_authority)
+            if rotation_allowed:
+                positions_records = positions.fillna("").to_dict("records") if not positions.empty else []
+                if auto_rotation_applier is not None:
+                    auto_rotation_result = auto_rotation_applier(positions_records)
+                else:
+                    auto_rotation_result = apply_auto_rotations(positions_records, root=root)
+                if int(auto_rotation_result.get("auto_rotations_confirmed") or 0) > 0:
+                    open_orders = max(open_orders, int(auto_rotation_result.get("auto_rotations_confirmed") or 0))
             else:
-                auto_rotation_result = apply_auto_rotations(positions_records, root=root)
-            if int(auto_rotation_result.get("auto_rotations_confirmed") or 0) > 0:
-                open_orders = max(open_orders, int(auto_rotation_result.get("auto_rotations_confirmed") or 0))
+                auto_rotation_result["auto_rotation_notes"] = rotation_block_reason
         if not allow_auto_open:
             auto_open_result["autopilot_open_notes"] = "auto_open_skipped_market_closed"
         elif basket.new_entries_paused:
@@ -1260,8 +1266,13 @@ def tick(
             if execution_ranked_source_available:
                 candidates = _dedupe_auto_open_candidates(execution_ranked_candidates)
             else:
-                candidates = _dedupe_auto_open_candidates(strong_candidates, ranked_candidates, plan_candidates)
-            if not candidates and open_positions == 0:
+                fallback_allowed, fallback_block_reason = secondary_decision_path_allowed("fallback_candidate_brain", daily_authority)
+                if fallback_allowed:
+                    candidates = _dedupe_auto_open_candidates(strong_candidates, ranked_candidates, plan_candidates)
+                else:
+                    candidates = []
+                    auto_open_result["autopilot_open_notes"] = fallback_block_reason
+            if not candidates and open_positions == 0 and secondary_decision_path_allowed("fallback_candidate_brain", daily_authority)[0]:
                 candidates = fallback_candidate_loader()
             if auto_open_applier is not None:
                 open_result = auto_open_applier(candidates, positions_records, str(state.get("mode") or "observe"))

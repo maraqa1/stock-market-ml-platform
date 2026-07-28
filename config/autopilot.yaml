@@ -1,5 +1,11 @@
 version: 1
 execution_owner: paper_autopilot
+daily_trading_authority:
+  enabled: true
+  decision_owner: paper_autopilot
+  allow_auto_rotations: false
+  allow_fallback_candidate_brains: false
+  allow_legacy_basket_submit: false
 autopilot:
   open_enabled: true
   rotate_enabled: true
