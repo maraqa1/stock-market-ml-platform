@@ -74,7 +74,7 @@ autopilot:
   validation_mode: true
   validation_max_new_orders_per_cycle: 1
   validation_max_new_orders_per_day: 10
-  validation_max_open_positions_total: 3
+  validation_max_open_positions_total: 5
 basket_risk:
   pause_new_entries_if_red_position_pct_above: 0.70
   pause_new_entries_if_basket_return_below: -0.0075
