@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from stockml.trading import auto_trader
 from stockml.trading.auto_trader import _within_auto_trade_window, auto_trading_enabled, run_auto_trader
@@ -44,6 +45,7 @@ def test_auto_trader_disabled_runs_plan_only(monkeypatch):
 def test_auto_trader_skips_cleanly_when_paper_autopilot_blocks_basket(monkeypatch):
     monkeypatch.setenv("STOCKML_ALPACA_AUTOTRADE_ENABLED", "true")
     monkeypatch.setattr(auto_trader, "_within_auto_trade_window", lambda: True)
+    monkeypatch.setattr(auto_trader, "alpaca_config", lambda: SimpleNamespace(execution_owner="legacy_paper_trader"))
 
     def blocked_run(signal_file=None):
         raise RuntimeError("paper_autopilot_running_blocks_basket_submission")
@@ -56,3 +58,29 @@ def test_auto_trader_skips_cleanly_when_paper_autopilot_blocks_basket(monkeypatc
     assert result["orders_tracked"] == 3
     assert result["auto_trade_mode"] == "blocked_by_paper_autopilot"
     assert result["block_reason"] == "paper_autopilot_running_blocks_basket_submission"
+
+
+def test_auto_trader_delegates_to_paper_autopilot_owner(monkeypatch):
+    monkeypatch.setenv("STOCKML_ALPACA_AUTOTRADE_ENABLED", "true")
+    monkeypatch.setattr(auto_trader, "_within_auto_trade_window", lambda: True)
+    monkeypatch.setattr(auto_trader, "alpaca_config", lambda: SimpleNamespace(execution_owner="paper_autopilot"))
+    calls = {"tick": 0, "legacy": 0}
+
+    def autopilot_tick():
+        calls["tick"] += 1
+        return {"status": "running", "phase": "monitoring_positions", "autopilot_open_submitted": 1}
+
+    def legacy_run(signal_file=None):
+        calls["legacy"] += 1
+        return {"orders_submitted": 0}
+
+    monkeypatch.setattr(auto_trader, "paper_autopilot_tick", autopilot_tick)
+    monkeypatch.setattr(auto_trader, "paper_autopilot_context", lambda: {"open_orders": 1, "open_positions": 2, "last_error": ""})
+    monkeypatch.setattr(auto_trader, "run_paper_trading", legacy_run)
+
+    result = run_auto_trader()
+
+    assert calls == {"tick": 1, "legacy": 0}
+    assert result["auto_trade_mode"] == "paper_autopilot_tick"
+    assert result["execution_owner"] == "paper_autopilot"
+    assert result["autopilot_open_submitted"] == 1
