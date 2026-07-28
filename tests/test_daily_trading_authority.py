@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from stockml.trading.config import AlpacaConfig
 from stockml.trading.daily_trading_authority import (
     OTHER_BRAIN_BLOCK_REASON,
     load_daily_trading_authority,
@@ -29,9 +28,10 @@ def test_daily_trading_authority_blocks_secondary_paths_by_default():
 
 
 def test_legacy_paper_trader_is_blocked_by_single_brain_policy():
-    cfg = AlpacaConfig(execution_owner="legacy_paper_trader")
+    class Config:
+        execution_owner = "legacy_paper_trader"
 
-    allowed, reason = legacy_paper_trader_can_submit(cfg)
+    allowed, reason = legacy_paper_trader_can_submit(Config())
 
     assert allowed is False
     assert reason == OTHER_BRAIN_BLOCK_REASON
