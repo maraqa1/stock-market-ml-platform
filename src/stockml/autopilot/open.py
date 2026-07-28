@@ -1323,6 +1323,13 @@ def _whole_share_qty(order_size: float, current_price: float) -> int:
     return int(math.floor(float(order_size) / float(current_price)))
 
 
+def _planned_order_constraints(candidate: dict[str, Any], details: dict[str, Any]) -> tuple[float | None, int | None]:
+    approved = _optional_float(details.get("approved_notional", candidate.get("approved_notional")))
+    quantity = _optional_float(details.get("suggested_quantity", candidate.get("suggested_quantity")))
+    planned_qty = int(quantity) if quantity is not None and quantity > 0 else None
+    return (approved if approved is not None and approved > 0 else None), planned_qty
+
+
 def _quote_execution_context(symbol: str, side: str, quote_provider: Any | None, stamp: datetime) -> dict[str, Any]:
     if quote_provider is None:
         return {}
@@ -1548,6 +1555,12 @@ def apply_auto_open(
             order_size = round(size * cfg.flat_account_fallback_size_multiplier, 2)
         else:
             order_size = size
+        planned_notional, planned_qty = _planned_order_constraints(candidate, details)
+        if planned_notional is not None:
+            order_size = round(min(order_size, planned_notional), 2)
+            details["planned_approved_notional"] = planned_notional
+        if planned_qty is not None:
+            details["planned_suggested_quantity"] = planned_qty
         if is_per_symbol_forecast:
             quality_block_reason = per_symbol_forecast_quality_block_reason(details, cfg)
             if quality_block_reason:
@@ -1750,9 +1763,15 @@ def apply_auto_open(
         if policy.order_type == "limit":
             order["limit_price"] = limit_price
         qty = _whole_share_qty(order_size, current_price)
+        if planned_qty is not None and qty > planned_qty:
+            qty = planned_qty
+            order_size = round(float(qty) * float(current_price), 2)
         if qty < 1 and current_price > 0:
             order_size = round(min(float(trade_cfg.max_notional_per_order), max(order_size, current_price)), 2)
             qty = _whole_share_qty(order_size, current_price)
+            if planned_qty is not None and qty > planned_qty:
+                qty = planned_qty
+                order_size = round(float(qty) * float(current_price), 2)
         asset_details = {**asset_details, "current_price_for_qty": current_price, "computed_qty": qty}
         if qty < 1:
             blocked += 1

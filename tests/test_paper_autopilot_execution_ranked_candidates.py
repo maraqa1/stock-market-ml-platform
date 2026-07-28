@@ -184,6 +184,53 @@ def test_paper_autopilot_uses_execution_ranked_candidates_as_authoritative_sourc
     assert calls == [["BNY"]]
 
 
+def test_paper_autopilot_does_not_fallback_when_execution_ranked_pool_exists(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    out = tmp_path / "data" / "portal_outputs"
+    out.mkdir(parents=True)
+    pd.DataFrame(
+        [{
+            "raw_rank": 1,
+            "execution_rank": "",
+            "symbol": "BLOCKED",
+            "side": "buy",
+            "status": "blocked",
+            "executable": False,
+            "execution_domain": "blocked_candidate",
+            "execution_eligible": False,
+            "execution_pool_eligible": False,
+            "final_execution_side": "NONE",
+            "research_only": False,
+            "all_block_reasons": "price_below_minimum",
+            "primary_block_reason": "price_below_minimum",
+        }]
+    ).to_csv(out / "execution_ranked_candidates_20260701_120000.csv", index=False)
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = _csv(tmp_path / "tracking.csv", [{"symbol": "OLD", "alpaca_status": "filled"}])
+    positions = _csv(tmp_path / "positions.csv", [])
+    calls: list[list[str]] = []
+
+    paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        strong_candidate_loader=lambda: [{"symbol": "RAW1"}],
+        per_symbol_forecast_candidate_loader=lambda: [{"symbol": "FORECAST"}],
+        near_miss_candidate_loader=lambda: [{"symbol": "NEAR"}],
+        plan_candidate_loader=lambda: [{"symbol": "PLAN"}],
+        auto_open_applier=lambda candidates, open_positions, mode: calls.append([row["symbol"] for row in candidates])
+        or {
+            "autopilot_open_attempted": len(candidates),
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "checked",
+        },
+    )
+
+    assert calls == [[]]
+
+
 def test_runtime_gate_failure_scans_next_candidate_through_auto_open_applier(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)

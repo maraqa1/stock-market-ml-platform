@@ -333,6 +333,34 @@ def test_auto_open_submits_paper_order_and_logs_opened():
     assert row["order_id"] == "order-CSTL"
 
 
+def test_auto_open_respects_candidate_approved_notional_and_quantity():
+    engine = _engine()
+    client = FakeClient(equity="100000")
+    candidate = _candidate("ATAI", 0.71)
+    candidate.update({"current_price": 7.19, "approved_notional": 250.0, "suggested_quantity": 34})
+    candidate["details"].update({"approved_notional": 250.0, "suggested_quantity": 34})
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, default_position_value_cap_usd=2500),
+        alpaca_cfg=_trade_config(account_equity=100000, max_notional_per_order=5000),
+        client=client,
+        now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 1
+    assert client.orders[0]["symbol"] == "ATAI"
+    assert client.orders[0]["qty"] == "34"
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["size_usd"] == 250.0
+    assert row["details"]["planned_approved_notional"] == 250.0
+    assert row["details"]["planned_suggested_quantity"] == 34
+
+
 def test_auto_open_blocks_promoted_candidate_without_model_evidence():
     engine = _engine()
     client = FakeClient()
