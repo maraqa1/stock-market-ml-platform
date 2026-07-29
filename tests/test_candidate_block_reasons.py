@@ -74,7 +74,8 @@ def test_market_cap_missing_outranks_direction_memory_for_source_approved_long()
                     source_trade_action="Long",
                     trade_action="Long",
                     directional_action="Long",
-                    ticker_direction_bias="insufficient_data",
+                    ticker_direction_bias="trust_long",
+                    ticker_direction_sample_count=100,
                     market_cap=pd.NA,
                     trade_quality_status="approved",
                     trade_quality_reason="approved",
@@ -82,7 +83,8 @@ def test_market_cap_missing_outranks_direction_memory_for_source_approved_long()
                     risk_tier="medium",
                 )
             ]
-        )
+        ),
+        active_session_mode="regular_session",
     )
 
     row = ranked.iloc[0]
