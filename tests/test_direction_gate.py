@@ -60,6 +60,24 @@ def test_source_long_with_positive_validated_return_passes():
     assert result["direction_gate_pass"] is True
 
 
+def test_meta_label_take_trade_passes_when_acceptance_required():
+    result = evaluate_direction_gate(
+        row(meta_label_decision="Take Trade"),
+        config=DirectionGateConfig(require_meta_label_acceptance=True),
+    )
+    assert result["direction_decision"] == "direction_pass"
+    assert result["direction_gate_pass"] is True
+
+
+def test_meta_label_skip_trade_blocks_when_acceptance_required():
+    result = evaluate_direction_gate(
+        row(meta_label_decision="Skip Trade"),
+        config=DirectionGateConfig(require_meta_label_acceptance=True),
+    )
+    assert result["direction_decision"] == "direction_block"
+    assert result["direction_primary_reason"] == "meta_label_not_accepted"
+
+
 def test_source_long_with_negative_validated_return_blocks():
     result = evaluate_direction_gate(row(validated_expected_return_bps=-1.0))
     assert result["direction_decision"] == "direction_block"

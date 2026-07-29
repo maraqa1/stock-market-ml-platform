@@ -25,6 +25,7 @@ INSUFFICIENT_DATA = "direction_insufficient_data"
 SOURCE_LONG = {"long", "buy"}
 SOURCE_SHORT = {"short", "sell"}
 NO_DECISION = {"no decision", "no_decision", "none", "null", "nan", ""}
+META_LABEL_ACCEPT = {"accepted", "pass", "approved", "take trade", "take_trade"}
 
 
 @dataclass(frozen=True)
@@ -319,7 +320,7 @@ def evaluate_direction_gate(
     if calibration and calibration not in {"usable", "accepted", "calibrated"}:
         return _result(decision=BLOCK, reason="calibration_quality_not_usable", blocking=["calibration_quality_not_usable"], source="calibration_quality", quality="blocked")
 
-    if cfg.require_meta_label_acceptance and meta_decision and meta_decision not in {"accepted", "pass", "approved"}:
+    if cfg.require_meta_label_acceptance and meta_decision and meta_decision not in META_LABEL_ACCEPT:
         return _result(decision=BLOCK, reason="meta_label_not_accepted", blocking=["meta_label_not_accepted"], source="meta_label_decision", quality="blocked")
 
     if proposed == "long" and intraday_state in {"strongly bearish", "bearish breakdown", "strong_bearish", "bearish_breakdown"}:
