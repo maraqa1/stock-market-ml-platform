@@ -182,9 +182,26 @@ SHORT_REASON_PRECEDENCE = [
     "reduced_due_to_risk_tier",
 ]
 
+HARD_FLOOR_REASON_PRECEDENCE = [
+    "market_cap_missing",
+    "market_cap_below_minimum",
+    "price_below_minimum",
+    "current_price_missing",
+    "current_price_invalid",
+    "avg_dollar_volume_missing",
+    "liquidity_below_minimum",
+]
+
 
 def _is_source_short(row: pd.Series) -> bool:
     return _text(row.get("source_trade_action")).lower() == "short"
+
+
+def _hard_floor_reasons(row: pd.Series, reasons: list[str]) -> list[str]:
+    out = list(reasons)
+    if "market_cap" in row.index and _num(row.get("market_cap")) is None:
+        out = _prepend_reason(out, "market_cap_missing")
+    return out
 
 
 def _source_short_reasons(row: pd.Series, reasons: list[str]) -> list[str]:
@@ -201,8 +218,11 @@ def _source_short_reasons(row: pd.Series, reasons: list[str]) -> list[str]:
 
 
 def _ordered_primary_reason(row: pd.Series, reasons: list[str]) -> str:
+    reason_set = set(reasons)
+    for reason in HARD_FLOOR_REASON_PRECEDENCE:
+        if reason in reason_set:
+            return reason
     if _is_source_short(row):
-        reason_set = set(reasons)
         for reason in SHORT_REASON_PRECEDENCE:
             if reason in reason_set:
                 return reason
@@ -456,7 +476,7 @@ def build_execution_ranked_candidates(
                 and not _is_source_short(row)
             ):
                 research_only = True
-        reasons = _execution_reasons(row, _normalise_reasons(row, _source_short_reasons(row, reasons)))
+        reasons = _execution_reasons(row, _normalise_reasons(row, _source_short_reasons(row, _hard_floor_reasons(row, reasons))))
         status = _status(row, reasons, research_only=research_only)
         if _is_source_short(row) and status == "research_only":
             status = "watch" if authority.get("direction_resolution") == "watch" else "blocked"

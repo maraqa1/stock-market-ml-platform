@@ -63,3 +63,30 @@ def test_source_short_insufficient_memory_is_watch_not_research_only():
     assert "direction_memory_insufficient" in row["all_block_reasons"]
     assert row["final_execution_side"] == "NONE"
 
+
+def test_market_cap_missing_outranks_direction_memory_for_source_approved_long():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame(
+            [
+                _candidate(
+                    symbol="ABTC",
+                    side="buy",
+                    source_trade_action="Long",
+                    trade_action="Long",
+                    directional_action="Long",
+                    ticker_direction_bias="insufficient_data",
+                    market_cap=pd.NA,
+                    trade_quality_status="approved",
+                    trade_quality_reason="approved",
+                    validated_expected_return_bps=42,
+                    risk_tier="medium",
+                )
+            ]
+        )
+    )
+
+    row = ranked.iloc[0]
+    assert row["status"] == "blocked"
+    assert row["primary_block_reason"] == "market_cap_missing"
+    assert "market_cap_missing" in row["all_block_reasons"]
+    assert row["final_execution_side"] == "NONE"
