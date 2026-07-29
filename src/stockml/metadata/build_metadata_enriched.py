@@ -29,6 +29,13 @@ def _filter_universe_exchange(universe: pd.DataFrame, exchange: object = None) -
     return filter_listing_exchange(universe, exchange=exchange)
 
 
+def _scope_universe(universe: pd.DataFrame, *, exchange: object = None, limit: Optional[int] = None) -> pd.DataFrame:
+    scoped = _filter_universe_exchange(universe, exchange)
+    if limit:
+        scoped = scoped.head(limit).copy()
+    return scoped
+
+
 def _symbol_set(frame: pd.DataFrame, columns: list[str]) -> set[str]:
     column = next((name for name in columns if name in frame.columns), None)
     if column is None:
@@ -102,10 +109,10 @@ def build_metadata_enriched(
     stamp = timestamp()
     universe_path = latest_validated_universe_file()
     universe = pd.read_csv(universe_path, dtype=str)
-    universe = _filter_universe_exchange(universe, exchange)
+    universe = _scope_universe(universe, exchange=exchange, limit=limit)
     metadata = fetch_metadata_for_universe(
         universe,
-        limit=limit,
+        limit=None,
         sleep_seconds=sleep_seconds,
         provider_name=provider_name,
         fallback_provider_name=fallback_provider_name,

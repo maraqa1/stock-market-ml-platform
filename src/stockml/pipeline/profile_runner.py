@@ -52,13 +52,23 @@ def _metadata_quality_gate(
     *,
     min_validated_coverage: float = 0.75,
     min_market_cap_coverage: float = 0.70,
+    limit_tickers: int | None = None,
 ) -> None:
     if metadata_path is None or not metadata_path.exists():
         raise RuntimeError("metadata_quality_gate_failed: metadata artifact missing")
     if validated_path is None or not validated_path.exists():
         raise RuntimeError("metadata_quality_gate_failed: validated universe artifact missing")
 
-    validated_symbols = _symbol_set(validated_path, ["yahoo_ticker", "ticker", "symbol"])
+    if limit_tickers:
+        validated = pd.read_csv(validated_path, usecols=lambda col: col in {"yahoo_ticker", "ticker", "symbol"}, dtype=str, low_memory=False)
+        validated = validated.head(limit_tickers)
+        column = next((name for name in ["yahoo_ticker", "ticker", "symbol"] if name in validated.columns), None)
+        validated_symbols = set()
+        if column is not None:
+            validated_symbols = set(validated[column].dropna().astype(str).str.upper().str.strip())
+            validated_symbols.discard("")
+    else:
+        validated_symbols = _symbol_set(validated_path, ["yahoo_ticker", "ticker", "symbol"])
     metadata_symbols = _symbol_set(metadata_path, ["ticker", "symbol", "yahoo_ticker"])
     if not validated_symbols:
         raise RuntimeError("metadata_quality_gate_failed: validated universe has no symbols")
@@ -341,6 +351,7 @@ def run_profile(
                 price_paths.get("validated_universe"),
                 min_validated_coverage=float(profile.get("min_metadata_validated_coverage", 0.75)),
                 min_market_cap_coverage=float(profile.get("min_metadata_market_cap_coverage", 0.70)),
+                limit_tickers=limit,
             )
             manifest.stage_ok("metadata", metadata_paths)
         elif profile.get("run_metadata", True):
@@ -359,6 +370,7 @@ def run_profile(
                 price_paths.get("validated_universe"),
                 min_validated_coverage=float(profile.get("min_metadata_validated_coverage", 0.75)),
                 min_market_cap_coverage=float(profile.get("min_metadata_market_cap_coverage", 0.70)),
+                limit_tickers=limit,
             )
             manifest.stage_ok("metadata", metadata_paths)
         else:

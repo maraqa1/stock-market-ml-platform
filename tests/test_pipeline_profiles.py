@@ -274,3 +274,31 @@ def test_metadata_quality_gate_accepts_fallback_market_caps(tmp_path: Path):
     ).to_csv(metadata, index=False)
 
     _metadata_quality_gate(metadata, validated, min_validated_coverage=0.75, min_market_cap_coverage=0.70)
+
+
+def test_metadata_quality_gate_applies_limit_before_coverage(tmp_path: Path):
+    validated = tmp_path / "validated.csv"
+    metadata = tmp_path / "metadata.csv"
+    pd.DataFrame(
+        [
+            {"yahoo_ticker": "AAA"},
+            {"yahoo_ticker": "BBB"},
+            {"yahoo_ticker": "CCC"},
+            {"yahoo_ticker": "DDD"},
+        ]
+    ).to_csv(validated, index=False)
+    pd.DataFrame(
+        [
+            {"ticker": "CCC", "market_cap": 3_000_000_000},
+            {"ticker": "DDD", "market_cap": 4_000_000_000},
+        ]
+    ).to_csv(metadata, index=False)
+
+    with pytest.raises(RuntimeError, match="validated_coverage=0.0000"):
+        _metadata_quality_gate(
+            metadata,
+            validated,
+            min_validated_coverage=0.75,
+            min_market_cap_coverage=0.70,
+            limit_tickers=2,
+        )

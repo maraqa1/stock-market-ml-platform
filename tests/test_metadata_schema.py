@@ -93,6 +93,46 @@ def test_metadata_build_reuses_last_healthy_snapshot_when_fresh_caps_are_bad(tmp
     assert set(quality["metadata_build_source"]) == {"reused_last_good"}
 
 
+def test_metadata_build_limit_health_uses_same_limited_universe_slice(tmp_path, monkeypatch):
+    interim = tmp_path / "data" / "interim"
+    interim.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"yahoo_ticker": "AAA", "company": "A", "listing_exchange": "NASDAQ"},
+            {"yahoo_ticker": "BBB", "company": "B", "listing_exchange": "NASDAQ"},
+            {"yahoo_ticker": "CCC", "company": "C", "listing_exchange": "NASDAQ"},
+        ]
+    ).to_csv(interim / "03_us_price_validated_universe_20260527_000000.csv", index=False)
+
+    broad_but_wrong_slice = pd.DataFrame(
+        [
+            {**empty_metadata_row("CCC", "ok", company="C", exchange="NASDAQ"), "market_cap": 3_000_000_000},
+        ],
+        columns=METADATA_COLUMNS,
+    )
+    broad_but_wrong_slice.to_csv(interim / "04_us_metadata_enriched_20260526_000000.csv", index=False)
+
+    bad = pd.DataFrame(
+        [
+            empty_metadata_row("AAA", "metadata_error", "fundamentals not subscribed"),
+            empty_metadata_row("BBB", "metadata_error", "fundamentals not subscribed"),
+        ],
+        columns=METADATA_COLUMNS,
+    )
+
+    monkeypatch.setattr(build_metadata_enriched, "INTERIM_DIR", interim)
+    monkeypatch.setattr(build_metadata_enriched, "ensure_data_dirs", lambda: None)
+    monkeypatch.setattr(build_metadata_enriched, "timestamp", lambda: "20260527_010000")
+    monkeypatch.setattr(build_metadata_enriched, "fetch_metadata_for_universe", lambda *args, **kwargs: bad)
+
+    try:
+        build_metadata_enriched.build_metadata_enriched(limit=2, sleep_seconds=0)
+    except RuntimeError as exc:
+        assert "no previous healthy metadata snapshot found" in str(exc)
+    else:
+        raise AssertionError("metadata fallback missing the limited slice should fail closed")
+
+
 def test_metadata_build_fails_closed_when_no_healthy_snapshot_exists(tmp_path, monkeypatch):
     interim = tmp_path / "data" / "interim"
     interim.mkdir(parents=True)
