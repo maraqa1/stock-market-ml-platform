@@ -448,7 +448,7 @@ def _count_broker_open_orders(cfg: Any) -> int:
     if not cfg.api_key or not cfg.secret_key:
         return 0
     orders = AlpacaPaperClient(cfg).list_orders(status="open")
-    return len(orders)
+    return sum(1 for order in orders if str(order.get("status") or "").strip().lower() in OPEN_ORDER_STATES)
 
 
 def _agent_decisions_dir(root: Path | None = None) -> Path:

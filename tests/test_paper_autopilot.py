@@ -201,6 +201,22 @@ def test_paper_autopilot_tick_counts_direct_broker_orders(monkeypatch, tmp_path)
     assert state["broker_open_orders"] == 5
 
 
+def test_broker_pending_cancel_order_does_not_block_unrelated_opens(monkeypatch):
+    class FakeClient:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def list_orders(self, status="open"):
+            return [
+                {"symbol": "APGE", "status": "pending_cancel"},
+                {"symbol": "GCT", "status": "new"},
+            ]
+
+    monkeypatch.setattr(paper_autopilot, "AlpacaPaperClient", FakeClient)
+
+    assert paper_autopilot._count_broker_open_orders(_config()) == 1
+
+
 def test_paper_autopilot_mode_auto_closes_close_decisions(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
     paper_autopilot.start(tmp_path)
