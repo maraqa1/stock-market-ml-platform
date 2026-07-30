@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from stockml.candidates.execution_ranker import build_execution_ranked_candidates, write_execution_ranked_candidates
+from stockml.candidates.execution_ranker import build_execution_ranked_candidates, latest_candidate_or_plan, write_execution_ranked_candidates
 from stockml.candidates.short_side_policy import ShortSidePolicy
 
 
@@ -151,6 +151,71 @@ def test_qualified_volatility_opportunity_reduced_long_receives_execution_rank()
     assert row["execution_rank"] == 1
     assert row["all_block_reasons"] == ""
     assert row["volatility_opportunity_status"] == "qualified_reduced"
+
+
+def test_reduced_order_eligible_long_remains_executable_for_autopilot():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame(
+            [
+                _row(
+                    "GCT",
+                    2,
+                    status="reduced",
+                    reason="reduced",
+                    risk_tier="medium",
+                    order_eligible=True,
+                    approved_notional=250.0,
+                    suggested_quantity=6,
+                )
+            ]
+        ),
+        short_policy=ShortSidePolicy(),
+    )
+
+    row = ranked.iloc[0]
+    assert row["status"] == "executable"
+    assert row["execution_domain"] == "execution_candidate"
+    assert row["execution_rank"] == 1
+    assert row["primary_block_reason"] == ""
+
+
+def test_reduced_not_order_eligible_long_stays_watch():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame(
+            [
+                _row(
+                    "ATRC",
+                    2,
+                    status="reduced",
+                    reason="reduced",
+                    risk_tier="medium",
+                    order_eligible=False,
+                    approved_notional=250.0,
+                    suggested_quantity=6,
+                )
+            ]
+        ),
+        short_policy=ShortSidePolicy(),
+    )
+
+    row = ranked.iloc[0]
+    assert row["status"] == "watch"
+    assert row["execution_domain"] == "watch_candidate"
+    assert pd.isna(row["execution_rank"])
+
+
+def test_latest_candidate_or_plan_prefers_full_candidate_pool(tmp_path: Path):
+    portal = tmp_path / "data" / "portal_outputs"
+    portal.mkdir(parents=True)
+    candidate = portal / "08_alpaca_paper_candidate_pool_20260730_090000.csv"
+    plan = portal / "08_alpaca_paper_order_plan_20260730_090001.csv"
+    pd.DataFrame([_row("GCT", 2)]).to_csv(candidate, index=False)
+    pd.DataFrame([{"symbol": "GCT", "order_eligible": True}]).to_csv(plan, index=False)
+
+    path, frame = latest_candidate_or_plan(tmp_path)
+
+    assert path == candidate
+    assert "source_trade_action" in frame.columns
 
 
 def test_writer_outputs_expected_schema(tmp_path: Path):

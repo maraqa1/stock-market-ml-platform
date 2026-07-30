@@ -348,6 +348,14 @@ def _status(row: pd.Series, reasons: list[str], *, research_only: bool) -> str:
         return "executable"
     if _is_qualified_volatility_opportunity(row) and notional > 0 and quantity > 0:
         return "executable"
+    if (
+        current == "reduced"
+        and notional > 0
+        and quantity > 0
+        and _boolish(row.get("order_eligible"), False)
+        and all(reason.startswith("reduced_due_") for reason in reasons)
+    ):
+        return "executable"
     if current == "reduced" and notional > 0 and quantity > 0 and all(reason.startswith("reduced_due_") for reason in reasons):
         return "watch"
     if not reasons and notional > 0 and quantity > 0:
@@ -364,6 +372,12 @@ def _is_qualified_volatility_opportunity(row: pd.Series) -> bool:
 
 
 def _execution_reasons(row: pd.Series, reasons: list[str]) -> list[str]:
+    if (
+        _boolish(row.get("order_eligible"), False)
+        and reasons
+        and all(reason.startswith("reduced_due_") for reason in reasons)
+    ):
+        return []
     if not _is_qualified_volatility_opportunity(row):
         return reasons
     return [reason for reason in reasons if reason != "reduced_due_to_volatility"]
@@ -587,13 +601,14 @@ def build_execution_ranked_candidates(
 def latest_candidate_or_plan(root: Path | str | None = None) -> tuple[Path | None, pd.DataFrame]:
     base = Path(root) if root else PROJECT_ROOT
     portal = base / "data" / "portal_outputs"
-    patterns = ["08_alpaca_paper_order_plan_*.csv", "08_alpaca_paper_candidate_pool_*.csv"]
-    files: list[Path] = []
-    for pattern in patterns:
-        files.extend([path for path in portal.glob(pattern) if path.is_file()])
-    if not files:
+    candidate_files = [path for path in portal.glob("08_alpaca_paper_candidate_pool_*.csv") if path.is_file()]
+    if candidate_files:
+        path = max(candidate_files, key=lambda item: item.stat().st_mtime)
+        return path, pd.read_csv(path, low_memory=False)
+    plan_files = [path for path in portal.glob("08_alpaca_paper_order_plan_*.csv") if path.is_file()]
+    if not plan_files:
         return None, pd.DataFrame()
-    path = max(files, key=lambda item: item.stat().st_mtime)
+    path = max(plan_files, key=lambda item: item.stat().st_mtime)
     return path, pd.read_csv(path, low_memory=False)
 
 
