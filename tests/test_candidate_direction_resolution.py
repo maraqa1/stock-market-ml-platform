@@ -99,3 +99,22 @@ def test_direction_conflict_gets_primary_block_reason():
     assert bool(row["direction_conflict"]) is True
     assert row["primary_block_reason"] == "direction_memory_conflict"
     assert bool(row["order_eligible"]) is False
+
+
+def test_missing_market_cap_outranks_softer_direction_reason_in_candidate_pool():
+    out = apply_direction_authority(
+        pd.DataFrame([
+            _candidate(
+                symbol="ADVB",
+                ticker_direction_bias="insufficient_data",
+                market_cap=pd.NA,
+                trade_quality_reason="approved",
+            )
+        ])
+    )
+
+    row = out.iloc[0]
+    assert row["primary_block_reason"] == "market_cap_missing"
+    assert "market_cap_missing" in row["trade_quality_reason"]
+    assert bool(row["order_eligible"]) is False
+    assert row["final_execution_side"] == "NONE"
