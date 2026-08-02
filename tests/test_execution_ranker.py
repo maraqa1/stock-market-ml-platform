@@ -36,8 +36,11 @@ def _row(
         "ticker_direction_sample_count": 100,
         "risk_tier": "high_quality",
         "volatility_tier": "normal",
+        "order_eligible": True,
         "approved_notional": 100.0,
         "suggested_quantity": 1,
+        "current_price": 100.0,
+        "limit_price": 100.0,
     }
     row.update(overrides)
     return row
@@ -48,7 +51,7 @@ def test_approved_long_receives_first_execution_rank_after_rejected_raw_rank_one
         _row("ICCM", 1, status="rejected", reason="price_gate_failed"),
         _row("BNY", 28),
     ])
-    ranked = build_execution_ranked_candidates(frame, short_policy=ShortSidePolicy())
+    ranked = build_execution_ranked_candidates(frame, short_policy=ShortSidePolicy(), active_session_mode="regular_session")
     bny = ranked[ranked["symbol"].eq("BNY")].iloc[0]
     iccm = ranked[ranked["symbol"].eq("ICCM")].iloc[0]
     assert bny["execution_rank"] == 1
@@ -60,6 +63,7 @@ def test_no_decision_never_receives_execution_rank():
     ranked = build_execution_ranked_candidates(
         pd.DataFrame([_row("AAA", 1, action="No Decision", side="", status="approved")]),
         short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
     )
     assert ranked.iloc[0]["status"] == "research_only"
     assert ranked.iloc[0]["primary_block_reason"] in {"source_trade_action_not_executable", "planner_derived_action_without_source_approval"}
@@ -70,6 +74,7 @@ def test_uncalibrated_expected_return_never_receives_execution_rank():
     ranked = build_execution_ranked_candidates(
         pd.DataFrame([_row("AAA", 1, expected_quality="uncalibrated")]),
         short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
     )
     assert ranked.iloc[0]["status"] == "blocked"
     assert "expected_return_uncalibrated" in ranked.iloc[0]["all_block_reasons"]
@@ -80,6 +85,7 @@ def test_short_candidate_is_blocked_when_policy_disabled():
     ranked = build_execution_ranked_candidates(
         pd.DataFrame([_row("CRCL", 1, action="Short")]),
         short_policy=ShortSidePolicy(enabled=False),
+        active_session_mode="regular_session",
     )
     row = ranked.iloc[0]
     assert row["status"] == "blocked"
@@ -92,6 +98,7 @@ def test_short_candidate_executable_when_policy_enabled_and_gates_pass():
     ranked = build_execution_ranked_candidates(
         pd.DataFrame([_row("CRCL", 1, action="Short")]),
         short_policy=ShortSidePolicy(enabled=True, allow_shorts_in_validation=True),
+        active_session_mode="regular_session",
     )
     row = ranked.iloc[0]
     assert row["status"] == "executable"
@@ -100,7 +107,7 @@ def test_short_candidate_executable_when_policy_enabled_and_gates_pass():
 
 def test_raw_rank_is_preserved_and_execution_rank_is_stable():
     frame = pd.DataFrame([_row("ZZZ", 5), _row("AAA", 5), _row("BBB", 3)])
-    ranked = build_execution_ranked_candidates(frame, short_policy=ShortSidePolicy())
+    ranked = build_execution_ranked_candidates(frame, short_policy=ShortSidePolicy(), active_session_mode="regular_session")
     assert ranked["raw_rank"].tolist() == [5, 5, 3]
     ordered = ranked.sort_values("execution_rank", kind="mergesort")["symbol"].tolist()
     assert ordered == ["BBB", "AAA", "ZZZ"]
@@ -114,7 +121,7 @@ def test_execution_rank_uses_net_expected_return_after_cost():
         ]
     )
 
-    ranked = build_execution_ranked_candidates(frame, short_policy=ShortSidePolicy())
+    ranked = build_execution_ranked_candidates(frame, short_policy=ShortSidePolicy(), active_session_mode="regular_session")
     raw = ranked[ranked["symbol"].eq("RAW1")].iloc[0]
     net = ranked[ranked["symbol"].eq("NET1")].iloc[0]
 
@@ -143,6 +150,7 @@ def test_qualified_volatility_opportunity_reduced_long_receives_execution_rank()
             ]
         ),
         short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
     )
 
     row = ranked.iloc[0]
@@ -170,6 +178,7 @@ def test_reduced_order_eligible_long_remains_executable_for_autopilot():
             ]
         ),
         short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
     )
 
     row = ranked.iloc[0]
@@ -177,6 +186,55 @@ def test_reduced_order_eligible_long_remains_executable_for_autopilot():
     assert row["execution_domain"] == "execution_candidate"
     assert row["execution_rank"] == 1
     assert row["primary_block_reason"] == ""
+    assert bool(row["order_ready"]) is True
+    assert row["order_ready_reason"] == "order_ready"
+
+
+def test_order_ready_requires_positive_notional_and_quantity():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame(
+            [
+                _row("MISSNOTIONAL", 1, approved_notional=0, suggested_quantity=1),
+                _row("MISSQTY", 2, approved_notional=250, suggested_quantity=0),
+            ]
+        ),
+        short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
+    )
+
+    assert ranked["order_ready"].tolist() == [False, False]
+    assert ranked["status"].tolist() == ["blocked", "blocked"]
+    assert ranked["order_ready_reason"].tolist() == [
+        "order_not_ready_missing_notional",
+        "order_not_ready_missing_quantity",
+    ]
+
+
+def test_order_ready_requires_order_eligible_not_default_fallback():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame([_row("GCT", 2, order_eligible=False, approved_notional=250.0, suggested_quantity=6)]),
+        short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
+    )
+
+    row = ranked.iloc[0]
+    assert bool(row["order_ready"]) is False
+    assert row["order_ready_reason"] == "order_not_ready_order_eligible_false"
+    assert row["status"] == "blocked"
+    assert pd.isna(row["execution_rank"])
+
+
+def test_order_ready_requires_price_proof():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame([_row("NOPRICE", 1, current_price="", limit_price="", close="")]),
+        short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
+    )
+
+    row = ranked.iloc[0]
+    assert bool(row["order_ready"]) is False
+    assert row["order_ready_reason"] == "order_not_ready_missing_price"
+    assert row["status"] == "blocked"
 
 
 def test_reduced_not_order_eligible_long_stays_watch():
@@ -196,11 +254,13 @@ def test_reduced_not_order_eligible_long_stays_watch():
             ]
         ),
         short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
     )
 
     row = ranked.iloc[0]
-    assert row["status"] == "watch"
-    assert row["execution_domain"] == "watch_candidate"
+    assert row["status"] == "blocked"
+    assert row["execution_domain"] == "blocked_candidate"
+    assert row["order_ready_reason"] == "order_not_ready_order_eligible_false"
     assert pd.isna(row["execution_rank"])
 
 

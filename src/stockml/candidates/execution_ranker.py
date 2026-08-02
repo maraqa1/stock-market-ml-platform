@@ -27,6 +27,14 @@ OUTPUT_COLUMNS = [
     "execution_domain",
     "execution_eligible",
     "trade_authority_status",
+    "order_ready",
+    "order_ready_reason",
+    "order_eligible",
+    "approved_notional",
+    "suggested_quantity",
+    "notional",
+    "limit_price",
+    "current_price",
     "execution_domain_reason",
     "execution_pool_eligible",
     "watchlist_eligible",
@@ -247,6 +255,28 @@ def _source_action_reason(row: pd.Series) -> str:
     return "source_trade_action_not_executable"
 
 
+def _has_price_proof(row: pd.Series) -> bool:
+    for column in ["limit_price", "current_price", "close", "decision_price", "last_price"]:
+        value = _num(row.get(column))
+        if value is not None and value > 0:
+            return True
+    return False
+
+
+def _order_ready(row: pd.Series) -> tuple[bool, str]:
+    if not _boolish(row.get("order_eligible"), False):
+        return False, "order_not_ready_order_eligible_false"
+    approved_notional = _num(row.get("approved_notional")) or _num(row.get("notional")) or 0.0
+    if approved_notional <= 0:
+        return False, "order_not_ready_missing_notional"
+    suggested_quantity = int(_num(row.get("suggested_quantity")) or 0)
+    if suggested_quantity <= 0:
+        return False, "order_not_ready_missing_quantity"
+    if not _has_price_proof(row):
+        return False, "order_not_ready_missing_price"
+    return True, "order_ready"
+
+
 def _estimated_execution_cost_bps(row: pd.Series) -> float:
     explicit = _num(row.get("estimated_execution_cost_bps"))
     if explicit is not None:
@@ -344,21 +374,21 @@ def _status(row: pd.Series, reasons: list[str], *, research_only: bool) -> str:
     current = _text(row.get("trade_quality_status")).lower() or _text(row.get("candidate_status")).lower()
     notional = _num(row.get("approved_notional")) or _num(row.get("notional")) or 0.0
     quantity = int(_num(row.get("suggested_quantity")) or 0)
-    if current == "approved" and not reasons and notional > 0 and quantity > 0:
+    order_ready, _ = _order_ready(row)
+    if current == "approved" and not reasons and order_ready:
         return "executable"
-    if _is_qualified_volatility_opportunity(row) and notional > 0 and quantity > 0:
+    if _is_qualified_volatility_opportunity(row) and order_ready:
         return "executable"
     if (
         current == "reduced"
-        and notional > 0
-        and quantity > 0
+        and order_ready
         and _boolish(row.get("order_eligible"), False)
         and all(reason.startswith("reduced_due_") for reason in reasons)
     ):
         return "executable"
     if current == "reduced" and notional > 0 and quantity > 0 and all(reason.startswith("reduced_due_") for reason in reasons):
         return "watch"
-    if not reasons and notional > 0 and quantity > 0:
+    if not reasons and order_ready:
         return "executable"
     return "blocked"
 
@@ -491,6 +521,9 @@ def build_execution_ranked_candidates(
             ):
                 research_only = True
         reasons = _execution_reasons(row, _normalise_reasons(row, _source_short_reasons(row, _hard_floor_reasons(row, reasons))))
+        order_ready, order_ready_reason = _order_ready(row)
+        if not order_ready:
+            _append_reason(reasons, order_ready_reason)
         status = _status(row, reasons, research_only=research_only)
         if _is_source_short(row) and status == "research_only":
             status = "watch" if authority.get("direction_resolution") == "watch" else "blocked"
@@ -538,6 +571,14 @@ def build_execution_ranked_candidates(
                 "execution_domain": execution_domain,
                 "execution_eligible": execution_eligible,
                 "trade_authority_status": trade_authority_status,
+                "order_ready": order_ready,
+                "order_ready_reason": order_ready_reason,
+                "order_eligible": row.get("order_eligible", ""),
+                "approved_notional": row.get("approved_notional", ""),
+                "suggested_quantity": row.get("suggested_quantity", ""),
+                "notional": row.get("notional", ""),
+                "limit_price": row.get("limit_price", ""),
+                "current_price": row.get("current_price", ""),
                 "execution_domain_reason": execution_domain_reason,
                 "execution_pool_eligible": execution_pool_eligible,
                 "watchlist_eligible": watchlist_eligible,
@@ -717,6 +758,8 @@ def execution_ranked_auto_open_candidates(
             continue
         if "execution_pool_eligible" in frame.columns and not _boolish(row.get("execution_pool_eligible"), False):
             continue
+        if "order_ready" in frame.columns and not _boolish(row.get("order_ready"), False):
+            continue
         if not _safe_block_reasons(row.get("all_block_reasons")):
             continue
         if source_action in {"no decision", "no_decision", "none"}:
@@ -732,6 +775,8 @@ def execution_ranked_auto_open_candidates(
                 "trade_quality_status": "approved",
                 "candidate_status": "approved",
                 "order_eligible": True,
+                "order_ready": True,
+                "order_ready_reason": "order_ready",
                 "side": side,
                 "trade_action": trade_action,
                 "source_trade_action": trade_action,
@@ -755,6 +800,8 @@ def execution_ranked_auto_open_candidates(
                 "candidate_status": "approved",
                 "trade_quality_status": "approved",
                 "order_eligible": True,
+                "order_ready": True,
+                "order_ready_reason": "order_ready",
                 "details": details,
             }
         )
