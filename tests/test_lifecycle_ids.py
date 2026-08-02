@@ -1,5 +1,6 @@
 from stockml.trading.lifecycle_ids import (
     candidate_lineage,
+    current_strategy_version,
     derive_lineage_order_intent,
     fill_lineage,
     order_lineage,
@@ -50,6 +51,16 @@ def test_missing_evidence_produces_lineage_warning():
     lineage = candidate_lineage(symbol="", cycle_id="", candidate_source="scan")
     assert "missing_cycle_id" in lineage.values["lineage_warning"]
     assert "missing_candidate_id" in lineage.values["lineage_warning"]
+
+
+def test_candidate_lineage_carries_strategy_version():
+    lineage = candidate_lineage(symbol="AAA", cycle_id="cycle-1", candidate_source="scan", strategy_version="strategy-1")
+    assert lineage.values["strategy_version"] == "strategy-1"
+
+
+def test_candidate_lineage_defaults_to_current_strategy_fingerprint():
+    lineage = candidate_lineage(symbol="AAA", cycle_id="cycle-1", candidate_source="scan")
+    assert lineage.values["strategy_version"] == current_strategy_version()
 
 
 def test_two_apps_trades_receive_distinct_position_and_trade_ids():

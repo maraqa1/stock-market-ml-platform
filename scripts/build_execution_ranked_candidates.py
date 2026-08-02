@@ -23,8 +23,13 @@ def main() -> int:
 
     memory_path, memory = load_latest_ticker_direction_memory()
     candidates = apply_ticker_direction_memory(candidates, memory)
-    ranked = build_execution_ranked_candidates(candidates)
-    output_path = write_execution_ranked_candidates(candidates, output_dir=args.output_dir)
+    ranked = build_execution_ranked_candidates(
+        candidates,
+        lineage_cycle_id=source_path.stem,
+        lineage_pipeline_run_id=source_path.stem,
+        lineage_source_path=source_path,
+    )
+    output_path = write_execution_ranked_candidates(candidates, output_dir=args.output_dir, source_path=source_path)
     executable = ranked[ranked["executable"].eq(True)].copy()
     research_only_shorts = ranked[
         ranked["research_only"].eq(True) & ranked["side"].astype(str).str.lower().eq("sell")

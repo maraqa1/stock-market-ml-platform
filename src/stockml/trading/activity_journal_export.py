@@ -17,7 +17,7 @@ from stockml.trading.lifecycle_ids import lifecycle_position_id_for, normalize_s
 from stockml.trading.session_mode import classify_session_mode
 
 
-LINEAGE_EXPORT_COLUMNS = ["pipeline_run_id", "cycle_id", "signal_id", "candidate_id", "scan_candidate_id", "parent_candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "event_session_mode", "planned_execution_session_mode", "actual_submission_session_mode", "candidate_source", "model_version", "lineage_warning"]
+LINEAGE_EXPORT_COLUMNS = ["pipeline_run_id", "strategy_version", "cycle_id", "signal_id", "candidate_id", "scan_candidate_id", "parent_candidate_id", "event_key", "client_order_id", "broker_order_id", "position_id", "trade_id", "exit_decision_id", "order_intent", "strategy_mode", "session_mode", "event_session_mode", "planned_execution_session_mode", "actual_submission_session_mode", "candidate_source", "model_version", "lineage_warning"]
 EXPORT_COLUMNS = ["id", "event_at", "symbol", "event_type", "source", "details_summary", *LINEAGE_EXPORT_COLUMNS]
 DEFAULT_BATCH_SIZE = 500
 

@@ -5,6 +5,7 @@ StockML paper-trading diagnostics carry a stable lifecycle identity chain in act
 The additive lineage fields are:
 
 - `pipeline_run_id`
+- `strategy_version`
 - `cycle_id`
 - `signal_id`
 - `candidate_id`
@@ -23,9 +24,13 @@ The additive lineage fields are:
 
 The intended chain is:
 
-`pipeline_run_id -> cycle_id -> signal_id -> candidate_id -> client_order_id -> broker_order_id -> position_id -> trade_id -> exit_decision_id`
+`strategy_version -> pipeline_run_id -> cycle_id -> signal_id -> candidate_id -> client_order_id -> broker_order_id -> position_id -> trade_id -> exit_decision_id`
 
 Identifiers are deterministic when sufficient evidence exists. When evidence is missing, the field remains empty/null and `lineage_warning` records the missing evidence instead of inventing an identifier.
+
+`strategy_version` is the strategy config fingerprint from `stockml.trading.config_fingerprint.config_fingerprints()["strategy"].digest`. It binds candidate and order events to the frozen config used for a forward-paper segment.
+
+Execution-ranked candidate exports also carry `lineage_status` and `lineage_severity`. Missing `candidate_id` or `signal_id` on an executable row is an `error`; missing lineage on research-only rows remains a warning-level diagnostic.
 
 ## Position And Trade Identity
 

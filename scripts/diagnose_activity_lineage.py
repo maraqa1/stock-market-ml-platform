@@ -12,6 +12,7 @@ from stockml.common.paths import timestamp
 from stockml.trading.activity_journal_export import iter_activity_journal_rows, request_for_date, request_for_range, parse_utc_datetime
 
 COVERAGE_FIELDS = [
+    "strategy_version",
     "cycle_id",
     "candidate_id",
     "scan_candidate_id",

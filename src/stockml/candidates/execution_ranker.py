@@ -9,6 +9,7 @@ from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_sid
 from stockml.common.paths import PROJECT_ROOT, timestamp
 from stockml.trading.direction_gate import evaluate_direction_gate
 from stockml.trading.direction_authority import AUTHORITY_COLUMNS, resolve_direction_authority
+from stockml.trading.lifecycle_ids import candidate_lineage, current_strategy_version
 from stockml.trading.session_mode import classify_session_mode
 from stockml.trading.source_approval_expansion import SourceApprovalExpansionConfig
 from stockml.trading.ticker_direction_memory import load_ticker_direction_memory_config
@@ -19,6 +20,16 @@ OUTPUT_COLUMNS = [
     "model_rank",
     "research_rank",
     "execution_rank",
+    "pipeline_run_id",
+    "strategy_version",
+    "cycle_id",
+    "signal_id",
+    "candidate_id",
+    "event_key",
+    "lineage_source_path",
+    "lineage_status",
+    "lineage_severity",
+    "lineage_warning",
     "symbol",
     "side",
     "status",
@@ -468,6 +479,9 @@ def build_execution_ranked_candidates(
     short_policy: ShortSidePolicy | None = None,
     source_expansion_config: SourceApprovalExpansionConfig | None = None,
     active_session_mode: str | None = None,
+    lineage_cycle_id: str = "",
+    lineage_pipeline_run_id: str = "",
+    lineage_source_path: str | Path = "",
 ) -> pd.DataFrame:
     if candidates is None or candidates.empty:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
@@ -475,6 +489,7 @@ def build_execution_ranked_candidates(
     memory_cfg = load_ticker_direction_memory_config()
     min_ticker_samples = int(memory_cfg.min_ticker_samples or 20)
     session_mode = active_session_mode or classify_session_mode()
+    strategy_version = current_strategy_version()
     frame = candidates.copy()
     frame["raw_rank"] = _raw_rank(frame)
     frame["model_rank"] = _model_rank(frame)
@@ -553,6 +568,22 @@ def build_execution_ranked_candidates(
             reasons = [primary_reason]
         estimated_cost_bps = _estimated_execution_cost_bps(row)
         net_expected_return_bps = _net_expected_return_bps(row, estimated_cost_bps)
+        symbol = _symbol(row)
+        side = _side(row)
+        lineage = _row_lineage(
+            row,
+            symbol=symbol,
+            side=side,
+            strategy_version=strategy_version,
+            session_mode=session_mode,
+            lineage_cycle_id=lineage_cycle_id,
+            lineage_pipeline_run_id=lineage_pipeline_run_id,
+        )
+        missing_lineage = [
+            field
+            for field in ("candidate_id", "signal_id")
+            if not _text(lineage.get(field))
+        ]
         execution_domain, execution_eligible, trade_authority_status, execution_domain_reason, execution_pool_eligible, watchlist_eligible = _execution_domain(
             row,
             status=status,
@@ -568,8 +599,18 @@ def build_execution_ranked_candidates(
                 "model_rank": row.get("model_rank"),
                 "research_rank": row.get("research_rank"),
                 "execution_rank": pd.NA,
-                "symbol": _symbol(row),
-                "side": _side(row),
+                "pipeline_run_id": lineage.get("pipeline_run_id", ""),
+                "strategy_version": lineage.get("strategy_version", ""),
+                "cycle_id": lineage.get("cycle_id", ""),
+                "signal_id": lineage.get("signal_id", ""),
+                "candidate_id": lineage.get("candidate_id", ""),
+                "event_key": lineage.get("event_key", ""),
+                "lineage_source_path": _text(row.get("lineage_source_path")) or str(lineage_source_path or ""),
+                "lineage_status": "missing_lineage" if missing_lineage else "ok",
+                "lineage_severity": "error" if executable and missing_lineage else ("warning" if missing_lineage else ""),
+                "lineage_warning": lineage.get("lineage_warning", ""),
+                "symbol": symbol,
+                "side": side,
                 "status": status,
                 "executable": executable,
                 "research_only": research_only,
@@ -664,11 +705,20 @@ def write_execution_ranked_candidates(
     output_dir: Path | str | None = None,
     stamp: str | None = None,
     short_policy: ShortSidePolicy | None = None,
+    source_path: Path | str | None = None,
 ) -> Path:
     out_dir = Path(output_dir) if output_dir else PROJECT_ROOT / "data" / "portal_outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
     run_stamp = stamp or timestamp()
-    ranked = build_execution_ranked_candidates(candidates, short_policy=short_policy)
+    source = Path(source_path) if source_path else None
+    source_stem = source.stem if source else ""
+    ranked = build_execution_ranked_candidates(
+        candidates,
+        short_policy=short_policy,
+        lineage_cycle_id=source_stem,
+        lineage_pipeline_run_id=source_stem,
+        lineage_source_path=str(source or ""),
+    )
     path = out_dir / f"execution_ranked_candidates_{run_stamp}.csv"
     ranked.to_csv(path, index=False)
     return path
@@ -719,6 +769,38 @@ def _session_eligibility(row: pd.Series, active_session_mode: str) -> tuple[bool
     elif active_session_mode == "weekend_closed":
         reason = "weekend_closed"
     return regular, overnight, "|".join(sessions), reason
+
+
+def _row_lineage(
+    row: pd.Series,
+    *,
+    symbol: str,
+    side: str,
+    strategy_version: str,
+    session_mode: str,
+    lineage_cycle_id: str = "",
+    lineage_pipeline_run_id: str = "",
+) -> dict[str, Any]:
+    cycle_id = _text(row.get("cycle_id")) or _text(lineage_cycle_id) or _text(row.get("pipeline_run_id")) or _text(row.get("model_version"))
+    pipeline_run_id = _text(row.get("pipeline_run_id")) or _text(lineage_pipeline_run_id) or _text(row.get("model_version")) or cycle_id
+    model_version = _text(row.get("model_version")) or pipeline_run_id
+    strategy_mode = _text(row.get("strategy_mode")) or _text(row.get("strategy_stream")) or _text(row.get("trading_stream")) or "execution_ranked"
+    lineage = candidate_lineage(
+        symbol=symbol,
+        cycle_id=cycle_id,
+        pipeline_run_id=pipeline_run_id,
+        strategy_version=_text(row.get("strategy_version")) or strategy_version,
+        candidate_source=_text(row.get("candidate_source")) or "execution_ranked_candidates",
+        strategy_mode=strategy_mode,
+        session_mode=_text(row.get("session_mode")) or session_mode,
+        model_version=model_version,
+        side=side,
+        client_order_id=row.get("client_order_id", ""),
+        candidate_id=row.get("candidate_id", ""),
+        scan_candidate_id=row.get("scan_candidate_id", ""),
+        parent_candidate_id=row.get("parent_candidate_id", ""),
+    )
+    return lineage.values
 
 
 def execution_ranked_auto_open_candidates(

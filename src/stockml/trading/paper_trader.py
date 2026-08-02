@@ -22,6 +22,7 @@ from stockml.trading.autopilot_guard import autopilot_blocks_basket_submission, 
 from stockml.trading.config import alpaca_config
 from stockml.trading.counterfactual_log import write_counterfactual_candidates
 from stockml.trading.execution_owner import LEGACY_BLOCK_REASON, legacy_paper_trader_can_submit
+from stockml.trading.config_fingerprint import config_fingerprints
 from stockml.trading.lifecycle_ids import LINEAGE_FIELDS, candidate_lineage, fill_lineage, order_lineage
 from stockml.trading.order_builder import validate_order_payload
 from stockml.trading.order_planner import build_candidate_pool, build_order_plan, build_order_plan_from_candidate_pool, latest_signal_table
@@ -262,7 +263,14 @@ def _mark_overnight_asset_eligibility(candidate_pool: pd.DataFrame, client: Alpa
     return out
 
 
-def _attach_plan_lineage(plan: pd.DataFrame, *, cycle_id: str, pipeline_run_id: str, model_version: str) -> pd.DataFrame:
+def _strategy_version() -> str:
+    try:
+        return config_fingerprints()["strategy"].digest
+    except Exception:
+        return ""
+
+
+def _attach_plan_lineage(plan: pd.DataFrame, *, cycle_id: str, pipeline_run_id: str, model_version: str, strategy_version: str = "") -> pd.DataFrame:
     if plan.empty or "symbol" not in plan.columns:
         return plan
     out = plan.copy()
@@ -276,6 +284,7 @@ def _attach_plan_lineage(plan: pd.DataFrame, *, cycle_id: str, pipeline_run_id: 
             symbol=row.get("symbol"),
             cycle_id=cycle_id,
             pipeline_run_id=pipeline_run_id,
+            strategy_version=strategy_version,
             candidate_source=row.get("candidate_source") or "paper_order_plan",
             strategy_mode=strategy_mode,
             session_mode=session_mode,
@@ -371,7 +380,8 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
     plan = _stamp_client_order_ids(plan, stamp)
     pipeline_run_id = Path(model_signal_path).stem if model_signal_path else ""
     model_version = pipeline_run_id
-    plan = _attach_plan_lineage(plan, cycle_id=stamp, pipeline_run_id=pipeline_run_id, model_version=model_version)
+    strategy_version = _strategy_version()
+    plan = _attach_plan_lineage(plan, cycle_id=stamp, pipeline_run_id=pipeline_run_id, model_version=model_version, strategy_version=strategy_version)
     plan = _reject_autopilot_conflicts(plan)
     if not plan.empty and "symbol" in plan.columns:
         eligible_plan = plan[
@@ -425,6 +435,7 @@ def run_paper_trading(signal_file: Optional[Path] = None, *, plan_only: bool = F
                 symbol=symbol,
                 cycle_id=cycle_id,
                 pipeline_run_id=selected.get("pipeline_run_id", pipeline_run_id),
+                strategy_version=selected.get("strategy_version", strategy_version),
                 candidate_source=candidate_source,
                 strategy_mode=selected.get("strategy_mode") or selected.get("strategy_stream") or "multi_day_forecast",
                 session_mode=selected.get("session_mode") or ("overnight_24_5" if _boolish(selected.get("extended_hours"), False) else "regular_session"),

@@ -9,6 +9,7 @@ from stockml.trading.session_mode import classify_session_mode
 
 LINEAGE_FIELDS = (
     "pipeline_run_id",
+    "strategy_version",
     "cycle_id",
     "signal_id",
     "candidate_id",
@@ -140,6 +141,15 @@ def signal_id_for(*, pipeline_run_id: Any, symbol: Any, strategy_mode: Any, mode
     return stable_id("sig", pipeline_run_id, _upper(symbol), strategy_mode, model_version)
 
 
+def current_strategy_version() -> str:
+    try:
+        from stockml.trading.config_fingerprint import config_fingerprints
+
+        return config_fingerprints()["strategy"].digest
+    except Exception:
+        return ""
+
+
 def trade_id_for(*, symbol: Any, broker_order_id: Any = "", client_order_id: Any = "", existing_trade_id: Any = "") -> str | None:
     existing = _text(existing_trade_id)
     if existing:
@@ -216,6 +226,7 @@ def candidate_lineage(
     symbol: Any,
     cycle_id: Any,
     pipeline_run_id: Any = "",
+    strategy_version: Any = "",
     candidate_source: Any = "paper_order_plan",
     strategy_mode: Any = "multi_day_forecast",
     session_mode: Any = "regular_session",
@@ -246,6 +257,7 @@ def candidate_lineage(
     intent = derive_lineage_order_intent(current_qty=0, attempted_side=side, attempted_qty=1)
     values = {
         "pipeline_run_id": _text(pipeline_run_id) or None,
+        "strategy_version": _text(strategy_version) or current_strategy_version() or None,
         "cycle_id": _text(cycle_id) or None,
         "signal_id": signal_id,
         "candidate_id": candidate_id,

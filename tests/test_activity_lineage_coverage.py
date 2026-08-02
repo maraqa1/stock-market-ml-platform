@@ -28,7 +28,8 @@ def _engine():
             "event_at": datetime(2026, 6, 23, 10, 0, tzinfo=timezone.utc),
             "event_type": "selected",
             "source": "test",
-            "details": {"symbol": "AAA"},
+            "details": {"symbol": "AAA", "strategy_version": "strategy-1"},
+            "strategy_version": "strategy-1",
             "cycle_id": "cycle-1",
             "candidate_id": "cand-1",
             "event_key": "evt-1",
@@ -39,7 +40,8 @@ def _engine():
             "event_at": datetime(2026, 6, 23, 10, 1, tzinfo=timezone.utc),
             "event_type": "filled",
             "source": "test",
-            "details": {"symbol": "BBB"},
+            "details": {"symbol": "BBB", "strategy_version": "strategy-1"},
+            "strategy_version": "strategy-1",
             "client_order_id": "cid-1",
             "broker_order_id": "oid-1",
             "trade_id": "trade-oid-1",
@@ -55,5 +57,6 @@ def test_activity_lineage_coverage_reports_by_event_type(tmp_path):
     frame = module.build_lineage_coverage(request, target=_engine())
     assert set(frame["event_type"]) == {"ALL", "filled", "selected"}
     filled = frame[frame["event_type"].eq("filled")].iloc[0]
+    assert filled["strategy_version_coverage"] == 1.0
     assert filled["client_order_id_coverage"] == 1.0
     assert filled["trade_id_coverage"] == 1.0

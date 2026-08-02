@@ -26,6 +26,7 @@ def test_activity_details_preserve_lineage_fields(monkeypatch):
     with engine.connect() as conn:
         row = conn.execute(select(position_events.c.details)).scalar_one()
     assert row["candidate_id"] == lineage.values["candidate_id"]
+    assert row["strategy_version"] == lineage.values["strategy_version"]
     assert row["client_order_id"] == "cid-1"
     assert lineage_from_activity(row)["cycle_id"] == "cycle-1"
 
@@ -61,11 +62,13 @@ def test_trade_journal_carries_lineage_columns():
             "status": "submitted",
             "client_order_id": "cid-1",
             "candidate_id": "cand-1",
+            "strategy_version": "strategy-1",
             "trade_id": "trade-1",
             "order_intent": "open_long",
         }
     ])
     journal = build_trade_journal(plan)
     assert journal.iloc[0]["candidate_id"] == "cand-1"
+    assert journal.iloc[0]["strategy_version"] == "strategy-1"
     assert journal.iloc[0]["client_order_id"] == "cid-1"
     assert journal.iloc[0]["trade_id"] == "trade-1"

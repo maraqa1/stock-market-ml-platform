@@ -287,7 +287,38 @@ def test_writer_outputs_expected_schema(tmp_path: Path):
     )
     out = pd.read_csv(path)
     assert path.name == "execution_ranked_candidates_20260701_120000.csv"
-    assert {"raw_rank", "execution_rank", "symbol", "status", "primary_block_reason"}.issubset(out.columns)
+    assert {"raw_rank", "execution_rank", "symbol", "status", "primary_block_reason", "strategy_version", "candidate_id", "signal_id"}.issubset(out.columns)
+
+
+def test_execution_candidate_has_lineage_and_strategy_version():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame([_row("GCT", 2, pipeline_run_id="run-1", model_version="model-a")]),
+        short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
+    )
+    row = ranked.iloc[0]
+    assert row["execution_domain"] == "execution_candidate"
+    assert row["lineage_status"] == "ok"
+    assert row["lineage_severity"] == ""
+    assert row["strategy_version"]
+    assert row["candidate_id"]
+    assert row["signal_id"]
+
+
+def test_execution_candidate_uses_source_artifact_for_missing_run_lineage():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame([_row("GCT", 2)]),
+        short_policy=ShortSidePolicy(),
+        active_session_mode="regular_session",
+        lineage_cycle_id="08_alpaca_paper_candidate_pool_20260730_092553",
+        lineage_pipeline_run_id="08_alpaca_paper_candidate_pool_20260730_092553",
+        lineage_source_path="/tmp/08_alpaca_paper_candidate_pool_20260730_092553.csv",
+    )
+    row = ranked.iloc[0]
+    assert row["lineage_status"] == "ok"
+    assert row["lineage_severity"] == ""
+    assert row["pipeline_run_id"] == "08_alpaca_paper_candidate_pool_20260730_092553"
+    assert row["lineage_source_path"].endswith("08_alpaca_paper_candidate_pool_20260730_092553.csv")
 
 
 def test_execution_ranker_does_not_add_live_trading_path():

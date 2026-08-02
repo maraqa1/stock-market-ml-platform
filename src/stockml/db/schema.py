@@ -120,6 +120,7 @@ position_events = Table(
     Column("source", String(100), nullable=False),
     Column("details", JSON),
     Column("pipeline_run_id", String(200)),
+    Column("strategy_version", String(200)),
     Column("cycle_id", String(200)),
     Column("signal_id", String(200)),
     Column("candidate_id", String(200)),

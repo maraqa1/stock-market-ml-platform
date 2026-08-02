@@ -65,6 +65,7 @@ def build_trade_journal(plan: pd.DataFrame, results: pd.DataFrame | None = None)
         "filled_avg_price",
         "message",
         "pipeline_run_id",
+        "strategy_version",
         "cycle_id",
         "signal_id",
         "candidate_id",
