@@ -64,6 +64,11 @@ OUTPUT_COLUMNS = [
     "volatility_opportunity_allows_reduced_trade",
     "validation_quality",
     "calibration_quality",
+    "sizing_probability_source",
+    "sizing_probability_usable",
+    "raw_side_score_used_for_sizing",
+    "ranking_score_source",
+    "raw_side_score_used_for_ranking",
     "validated_expected_return_bps",
     "estimated_execution_cost_bps",
     "net_expected_return_bps",
@@ -262,6 +267,14 @@ def _confidence_bucket(row: pd.Series, probability_status: str) -> Any:
     if _text(probability_status).lower() == "uncalibrated" and _text(bucket).upper() == "HIGH":
         return "UNCALIBRATED"
     return bucket
+
+
+def _sizing_probability_source(row: pd.Series, authority: dict[str, Any]) -> tuple[str, bool, bool]:
+    if bool(authority.get("probability_usable_for_sizing")):
+        return "calibrated_probability_win", True, False
+    if _num(row.get("approved_notional")) is not None or _num(row.get("notional")) is not None:
+        return "config_default", False, False
+    return "fixed_size", False, False
 
 
 def _source_action_reason(row: pd.Series) -> str:
@@ -562,6 +575,7 @@ def build_execution_ranked_candidates(
         authority = dict(authority)
         if not executable:
             authority["final_execution_side"] = "NONE"
+        sizing_probability_source, sizing_probability_usable, raw_side_score_used_for_sizing = _sizing_probability_source(row, authority)
         primary_reason = _ordered_primary_reason(row, reasons)
         if status == "blocked" and not primary_reason:
             primary_reason = "unknown_rejection_reason"
@@ -643,6 +657,11 @@ def build_execution_ranked_candidates(
                 "volatility_opportunity_allows_reduced_trade": row.get("volatility_opportunity_allows_reduced_trade", ""),
                 "validation_quality": _validation_quality(row),
                 "calibration_quality": row.get("calibration_quality", ""),
+                "sizing_probability_source": sizing_probability_source,
+                "sizing_probability_usable": sizing_probability_usable,
+                "raw_side_score_used_for_sizing": raw_side_score_used_for_sizing,
+                "ranking_score_source": "net_expected_return_bps",
+                "raw_side_score_used_for_ranking": False,
                 "validated_expected_return_bps": row.get("validated_expected_return_bps", ""),
                 "estimated_execution_cost_bps": estimated_cost_bps,
                 "net_expected_return_bps": net_expected_return_bps if net_expected_return_bps is not None else "",
