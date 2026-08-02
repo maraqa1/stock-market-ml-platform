@@ -160,11 +160,13 @@ def split_candidate_pools(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
         source_direction = frame.get("source_approved_direction", pd.Series("", index=frame.index)).fillna("").astype(str).str.upper()
         notional = pd.to_numeric(frame.get("approved_notional", pd.Series(0, index=frame.index)), errors="coerce").fillna(0)
         quantity = pd.to_numeric(frame.get("suggested_quantity", pd.Series(0, index=frame.index)), errors="coerce").fillna(0)
+        order_ready = frame.get("order_ready", pd.Series(True, index=frame.index)).fillna(False).astype(bool)
         primary = frame.get("primary_block_reason", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
         primary_blank = primary.isin({"", "nan", "none", "null", "na"})
         execution_filter = (
             domain.eq("execution_candidate")
             & execution_eligible
+            & order_ready
             & final_side.isin(["LONG", "SHORT"])
             & source_direction.isin(["LONG", "SHORT"])
             & notional.gt(0)

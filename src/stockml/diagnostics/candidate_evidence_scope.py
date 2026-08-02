@@ -50,6 +50,7 @@ def _write_markdown(frame: pd.DataFrame, path: Path, *, source_path: Path | None
     executable = int(frame.get("executable", pd.Series(False, index=frame.index)).fillna(False).astype(bool).sum()) if not frame.empty else 0
     research = int(frame.get("research_only", pd.Series(False, index=frame.index)).fillna(False).astype(bool).sum()) if not frame.empty else 0
     blocked = int(len(frame) - executable - research)
+    non_ticker_exec = pd.DataFrame()
     allowed_missing_ticker = 0
     if not frame.empty:
         allowed_missing_ticker = int(
@@ -57,6 +58,9 @@ def _write_markdown(frame: pd.DataFrame, path: Path, *, source_path: Path | None
             .where(frame.get("ticker_direction_memory_status", pd.Series("", index=frame.index)).isin(["missing", "insufficient_samples"]), False)
             .sum()
         )
+        domain = frame.get("execution_domain", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower()
+        scope = frame.get("expected_return_scope", pd.Series("unknown", index=frame.index)).fillna("unknown").astype(str).str.lower()
+        non_ticker_exec = frame[domain.eq("execution_candidate") & ~scope.eq("ticker")].copy()
     with path.open("w", encoding="utf-8") as handle:
         handle.write("# Candidate Evidence Scope Diagnostic\n\n")
         handle.write(f"- Generated at UTC: `{datetime.now(timezone.utc).isoformat()}`\n")
@@ -68,12 +72,34 @@ def _write_markdown(frame: pd.DataFrame, path: Path, *, source_path: Path | None
         handle.write(f"- Inverse warnings present: `{inverse_present}`\n")
         handle.write(f"- Inverse warnings actionable: `{inverse_actionable}`\n")
         handle.write(f"- Candidates allowed without ticker-specific memory: `{allowed_missing_ticker}`\n\n")
+        handle.write(f"- Execution candidates using non-ticker expected-return evidence: `{len(non_ticker_exec)}`\n\n")
         handle.write("## Split Files\n\n")
         for label, split_path in split_paths.items():
             handle.write(f"- {label}: `{split_path}`\n")
         handle.write("\n## Expected Return Scope Distribution\n\n")
         for key, value in scope_counts.items():
             handle.write(f"- {key}: `{value}`\n")
+        handle.write("\n## Execution Candidates With Non-Ticker Evidence\n\n")
+        if non_ticker_exec.empty:
+            handle.write("- none\n")
+        else:
+            columns = [
+                "symbol",
+                "execution_rank",
+                "expected_return_scope",
+                "validated_expected_return_bps",
+                "hit_rate_scope",
+                "validated_hit_rate",
+                "profit_factor_scope",
+                "validated_profit_factor",
+            ]
+            available = [column for column in columns if column in non_ticker_exec.columns]
+            for row in non_ticker_exec[available].fillna("").to_dict("records"):
+                handle.write(
+                    "- "
+                    + ", ".join(f"{key}={value}" for key, value in row.items())
+                    + "\n"
+                )
         handle.write("\n## Ticker Direction Memory Coverage\n\n")
         for key, value in memory_counts.items():
             handle.write(f"- {key}: `{value}`\n")
@@ -121,4 +147,10 @@ def run_candidate_evidence_scope(
         "expected_return_scope_distribution": scope_distribution,
         "ticker_memory_distribution": memory_distribution,
         "inverse_warnings_actionable": _count_bool(frame, "inverse_warning_actionable"),
+        "execution_non_ticker_evidence_count": int(
+            (
+                frame.get("execution_domain", pd.Series("", index=frame.index)).fillna("").astype(str).str.lower().eq("execution_candidate")
+                & ~frame.get("expected_return_scope", pd.Series("unknown", index=frame.index)).fillna("unknown").astype(str).str.lower().eq("ticker")
+            ).sum()
+        ) if not frame.empty else 0,
     }

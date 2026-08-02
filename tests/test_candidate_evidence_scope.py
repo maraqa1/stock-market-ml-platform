@@ -143,3 +143,29 @@ def test_candidate_evidence_scope_runner_writes_outputs(tmp_path: Path):
     assert Path(result["csv_path"]).exists()
     assert Path(result["markdown_path"]).exists()
     assert Path(result["split_paths"]["execution_candidate_pool"]).exists()
+
+
+def test_candidate_evidence_scope_reports_execution_candidates_with_non_ticker_evidence(tmp_path: Path):
+    portal = tmp_path / "data" / "portal_outputs"
+    portal.mkdir(parents=True)
+    frame = pd.DataFrame(
+        [
+            {
+                **_candidate(symbol="GCT", status="executable", executable=True, research_only=False),
+                "execution_domain": "execution_candidate",
+                "execution_eligible": True,
+                "source_approved_direction": "LONG",
+                "final_execution_side": "LONG",
+                "order_ready": True,
+                "expected_return_scope": "side",
+            }
+        ]
+    )
+    frame.to_csv(portal / "execution_ranked_candidates_20260702_120000.csv", index=False)
+
+    result = run_candidate_evidence_scope(root=tmp_path, stamp="20260702_121500")
+
+    assert result["execution_non_ticker_evidence_count"] == 1
+    text = Path(result["markdown_path"]).read_text(encoding="utf-8")
+    assert "Execution candidates using non-ticker expected-return evidence: `1`" in text
+    assert "symbol=GCT" in text
