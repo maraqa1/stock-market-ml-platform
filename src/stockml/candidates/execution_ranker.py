@@ -234,6 +234,8 @@ def _ordered_primary_reason(row: pd.Series, reasons: list[str]) -> str:
         for reason in SHORT_REASON_PRECEDENCE:
             if reason in reason_set:
                 return reason
+    if "direction_memory_conflict" in reason_set:
+        return "direction_memory_conflict"
     order_not_ready = [reason for reason in reasons if reason.startswith("order_not_ready")]
     if order_not_ready and all(reason.startswith("order_not_ready") or reason.startswith("reduced_due_") for reason in reasons):
         return order_not_ready[0]

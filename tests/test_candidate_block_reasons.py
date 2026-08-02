@@ -19,6 +19,8 @@ def _candidate(**overrides):
         "order_eligible": True,
         "approved_notional": 100,
         "suggested_quantity": 1,
+        "current_price": 100,
+        "limit_price": 100,
         "risk_tier": "medium",
         "volatility_tier": "normal",
         "expected_return_quality": "usable",
@@ -92,3 +94,32 @@ def test_market_cap_missing_outranks_direction_memory_for_source_approved_long()
     assert row["primary_block_reason"] == "market_cap_missing"
     assert "market_cap_missing" in row["all_block_reasons"]
     assert row["final_execution_side"] == "NONE"
+
+
+def test_direction_memory_conflict_relabels_already_blocked_row_without_outcome_change():
+    ranked = build_execution_ranked_candidates(
+        pd.DataFrame(
+            [
+                _candidate(
+                    symbol="CONFLICT",
+                    side="buy",
+                    source_trade_action="Long",
+                    trade_action="Long",
+                    directional_action="Long",
+                    ticker_direction_bias="trust_short",
+                    ticker_direction_confidence=0.51,
+                    trade_quality_status="rejected",
+                    trade_quality_reason="risk_gate_failed",
+                    validated_expected_return_bps=42,
+                )
+            ]
+        ),
+        active_session_mode="regular_session",
+    )
+
+    row = ranked.iloc[0]
+    assert row["status"] == "blocked"
+    assert bool(row["executable"]) is False
+    assert row["execution_domain"] == "blocked_candidate"
+    assert row["primary_block_reason"] == "direction_memory_conflict"
+    assert "risk_gate_failed" in row["all_block_reasons"]

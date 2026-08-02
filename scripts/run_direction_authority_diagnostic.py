@@ -52,6 +52,14 @@ def main() -> int:
     reduced_watch = status.isin(["watch", "research_only"]) | primary.str.startswith("reduced_due_to")
     raw_probability_misuse_risk = raw_side_score.notna() & prob.eq("uncalibrated") & calibrated_probability.isna()
     blank_rejected_reasons = status.isin(["blocked", "research_only"]) & primary.str.strip().isin(["", "nan", "None", "NA"])
+    conflict_primary = primary.eq("direction_memory_conflict")
+    conflict_confidence = pd.to_numeric(detail.get("ticker_direction_confidence", pd.Series(index=detail.index)), errors="coerce")
+    conflict_lines = ["- none"]
+    if conflict_primary.any():
+        conflict_lines = [
+            f"- {row.get('symbol')}: confidence={row.get('ticker_direction_confidence')} raw_rank={row.get('raw_rank')} status={row.get('status')}"
+            for row in detail[conflict_primary].sort_values("raw_rank", kind="mergesort").head(25).to_dict("records")
+        ]
     lines = [
         "# Direction Authority Diagnostic",
         f"- source_path: `{source_path}`",
@@ -68,6 +76,10 @@ def main() -> int:
         f"- planner_only_research_count: {int(planner_research.sum())}",
         f"- memory_aligned_count: {int(detail.get('direction_alignment_status', pd.Series('', index=detail.index)).eq('aligned').sum())}",
         f"- memory_conflict_count: {int(conflict.sum())}",
+        f"- primary_direction_memory_conflict_count: {int(conflict_primary.sum())}",
+        f"- primary_direction_memory_conflict_confidence_min: {round(float(conflict_confidence[conflict_primary].min()), 6) if conflict_primary.any() and conflict_confidence[conflict_primary].notna().any() else ''}",
+        f"- primary_direction_memory_conflict_confidence_median: {round(float(conflict_confidence[conflict_primary].median()), 6) if conflict_primary.any() and conflict_confidence[conflict_primary].notna().any() else ''}",
+        f"- primary_direction_memory_conflict_confidence_max: {round(float(conflict_confidence[conflict_primary].max()), 6) if conflict_primary.any() and conflict_confidence[conflict_primary].notna().any() else ''}",
         f"- memory_insufficient_count: {int(detail.get('direction_alignment_status', pd.Series('', index=detail.index)).eq('memory_insufficient').sum())}",
         f"- executable_count: {int(executable.sum())}",
         f"- blocked_by_direction_count: {int(primary.isin(['planner_derived_action_without_source_approval', 'direction_memory_conflict', 'direction_memory_insufficient', 'source_trade_action_not_executable']).sum())}",
@@ -89,6 +101,8 @@ def main() -> int:
         *_counts(detail, "profit_factor_scope"),
         "\n## probability_calibration_status",
         *_counts(detail, "probability_calibration_status"),
+        "\n## primary_direction_memory_conflict_confidence",
+        *conflict_lines,
         "\n## final_executable_list",
     ]
     executable_rows = detail[executable].sort_values("execution_rank", kind="mergesort")
