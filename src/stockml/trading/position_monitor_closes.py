@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-
-from stockml.trading.manual_position_actions import apply_manual_position_action
 from stockml.trading.monitor_auto_close import execute_monitor_auto_closes
 from stockml.trading.paper_autopilot import (
     append_tick_log,
@@ -72,21 +70,14 @@ def execute_position_monitor_closes(
         )
 
     active_symbols = _clean_symbols(active_order_symbols)
-    base_action = action_func or (lambda symbol, action: apply_manual_position_action(symbol, action))
-
-    def guarded_action(symbol: str, action: str) -> dict[str, Any]:
-        clean_symbol = str(symbol or "").strip().upper()
-        if clean_symbol in active_symbols:
-            return {
-                "status": "skipped",
-                "message": "active_order_exists",
-                "symbol": clean_symbol,
-                "operator_action": action,
-            }
-        return base_action(clean_symbol, action)
-
     update_position_peaks(current_state, positions)
-    result = apply_paper_autopilot_decisions(root, positions, state=current_state, action_func=guarded_action)
+    result = apply_paper_autopilot_decisions(
+        root,
+        positions,
+        state=current_state,
+        action_func=action_func,
+        active_order_symbols=active_symbols,
+    )
 
     stamp = _now()
     current_state.update(result)

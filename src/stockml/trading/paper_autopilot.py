@@ -914,6 +914,7 @@ def apply_paper_autopilot_decisions(
     state: dict[str, Any] | None = None,
     *,
     action_func: Callable[[str, str], dict[str, Any]] | None = None,
+    active_order_symbols: set[str] | None = None,
 ) -> dict[str, Any]:
     """Apply guarded paper actions from the unified position manager.
 
@@ -1005,6 +1006,7 @@ def apply_paper_autopilot_decisions(
     replace_submitted = 0
     actions = 0
     seen: set[str] = set()
+    active_symbols = {str(symbol).strip().upper() for symbol in (active_order_symbols or set()) if str(symbol).strip()}
     for row in candidates.fillna("").to_dict("records"):
         symbol = str(row.get("__symbol") or row.get("symbol") or "").upper()
         if not symbol or symbol in seen:
@@ -1012,7 +1014,14 @@ def apply_paper_autopilot_decisions(
         seen.add(symbol)
         action = str(row.get("__autopilot_action") or row.get("recommended_action") or "").lower()
         submit_action = "close" if action == "replace" else action
-        if action_func is not None:
+        if symbol in active_symbols:
+            result = {
+                "status": "skipped",
+                "message": "active_order_exists",
+                "symbol": symbol,
+                "operator_action": submit_action,
+            }
+        elif action_func is not None:
             result = action_func(symbol, submit_action)
         else:
             result = apply_position_management_paper_action(row, submit_action)
