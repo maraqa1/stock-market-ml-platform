@@ -91,17 +91,17 @@ def normalize_ai2_enrichment(frame: pd.DataFrame, *, source_file: Path | str | N
     out["symbol"] = _column(frame, "symbol", "Symbol").astype(str).str.upper().str.strip()
     out = out[out["symbol"].ne("")].copy()
 
-    decision = _column(frame, "ai2_decision", "Decision", "decision").map(_clean_text)
+    decision = _column(frame, "ai2_decision", "Decision", "decision", "execution_decision").map(_clean_text)
     out["ai2_decision"] = decision.reindex(out.index).fillna("")
     out["ai2_decision_status"] = out["ai2_decision"].map(ai2_decision_status)
     out["ai2_price_check_status"] = _price_check_status(frame).reindex(out.index).fillna("")
     out["ai2_latest_eod_date"] = _latest_eod_date(frame).reindex(out.index).fillna("")
     out["ai2_latest_eod_close"] = _latest_eod_close(frame).reindex(out.index)
-    out["ai2_latest_intraday_price"] = _num_column(frame, "ai2_latest_intraday_price", "Latest intraday", "latest_intraday").reindex(out.index)
-    out["ai2_return_1d_pct"] = _num_column(frame, "ai2_return_1d_pct", "1D return", "1d_return").reindex(out.index)
-    out["ai2_return_5d_pct"] = _num_column(frame, "ai2_return_5d_pct", "5D return", "5d_return").reindex(out.index)
+    out["ai2_latest_intraday_price"] = _num_column(frame, "ai2_latest_intraday_price", "Latest intraday", "latest_intraday", "latest_intraday_price").reindex(out.index)
+    out["ai2_return_1d_pct"] = _num_column(frame, "ai2_return_1d_pct", "1D return", "1d_return", "one_day_return_pct").reindex(out.index)
+    out["ai2_return_5d_pct"] = _num_column(frame, "ai2_return_5d_pct", "5D return", "5d_return", "five_day_return_pct").reindex(out.index)
     out["ai2_eod_volume"] = _num_column(frame, "ai2_eod_volume", "EOD volume", "eod_volume").reindex(out.index)
-    out["ai2_volatility_20d_pct"] = _num_column(frame, "ai2_volatility_20d_pct", "20D vol.", "20D vol", "20d_volatility").reindex(out.index)
+    out["ai2_volatility_20d_pct"] = _num_column(frame, "ai2_volatility_20d_pct", "20D vol.", "20D vol", "20d_volatility", "volatility_20d_pct").reindex(out.index)
     out["ai2_notes"] = _column(frame, "ai2_notes", "Why / notes", "Checks / notes", "notes").map(_clean_text).reindex(out.index).fillna("")
     out["ai2_source_file"] = str(source_file or "")
 
@@ -248,7 +248,7 @@ def _price_check_status(frame: pd.DataFrame) -> pd.Series:
     if direct.astype(str).str.strip().ne("").any():
         return direct.map(_clean_text)
     notes = _column(frame, "Why / notes", "Checks / notes", "notes").map(_clean_text)
-    return notes.map(lambda text: "clean" if "ok: price_checks_clear" in text.lower() else ("warning" if "warning:" in text.lower() else ""))
+    return notes.map(lambda text: "clean" if "ok: price_checks_clear" in text.lower() or "ok:price_checks_clear" in text.lower() else ("warning" if "warning:" in text.lower() else ""))
 
 
 def _bool_series(frame: pd.DataFrame, column: str, *, default: bool = False) -> pd.Series:

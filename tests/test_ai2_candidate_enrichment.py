@@ -59,6 +59,34 @@ def test_normalizes_ai2_chat_report_columns():
     assert row["ai2_price_check_status"] == "clean"
 
 
+def test_normalizes_ai2_shortlist_export_columns():
+    ai2 = normalize_ai2_enrichment(
+        pd.DataFrame(
+            [{
+                "symbol": "dxcm",
+                "execution_decision": "Proceed candidate",
+                "latest_eod_date": "2026-08-07",
+                "latest_eod_close": 84.75,
+                "latest_intraday_price": 83.019996,
+                "one_day_return_pct": 2.08,
+                "five_day_return_pct": 1.56,
+                "eod_volume": 4_505_619,
+                "volatility_20d_pct": 3.91,
+                "notes": "Clean price-check profile from available EODHD data.; ok:price_checks_clear",
+            }]
+        ),
+        source_file="shortlist.csv",
+    )
+
+    row = ai2.iloc[0]
+    assert row["symbol"] == "DXCM"
+    assert row["ai2_decision_status"] == "proceed"
+    assert row["ai2_latest_eod_date"] == "2026-08-07"
+    assert row["ai2_latest_eod_close"] == 84.75
+    assert row["ai2_latest_intraday_price"] == 83.019996
+    assert row["ai2_price_check_status"] == "clean"
+
+
 def test_ai2_bridge_disabled_is_inert():
     merged = apply_ai2_enrichment(
         _base_candidates(),
