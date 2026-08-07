@@ -1,7 +1,6 @@
 version: 1
 ai2_enrichment:
-  enabled: false
+  enabled: true
   require_proceed_for_auto_open: true
   allow_review_for_auto_open: false
   block_refresh_required: true
-
