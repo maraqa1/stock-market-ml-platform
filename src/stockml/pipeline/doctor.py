@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from stockml.common.paths import DATA_DIR, PROJECT_ROOT
+from stockml.common.paths import PROJECT_ROOT, data_root
 
 
 REQUIRED_STAGES = ("universe", "price", "metadata", "features", "gold", "model", "trading_day_readiness")
@@ -24,13 +24,9 @@ def _parse_time(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _data_root(root: Path) -> Path:
-    return DATA_DIR if DATA_DIR != PROJECT_ROOT / "data" else root / "data"
-
-
 def _manifest_paths(root: Path) -> list[Path]:
     return sorted(
-        (_data_root(root) / "pipeline_runs").glob("*/manifest.json"),
+        (data_root(root) / "pipeline_runs").glob("*/manifest.json"),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -67,7 +63,7 @@ def _resolve(root: Path, value: object) -> Path | None:
     if path.is_absolute():
         return path
     if text.startswith("data/"):
-        return _data_root(root) / text.removeprefix("data/")
+        return data_root(root) / text.removeprefix("data/")
     return root / path
 
 

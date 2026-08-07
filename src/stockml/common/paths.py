@@ -27,6 +27,14 @@ PER_SYMBOL_FORECAST_DIR = TRADING_DIR / "per_symbol_forecast"
 HOLDING_PERIOD_DIR = TRADING_DIR / "holding_period"
 
 
+def data_root(root: Path | str | None = None) -> Path:
+    if os.getenv("STOCKML_DATA_ROOT"):
+        return DATA_DIR
+    if root is not None:
+        return Path(root).resolve() / "data"
+    return DATA_DIR
+
+
 def timestamp() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 

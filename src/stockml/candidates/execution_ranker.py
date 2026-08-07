@@ -6,7 +6,8 @@ from typing import Any
 import pandas as pd
 
 from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_side_policy, short_side_block_reason
-from stockml.common.paths import DATA_DIR, PROJECT_ROOT, timestamp
+from stockml.ai2.candidate_enrichment import latest_ai2_merged_candidates_path, load_ai2_enrichment_config
+from stockml.common.paths import DATA_DIR, PROJECT_ROOT, data_root, timestamp
 from stockml.trading.direction_gate import evaluate_direction_gate
 from stockml.trading.direction_authority import AUTHORITY_COLUMNS, resolve_direction_authority
 from stockml.trading.lifecycle_ids import candidate_lineage, current_strategy_version
@@ -705,7 +706,7 @@ def build_execution_ranked_candidates(
 
 
 def latest_candidate_or_plan(root: Path | str | None = None) -> tuple[Path | None, pd.DataFrame]:
-    portal = DATA_DIR / "portal_outputs"
+    portal = data_root(root) / "portal_outputs"
     candidate_files = [path for path in portal.glob("08_alpaca_paper_candidate_pool_*.csv") if path.is_file()]
     if candidate_files:
         path = max(candidate_files, key=lambda item: item.stat().st_mtime)
@@ -743,7 +744,7 @@ def write_execution_ranked_candidates(
 
 
 def latest_execution_ranked_path(root: Path | str | None = None) -> Path | None:
-    portal = DATA_DIR / "portal_outputs"
+    portal = data_root(root) / "portal_outputs"
     files = [path for path in portal.glob("execution_ranked_candidates_*.csv") if path.is_file()]
     return max(files, key=lambda item: item.stat().st_mtime) if files else None
 
@@ -825,7 +826,9 @@ def execution_ranked_auto_open_candidates(
     *,
     root: Path | str | None = None,
 ) -> list[dict[str, Any]]:
-    source = Path(path) if path else latest_execution_ranked_path(root)
+    cfg = load_ai2_enrichment_config()
+    ai2_source = None if path else latest_ai2_merged_candidates_path(root)
+    source = Path(path) if path else (ai2_source if cfg.enabled and ai2_source is not None else latest_execution_ranked_path(root))
     if source is None or not source.exists():
         return []
     try:
@@ -837,6 +840,7 @@ def execution_ranked_auto_open_candidates(
     if "execution_rank" not in frame.columns:
         return []
 
+    require_ai2_proceed = cfg.enabled and source == ai2_source
     out: list[dict[str, Any]] = []
     ranked = frame.sort_values(["execution_rank", "raw_rank", "symbol"], na_position="last", kind="mergesort")
     for _, row in ranked.iterrows():
@@ -864,6 +868,8 @@ def execution_ranked_auto_open_candidates(
             continue
         if "order_ready" in frame.columns and not _boolish(row.get("order_ready"), False):
             continue
+        if require_ai2_proceed and not _boolish(row.get("ai2_auto_open_allowed"), False):
+            continue
         if not _safe_block_reasons(row.get("all_block_reasons")):
             continue
         if source_action in {"no decision", "no_decision", "none"}:
@@ -873,8 +879,10 @@ def execution_ranked_auto_open_candidates(
         details.update(
             {
                 "candidate_source": "execution_ranked_candidates",
-                "model_evidence_source": "execution_ranked_candidates",
+                "model_evidence_source": "ai2_enriched_execution_ranked_candidates" if require_ai2_proceed else "execution_ranked_candidates",
                 "execution_ranked_source_path": str(source),
+                "ai2_enrichment_source_path": str(source) if require_ai2_proceed else "",
+                "ai2_enrichment_required": require_ai2_proceed,
                 "execution_ranked_candidate": True,
                 "trade_quality_status": "approved",
                 "candidate_status": "approved",

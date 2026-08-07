@@ -10,7 +10,7 @@ try:
 except Exception:  # pragma: no cover - optional in lightweight runtimes
     yaml = None
 
-from stockml.common.paths import DATA_DIR, PROJECT_ROOT, timestamp
+from stockml.common.paths import DATA_DIR, PROJECT_ROOT, data_root, timestamp
 
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "ai2_enrichment.yaml"
@@ -77,6 +77,12 @@ def latest_ai2_enrichment_path(root: Path | str | None = None) -> Path | None:
             candidates.extend(path for path in directory.glob("*ai2*_candidate*.csv") if path.is_file())
             candidates.extend(path for path in directory.glob("*candidate*_ai2*.csv") if path.is_file())
     return max(candidates, key=lambda item: item.stat().st_mtime) if candidates else None
+
+
+def latest_ai2_merged_candidates_path(root: Path | str | None = None) -> Path | None:
+    directory = data_root(root) / "portal_outputs"
+    files = [path for path in directory.glob("ai2_enriched_execution_ranked_candidates_*.csv") if path.is_file()]
+    return max(files, key=lambda item: item.stat().st_mtime) if files else None
 
 
 def load_ai2_enrichment(path: Path | str) -> pd.DataFrame:

@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from stockml.ai2.candidate_enrichment import Ai2EnrichmentConfig
 from stockml.candidates.execution_ranker import execution_ranked_auto_open_candidates
+import stockml.candidates.execution_ranker as execution_ranker
 from stockml.trading import paper_autopilot
 from stockml.trading.config import AlpacaConfig
 
@@ -91,6 +93,55 @@ def _ranked_file(root: Path) -> Path:
     return path
 
 
+def _ai2_merged_file(root: Path) -> Path:
+    out = root / "data" / "portal_outputs"
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "ai2_enriched_execution_ranked_candidates_20260701_120100.csv"
+    pd.DataFrame(
+        [
+            {
+                "raw_rank": 28,
+                "execution_rank": 1,
+                "symbol": "BNY",
+                "side": "buy",
+                "source_trade_action": "Long",
+                "status": "executable",
+                "executable": True,
+                "execution_domain": "execution_candidate",
+                "execution_eligible": True,
+                "execution_pool_eligible": True,
+                "final_execution_side": "LONG",
+                "research_only": False,
+                "all_block_reasons": "",
+                "primary_block_reason": "",
+                "order_ready": True,
+                "ai2_decision_status": "review",
+                "ai2_auto_open_allowed": False,
+            },
+            {
+                "raw_rank": 33,
+                "execution_rank": 2,
+                "symbol": "BLFS",
+                "side": "buy",
+                "source_trade_action": "Long",
+                "status": "executable",
+                "executable": True,
+                "execution_domain": "execution_candidate",
+                "execution_eligible": True,
+                "execution_pool_eligible": True,
+                "final_execution_side": "LONG",
+                "research_only": False,
+                "all_block_reasons": "",
+                "primary_block_reason": "",
+                "order_ready": True,
+                "ai2_decision_status": "proceed",
+                "ai2_auto_open_allowed": True,
+            },
+        ]
+    ).to_csv(path, index=False)
+    return path
+
+
 def _csv(path: Path, rows: list[dict]) -> Path:
     pd.DataFrame(rows).to_csv(path, index=False)
     return path
@@ -103,6 +154,31 @@ def test_loader_uses_latest_execution_ranked_candidates_and_ignores_blocked_and_
     assert candidates[0]["execution_rank"] == 1
     assert candidates[0]["raw_rank"] == 28
     assert candidates[0]["details"]["candidate_source"] == "execution_ranked_candidates"
+
+
+def test_loader_ignores_ai2_file_when_bridge_disabled(monkeypatch, tmp_path):
+    _ranked_file(tmp_path)
+    _ai2_merged_file(tmp_path)
+    monkeypatch.setattr(execution_ranker, "load_ai2_enrichment_config", lambda: Ai2EnrichmentConfig(enabled=False))
+
+    candidates = execution_ranked_auto_open_candidates(root=tmp_path)
+
+    assert [row["symbol"] for row in candidates] == ["BNY"]
+    assert candidates[0]["details"]["model_evidence_source"] == "execution_ranked_candidates"
+    assert candidates[0]["details"]["ai2_enrichment_required"] is False
+
+
+def test_loader_requires_ai2_allowed_when_bridge_enabled(monkeypatch, tmp_path):
+    _ranked_file(tmp_path)
+    _ai2_merged_file(tmp_path)
+    monkeypatch.setattr(execution_ranker, "load_ai2_enrichment_config", lambda: Ai2EnrichmentConfig(enabled=True))
+
+    candidates = execution_ranked_auto_open_candidates(root=tmp_path)
+
+    assert [row["symbol"] for row in candidates] == ["BLFS"]
+    assert candidates[0]["details"]["model_evidence_source"] == "ai2_enriched_execution_ranked_candidates"
+    assert candidates[0]["details"]["ai2_enrichment_required"] is True
+    assert candidates[0]["details"]["ai2_decision_status"] == "proceed"
 
 
 def test_loader_ignores_no_decision_candidate(tmp_path):
