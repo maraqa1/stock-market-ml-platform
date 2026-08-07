@@ -7,6 +7,7 @@ import pandas as pd
 from stockml.trading.position_management_decision import (
     build_position_management_decisions,
     decide_position,
+    latest_input_frames,
 )
 
 
@@ -40,6 +41,32 @@ def pos(**updates):
     }
     row.update(updates)
     return row
+
+
+def test_latest_input_frames_prefers_ai2_single_brain_candidate_plan(monkeypatch, tmp_path):
+    from stockml.trading import position_management_decision as module
+
+    portal = tmp_path / "data" / "portal_outputs"
+    portal.mkdir(parents=True)
+    pd.DataFrame([{"symbol": "HELD", "qty": 1}]).to_csv(portal / "08_alpaca_paper_positions_20260807_120000.csv", index=False)
+    pd.DataFrame([{"symbol": "OLD", "source_trade_action": "Long"}]).to_csv(portal / "08_alpaca_paper_order_plan_20260807_120000.csv", index=False)
+    ai2_plan = pd.DataFrame(
+        [
+            {
+                "symbol": "AI2",
+                "source_trade_action": "Long",
+                "trade_quality_status": "approved",
+                "order_ready": True,
+                "ai2_single_brain_candidate": True,
+            }
+        ]
+    )
+    monkeypatch.setattr(module, "execution_ranked_auto_open_frame", lambda root=None: ai2_plan)
+
+    _, _, _, plan = latest_input_frames(tmp_path)
+
+    assert plan["symbol"].tolist() == ["AI2"]
+    assert bool(plan.iloc[0]["ai2_single_brain_candidate"]) is True
 
 
 def action(row):

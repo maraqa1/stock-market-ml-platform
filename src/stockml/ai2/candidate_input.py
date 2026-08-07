@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.candidates.execution_ranker import latest_execution_ranked_path
-from stockml.common.paths import DATA_DIR, timestamp
+from stockml.common.paths import data_root, timestamp
 
 
 AI2_INPUT_COLUMNS = [
@@ -55,7 +55,7 @@ def write_ai2_candidate_input(
     limit: int = 300,
     stamp: str | None = None,
 ) -> Path:
-    out_dir = Path(output_dir) if output_dir else DATA_DIR / "ai2"
+    out_dir = Path(output_dir) if output_dir else data_root() / "ai2"
     out_dir.mkdir(parents=True, exist_ok=True)
     frame = build_ai2_candidate_input(candidates, limit=limit)
     path = out_dir / f"ai2_candidate_input_{stamp or timestamp()}.csv"
@@ -74,5 +74,5 @@ def write_latest_ai2_candidate_input(
     if source is None or not source.exists():
         return None, None, 0
     frame = pd.read_csv(source, low_memory=False)
-    path = write_ai2_candidate_input(frame, output_dir=output_dir, limit=limit, stamp=stamp)
+    path = write_ai2_candidate_input(frame, output_dir=output_dir or data_root(root) / "ai2", limit=limit, stamp=stamp)
     return source, path, int(len(build_ai2_candidate_input(frame, limit=limit)))

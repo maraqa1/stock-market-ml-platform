@@ -275,6 +275,53 @@ def test_auto_edge_replacement_confirms_with_injected_paths(monkeypatch, tmp_pat
     assert closed == ["AGL"]
 
 
+def test_auto_edge_replacement_prefers_ai2_single_brain_candidates(monkeypatch, tmp_path):
+    db = engine()
+    _write_edge_replacement_artifacts(tmp_path)
+    monkeypatch.setattr(
+        "stockml.autopilot.rotate.load_rotation_config",
+        lambda: RotationConfig(
+            require_operator_confirm=False,
+            edge_replacement_auto_enabled=True,
+            edge_replacement_auto_dry_run=False,
+            max_rotations_per_day=3,
+        ),
+    )
+    monkeypatch.setattr("stockml.autopilot.rotate.latest_strong_candidates", lambda **kwargs: [])
+    monkeypatch.setattr(
+        "stockml.autopilot.rotate.execution_ranked_auto_open_frame",
+        lambda root=None: pd.DataFrame(
+            [
+                {
+                    "symbol": "SNOW",
+                    "trade_action": "Long",
+                    "side": "buy",
+                    "trade_quality_status": "approved",
+                    "order_eligible": True,
+                    "suggested_quantity": 10,
+                    "risk_adjusted_score": 0.12,
+                    "model_evidence_source": "ai2_enriched_execution_ranked_candidates",
+                    "ai2_single_brain_candidate": True,
+                }
+            ]
+        ),
+    )
+    opened = []
+
+    result = apply_auto_rotations(
+        [position(symbol="AGL", score=0.20, side="long")],
+        engine=db,
+        now=NOW,
+        root=tmp_path,
+        close_func=lambda symbol: {"status": "submitted", "symbol": symbol},
+        open_func=lambda candidates, positions: opened.append(candidates) or {"autopilot_open_submitted": 1},
+    )
+
+    assert result["auto_edge_replacements_confirmed"] == 1
+    assert opened[0][0]["details"]["model_evidence_source"] == "ai2_enriched_execution_ranked_candidates"
+    assert opened[0][0]["details"]["ai2_single_brain_candidate"] is True
+
+
 def test_action_queue_surfaces_rotation_recommendations(monkeypatch, tmp_path):
     def fake_rotation_items(offset, *, held_symbols=None, open_order_symbols=None):
         return [

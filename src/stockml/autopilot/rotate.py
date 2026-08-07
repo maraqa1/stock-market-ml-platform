@@ -12,6 +12,7 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.engine import Engine
 
 from stockml.common.paths import AGENT_DECISIONS_DIR, PORTAL_OUTPUTS_DIR, PROJECT_ROOT, latest_file
+from stockml.candidates.execution_ranker import execution_ranked_auto_open_frame
 from stockml.db.connection import get_engine
 from stockml.db.schema import rotation_recommendation_log
 from stockml.intraday import kill_switch
@@ -565,7 +566,9 @@ def _edge_replacement_candidates(
     decisions_dir = _artifact_dir(root, "data/trading/agent_decisions", AGENT_DECISIONS_DIR)
     candidates_dir = _artifact_dir(root, "data/portal_outputs", PORTAL_OUTPUTS_DIR)
     decisions = _latest_csv(decisions_dir, "position_decisions_*.csv")
-    pool = _latest_csv(candidates_dir, "08_alpaca_paper_candidate_pool_*.csv")
+    pool = execution_ranked_auto_open_frame(root=root)
+    if pool.empty:
+        pool = _latest_csv(candidates_dir, "08_alpaca_paper_candidate_pool_*.csv")
     if decisions.empty or pool.empty or "symbol" not in decisions.columns or "symbol" not in pool.columns:
         return []
 

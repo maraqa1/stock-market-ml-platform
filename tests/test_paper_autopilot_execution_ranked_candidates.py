@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from stockml.ai2.candidate_enrichment import Ai2EnrichmentConfig
-from stockml.candidates.execution_ranker import execution_ranked_auto_open_candidates
+from stockml.candidates.execution_ranker import execution_ranked_auto_open_candidates, execution_ranked_auto_open_frame
 import stockml.candidates.execution_ranker as execution_ranker
 from stockml.trading import paper_autopilot
 from stockml.trading.config import AlpacaConfig
@@ -181,6 +181,19 @@ def test_loader_requires_ai2_allowed_when_bridge_enabled(monkeypatch, tmp_path):
     assert candidates[0]["details"]["ai2_decision_status"] == "proceed"
 
 
+def test_auto_open_frame_uses_same_ai2_proceed_candidates(monkeypatch, tmp_path):
+    _ranked_file(tmp_path)
+    _ai2_merged_file(tmp_path)
+    monkeypatch.setattr(execution_ranker, "load_ai2_enrichment_config", lambda: Ai2EnrichmentConfig(enabled=True))
+
+    frame = execution_ranked_auto_open_frame(root=tmp_path)
+
+    assert frame["symbol"].tolist() == ["BLFS"]
+    assert frame.iloc[0]["model_evidence_source"] == "ai2_enriched_execution_ranked_candidates"
+    assert bool(frame.iloc[0]["ai2_single_brain_candidate"]) is True
+    assert bool(frame.iloc[0]["order_ready"]) is True
+
+
 def test_loader_ignores_no_decision_candidate(tmp_path):
     out = tmp_path / "data" / "portal_outputs"
     out.mkdir(parents=True)
@@ -258,6 +271,48 @@ def test_paper_autopilot_uses_execution_ranked_candidates_as_authoritative_sourc
     )
 
     assert calls == [["BNY"]]
+
+
+def test_paper_autopilot_can_refresh_ai2_bridge_before_open(monkeypatch, tmp_path):
+    from stockml.ai2.bridge import Ai2BridgeResult
+
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    monkeypatch.setattr(
+        paper_autopilot,
+        "load_ai2_enrichment_config",
+        lambda: Ai2EnrichmentConfig(enabled=True, auto_refresh_before_autopilot_tick=True),
+    )
+    monkeypatch.setattr(
+        paper_autopilot,
+        "run_ai2_enrichment_bridge",
+        lambda **kwargs: Ai2BridgeResult(
+            status="ok",
+            input_path="/tmp/ai2_input.csv",
+            merged_path="/tmp/ai2_merged.csv",
+            ai2_auto_open_allowed=1,
+        ),
+    )
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    tracking = _csv(tmp_path / "tracking.csv", [{"symbol": "OLD", "alpaca_status": "filled"}])
+    positions = _csv(tmp_path / "positions.csv", [])
+
+    state = paper_autopilot.tick(
+        tmp_path,
+        refresh_func=lambda: {"orders_tracked": 0, "tracking_path": tracking, "positions_path": positions},
+        broker_open_orders_func=lambda cfg: 0,
+        execution_ranked_candidate_loader=lambda: [{"symbol": "BNY", "execution_rank": 1}],
+        auto_open_applier=lambda candidates, open_positions, mode: {
+            "autopilot_open_attempted": len(candidates),
+            "autopilot_open_submitted": 0,
+            "autopilot_open_blocked": 0,
+            "autopilot_open_notes": "checked",
+        },
+    )
+
+    assert state["ai2_bridge_status"] == "ok"
+    assert state["ai2_bridge_merged_path"] == "/tmp/ai2_merged.csv"
+    assert state["ai2_bridge_auto_open_allowed"] == 1
 
 
 def test_paper_autopilot_does_not_fallback_when_execution_ranked_pool_exists(monkeypatch, tmp_path):

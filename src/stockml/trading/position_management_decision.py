@@ -8,7 +8,8 @@ from typing import Any
 
 import pandas as pd
 
-from stockml.common.paths import DATA_DIR, PORTAL_OUTPUTS_DIR, TRADING_DIR, latest_file, timestamp
+from stockml.candidates.execution_ranker import execution_ranked_auto_open_frame
+from stockml.common.paths import DATA_DIR, PORTAL_OUTPUTS_DIR, TRADING_DIR, data_root, latest_file, timestamp
 
 
 ACTION_VALUES = ("hold", "reduce", "increase", "close", "replace", "manual_review")
@@ -667,11 +668,13 @@ def _diagnostics_dir(root: Path | None = None) -> Path:
 
 
 def latest_input_frames(root: Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    base = Path(root) if root else DATA_DIR.parent
-    positions = _read_latest(base / "data" / "portal_outputs", "08_alpaca_paper_positions_*.csv")
-    holding = _read_latest(base / "data" / "trading" / "holding_period", "holding_review_*.csv")
-    tracking = _read_latest(base / "data" / "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
-    plan = _read_latest(base / "data" / "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
+    base = data_root(root)
+    positions = _read_latest(base / "portal_outputs", "08_alpaca_paper_positions_*.csv")
+    holding = _read_latest(base / "trading" / "holding_period", "holding_review_*.csv")
+    tracking = _read_latest(base / "portal_outputs", "08_alpaca_paper_order_tracking_*.csv")
+    plan = execution_ranked_auto_open_frame(root=root)
+    if plan.empty:
+        plan = _read_latest(base / "portal_outputs", "08_alpaca_paper_order_plan_*.csv")
     return positions, holding, tracking, plan
 
 

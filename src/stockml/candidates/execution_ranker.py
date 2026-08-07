@@ -909,6 +909,15 @@ def execution_ranked_auto_open_candidates(
                 "rank_overall": row.get("raw_rank", row.get("research_rank", "")),
                 "execution_rank": row.get("execution_rank", ""),
                 "raw_rank": row.get("raw_rank", ""),
+                "approved_notional": row.get("approved_notional", row.get("notional", "")),
+                "suggested_quantity": row.get("suggested_quantity", ""),
+                "notional": row.get("notional", row.get("approved_notional", "")),
+                "current_price": row.get("current_price", row.get("latest_intraday_price", row.get("latest_eod_close", ""))),
+                "risk_tier": row.get("risk_tier", ""),
+                "spread_bps": row.get("spread_bps", ""),
+                "liquidity_status": row.get("liquidity_status", ""),
+                "promotion_score": row.get("promotion_score", row.get("risk_adjusted_score", row.get("validated_expected_return_bps", ""))),
+                "risk_adjusted_score": row.get("risk_adjusted_score", ""),
                 "candidate_status": "approved",
                 "trade_quality_status": "approved",
                 "order_eligible": True,
@@ -918,3 +927,27 @@ def execution_ranked_auto_open_candidates(
             }
         )
     return out
+
+
+def execution_ranked_auto_open_frame(
+    path: Path | str | None = None,
+    *,
+    root: Path | str | None = None,
+) -> pd.DataFrame:
+    """Return the same executable candidate set as a tabular planning frame.
+
+    This is intentionally derived from ``execution_ranked_auto_open_candidates``
+    so auto-open, position management, and replacement logic share one candidate
+    authority instead of drifting across separate latest-file lookups.
+    """
+    rows = execution_ranked_auto_open_candidates(path=path, root=root)
+    if not rows:
+        return pd.DataFrame()
+    flattened: list[dict[str, Any]] = []
+    for row in rows:
+        details = dict(row.get("details") or {})
+        payload = {**details, **{key: value for key, value in row.items() if key != "details"}}
+        payload["ai2_single_brain_candidate"] = bool(details.get("ai2_enrichment_required"))
+        payload["model_evidence_source"] = details.get("model_evidence_source", payload.get("model_evidence_source", "execution_ranked_candidates"))
+        flattened.append(payload)
+    return pd.DataFrame(flattened)

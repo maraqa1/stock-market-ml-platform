@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,18 @@ class Ai2EnrichmentConfig:
     require_proceed_for_auto_open: bool = True
     allow_review_for_auto_open: bool = False
     block_refresh_required: bool = True
+    api_enabled: bool = False
+    endpoint_url: str = ""
+    api_key_env: str = "AI2_API_KEY"
+    timeout_seconds: int = 30
+    candidate_limit: int = 300
+    auto_refresh_before_autopilot_tick: bool = False
+    max_enrichment_age_minutes: int = 60
+    require_fresh_enrichment_for_auto_open: bool = False
+
+    @property
+    def api_key(self) -> str:
+        return os.getenv(self.api_key_env, "")
 
 
 def load_ai2_enrichment_config(path: Path | str | None = None) -> Ai2EnrichmentConfig:
@@ -63,15 +76,24 @@ def load_ai2_enrichment_config(path: Path | str | None = None) -> Ai2EnrichmentC
         require_proceed_for_auto_open=bool(section.get("require_proceed_for_auto_open", True)),
         allow_review_for_auto_open=bool(section.get("allow_review_for_auto_open", False)),
         block_refresh_required=bool(section.get("block_refresh_required", True)),
+        api_enabled=bool(section.get("api_enabled", False)),
+        endpoint_url=str(section.get("endpoint_url") or ""),
+        api_key_env=str(section.get("api_key_env") or "AI2_API_KEY"),
+        timeout_seconds=int(section.get("timeout_seconds", 30)),
+        candidate_limit=int(section.get("candidate_limit", 300)),
+        auto_refresh_before_autopilot_tick=bool(section.get("auto_refresh_before_autopilot_tick", False)),
+        max_enrichment_age_minutes=int(section.get("max_enrichment_age_minutes", 60)),
+        require_fresh_enrichment_for_auto_open=bool(section.get("require_fresh_enrichment_for_auto_open", False)),
     )
 
 
 def latest_ai2_enrichment_path(root: Path | str | None = None) -> Path | None:
     candidates: list[Path] = []
+    base = data_root(root)
     for directory in (
-        DATA_DIR / "ai2",
-        DATA_DIR / "portal_outputs",
-        DATA_DIR / "trading" / "exports",
+        base / "ai2",
+        base / "portal_outputs",
+        base / "trading" / "exports",
     ):
         if directory.exists():
             candidates.extend(path for path in directory.glob("*ai2*_candidate*.csv") if path.is_file())
@@ -193,7 +215,7 @@ def write_ai2_enriched_candidates(
     config: Ai2EnrichmentConfig | None = None,
     stamp: str | None = None,
 ) -> Path:
-    out_dir = Path(output_dir) if output_dir else DATA_DIR / "portal_outputs"
+    out_dir = Path(output_dir) if output_dir else data_root() / "portal_outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
     merged = apply_ai2_enrichment(candidates, ai2, config=config)
     path = out_dir / f"ai2_enriched_execution_ranked_candidates_{stamp or timestamp()}.csv"

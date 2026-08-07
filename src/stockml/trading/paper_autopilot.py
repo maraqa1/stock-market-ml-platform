@@ -9,6 +9,8 @@ import pandas as pd
 from sqlalchemy import desc, select
 
 from stockml.agents.position_decision_engine import build_position_decisions
+from stockml.ai2.bridge import run_ai2_enrichment_bridge
+from stockml.ai2.candidate_enrichment import load_ai2_enrichment_config
 from stockml.autopilot.basket_risk import evaluate_basket_risk, load_basket_risk_config
 from stockml.autopilot.eod import run_eod_tick
 from stockml.autopilot.open import (
@@ -1246,6 +1248,13 @@ def tick(
             "basket_risk_reason": "",
             "basket_risk_reason_text": "",
         }
+        ai2_bridge_result = {
+            "ai2_bridge_status": "not_configured",
+            "ai2_bridge_input_path": "",
+            "ai2_bridge_merged_path": "",
+            "ai2_bridge_auto_open_allowed": 0,
+            "ai2_bridge_message": "",
+        }
         auto_rotation_result = {
             "auto_rotations_attempted": 0,
             "auto_rotations_confirmed": 0,
@@ -1270,6 +1279,21 @@ def tick(
                 "basket_risk_reason_text": basket.reason_text,
             }
         )
+        ai2_cfg = load_ai2_enrichment_config()
+        if (
+            allow_auto_open
+            and state.get("mode") == "paper_autopilot"
+            and ai2_cfg.enabled
+            and ai2_cfg.auto_refresh_before_autopilot_tick
+        ):
+            bridge = run_ai2_enrichment_bridge(root=root, config=ai2_cfg, submit=True)
+            ai2_bridge_result = {
+                "ai2_bridge_status": bridge.status,
+                "ai2_bridge_input_path": bridge.input_path,
+                "ai2_bridge_merged_path": bridge.merged_path,
+                "ai2_bridge_auto_open_allowed": bridge.ai2_auto_open_allowed,
+                "ai2_bridge_message": bridge.message,
+            }
         eod_state = str(eod_result.get("eod_state") or "inactive")
         if (
             allow_auto_open
@@ -1403,6 +1427,7 @@ def tick(
                 **autopilot_result,
                 **auto_rotation_result,
                 **auto_open_result,
+                **ai2_bridge_result,
                 **stale_entry_result,
                 **eod_result,
                 "live_trading_enabled": False,

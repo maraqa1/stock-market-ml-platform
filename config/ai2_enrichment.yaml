@@ -4,3 +4,11 @@ ai2_enrichment:
   require_proceed_for_auto_open: true
   allow_review_for_auto_open: false
   block_refresh_required: true
+  api_enabled: false
+  endpoint_url: ""
+  api_key_env: AI2_API_KEY
+  timeout_seconds: 30
+  candidate_limit: 300
+  auto_refresh_before_autopilot_tick: false
+  max_enrichment_age_minutes: 60
+  require_fresh_enrichment_for_auto_open: false
