@@ -18,6 +18,7 @@ from stockml.autopilot.position_health import PositionHealthRules, classify_posi
 from stockml.services.events import position_id_for_symbol
 from stockml.autopilot.open import load_auto_open_config
 from stockml.autopilot.rotate import load_rotation_config
+from stockml.common.paths import DATA_DIR, PROJECT_ROOT
 from stockml.marketdata.providers.factory import configured_provider_name
 from stockml.trading.paper_autopilot import load_state as load_autopilot_state
 from stockml.trading.position_intelligence import PositionRiskRules, enrich_positions
@@ -382,7 +383,8 @@ def _manifest_exists_for_run(root: Path, run: dict[str, Any]) -> bool:
     run_id = str(run.get("run_id") or "").strip()
     if not run_id:
         return False
-    return (root / "data" / "pipeline_runs" / run_id / "manifest.json").exists()
+    data_root = DATA_DIR if DATA_DIR != PROJECT_ROOT / "data" else root / "data"
+    return (data_root / "pipeline_runs" / run_id / "manifest.json").exists()
 
 
 def pipeline_current_context(root: Path) -> dict[str, Any]:
