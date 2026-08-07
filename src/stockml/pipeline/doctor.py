@@ -44,11 +44,17 @@ def _read_manifest(path: Path) -> dict[str, Any] | None:
 
 
 def _latest_manifest(root: Path, profile_name: str) -> tuple[Path | None, dict[str, Any] | None]:
+    matches: list[tuple[datetime, str, Path, dict[str, Any]]] = []
     for path in _manifest_paths(root):
         manifest = _read_manifest(path)
         if manifest and manifest.get("profile") == profile_name:
-            return path, manifest
-    return None, None
+            started = _parse_time(manifest.get("started_at")) or datetime.min.replace(tzinfo=timezone.utc)
+            run_id = str(manifest.get("run_id") or path.parent.name)
+            matches.append((started, run_id, path, manifest))
+    if not matches:
+        return None, None
+    _, _, path, manifest = max(matches, key=lambda item: (item[0], item[1]))
+    return path, manifest
 
 
 def _resolve(root: Path, value: object) -> Path | None:
