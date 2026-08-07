@@ -328,11 +328,12 @@ def _artifact_stage_for_path(stage_name: str, path: Path | None, detail: str) ->
 def _trading_artifact_stages(root: Path) -> tuple[list[dict[str, Any]], str]:
     candidate_path = latest_file(root, "portal_outputs", "08_alpaca_paper_candidate_pool_*.csv")
     stamp = _stamp_from_artifact(candidate_path)
+    portal_dir = data_root(root) / "portal_outputs"
     stages: list[dict[str, Any]] = []
     for stage_name, (key, latest_pattern, stamp_pattern, detail) in TRADING_STAGE_ARTIFACTS.items():
         path = None
         if stamp:
-            exact = root / "data" / "portal_outputs" / stamp_pattern.format(stamp=stamp)
+            exact = portal_dir / stamp_pattern.format(stamp=stamp)
             path = exact if exact.exists() else None
         if stage_name == "candidates":
             path = path or candidate_path
