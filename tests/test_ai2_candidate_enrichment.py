@@ -134,3 +134,17 @@ def test_ai2_review_and_refresh_do_not_auto_open_by_default():
     assert merged.loc[merged["symbol"].eq("ATRC"), "ai2_block_reason"].iloc[0] == "ai2_review_required"
     assert bool(merged.loc[merged["symbol"].eq("FRPT"), "ai2_auto_open_allowed"].iloc[0]) is False
     assert merged.loc[merged["symbol"].eq("FRPT"), "ai2_block_reason"].iloc[0] == "ai2_refresh_required"
+
+
+def test_ai2_non_execution_decisions_are_classified():
+    ai2 = normalize_ai2_enrichment(
+        pd.DataFrame(
+            [
+                {"symbol": "WATCH", "execution_decision": "Research only"},
+                {"symbol": "BLOCK", "execution_decision": "Not execution-ready"},
+            ]
+        )
+    )
+
+    assert ai2.set_index("symbol").loc["WATCH", "ai2_decision_status"] == "research_only"
+    assert ai2.set_index("symbol").loc["BLOCK", "ai2_decision_status"] == "not_execution_ready"

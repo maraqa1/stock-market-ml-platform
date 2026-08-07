@@ -19,6 +19,8 @@ OUTPUT_DIR = DATA_DIR / "portal_outputs"
 PROCEED_DECISIONS = {"proceed candidate", "proceed", "execute", "clean"}
 REVIEW_DECISIONS = {"review before execution", "review", "watch"}
 REFRESH_DECISIONS = {"do not execute until refreshed", "refresh_required", "refresh required"}
+RESEARCH_ONLY_DECISIONS = {"research only", "research_only"}
+NOT_READY_DECISIONS = {"not execution-ready", "not execution ready", "not_ready"}
 
 AI2_OUTPUT_COLUMNS = [
     "ai2_source_file",
@@ -117,6 +119,10 @@ def ai2_decision_status(value: Any) -> str:
         return "review"
     if text in REFRESH_DECISIONS:
         return "refresh_required"
+    if text in RESEARCH_ONLY_DECISIONS:
+        return "research_only"
+    if text in NOT_READY_DECISIONS:
+        return "not_execution_ready"
     if not text:
         return "missing"
     return "unknown"
