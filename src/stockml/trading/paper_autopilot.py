@@ -761,6 +761,42 @@ def _position_management_reason_bucket(reason: str) -> str:
     return "position_management"
 
 
+def _authorized_position_management_close_reason(row: dict[str, Any]) -> str:
+    """Translate central-brain reasons into lifecycle close reasons.
+
+    Anti-churn/lifecycle authorization intentionally rejects unknown close text.
+    The position manager has richer internal reasons, so the paper autopilot
+    maps only known automatic-management reasons to the smaller lifecycle
+    vocabulary while keeping the original reason in diagnostics.
+    """
+    reason = str(row.get("__autopilot_close_reason") or row.get("primary_reason") or row.get("decision_reason") or "").lower()
+    action = str(row.get("__autopilot_action") or row.get("recommended_action") or "").lower()
+    supporting = str(row.get("supporting_reasons") or "").lower()
+    haystack = f"{reason}|{action}|{supporting}"
+    if action == "close" and not reason:
+        return "manual_close"
+    if reason in {"position_health_close_candidate", "position_health_close_now", "monitor_close"}:
+        return "confirmed_signal_reversal"
+    if "hard_stop" in haystack or "stop_loss" in haystack or "severe_loss" in haystack:
+        return "hard_stop_hit"
+    if "take_profit" in haystack or "giveback" in haystack or "profitable_position_edge_deteriorated" in haystack:
+        return "take_profit_hit"
+    if "position_exceeds_approved_plan_size" in haystack or "actual_qty_above_planned" in haystack:
+        return "basket_risk_breach"
+    if (
+        "same_day_holding_edge_failed" in haystack
+        or "holding_edge_failed" in haystack
+        or "losing_position_edge_failed" in haystack
+        or "central_brain_replace_weak_position" in haystack
+        or "monitor_replace" in haystack
+        or action == "replace"
+    ):
+        return "confirmed_signal_reversal"
+    if "risk_breach" in haystack or "basket_risk" in haystack:
+        return "basket_risk_breach"
+    return reason or "unknown_close_reason"
+
+
 def _manager_qty_text(quantity: float) -> str:
     if float(quantity).is_integer():
         return str(int(quantity))
@@ -913,7 +949,9 @@ def apply_paper_autopilot_decisions(
                 "side": ("buy" if str(row.get("side") or "").lower() == "long" else "sell")
                 if str(row.get("__autopilot_action") or "").lower() == "increase"
                 else ("sell" if str(row.get("side") or "").lower() == "long" else "buy"),
-                "reason": row.get("__autopilot_close_reason") or row.get("decision_reason"),
+                "reason": _authorized_position_management_close_reason(row),
+                "position_management_primary_reason": row.get("__autopilot_close_reason") or row.get("primary_reason") or row.get("decision_reason"),
+                "supporting_reasons": row.get("supporting_reasons"),
             }
             for row in candidates.to_dict("records")
         ]
