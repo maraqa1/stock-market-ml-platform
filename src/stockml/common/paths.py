@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 from typing import Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DATA_DIR = PROJECT_ROOT / "data"
+PROJECT_ROOT = Path(os.getenv("STOCKML_PROJECT_ROOT") or Path(__file__).resolve().parents[3]).resolve()
+DATA_DIR = Path(os.getenv("STOCKML_DATA_ROOT") or PROJECT_ROOT / "data").resolve()
 RAW_DIR = DATA_DIR / "raw"
 INTERIM_DIR = DATA_DIR / "interim"
 PROCESSED_DIR = DATA_DIR / "processed"

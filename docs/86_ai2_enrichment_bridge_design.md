@@ -29,6 +29,12 @@ Implemented now:
 - AI2 schema normalization.
 - AI2-to-StockML candidate merge.
 - Separate output artifact writer.
+- `STOCKML_DATA_ROOT` support so branch code can read the production pipeline
+  data directory without copying artifacts into the worktree.
+- AI2 candidate input export:
+  `data/ai2/ai2_candidate_input_*.csv`.
+- Trading portal status panel for candidate input, AI2 result, merged result,
+  and AI2 proceed/allowed counts.
 - Config with the bridge disabled by default.
 - Tests proving AI2 cannot bypass StockML execution gates.
 
@@ -47,3 +53,14 @@ Not implemented yet:
 - AI2 cannot turn a blocked/research/watch row into an executable row.
 - With `enabled: false`, the bridge is inert and writes diagnostics only.
 
+## Branch Portal Runtime
+
+For branch testing on the VM, run the portal with:
+
+```bash
+STOCKML_PROJECT_ROOT=/home/massa/stock-market-ml-platform-ai2-bridge
+STOCKML_DATA_ROOT=/home/massa/stock-market-ml-platform/data
+```
+
+That keeps the branch code isolated while allowing the portal to read the live
+pipeline, candidate, and trading artifacts from the production data directory.

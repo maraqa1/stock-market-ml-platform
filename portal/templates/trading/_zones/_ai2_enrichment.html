@@ -1,0 +1,81 @@
+{% from "_macros/pill.html" import pill %}
+{% from "_macros/format.html" import number %}
+<section class="zone trading-zone" data-zone="ai2-enrichment" id="ai2-enrichment">
+  <div class="zone__header">
+    <span>AI2 Enrichment Bridge</span>
+    <span class="zone__header-meta">single brain evidence layer</span>
+  </div>
+  <div class="zone__body">
+    <p class="zone__description">AI2 may confirm or block StockML execution-ranked candidates. Paper Autopilot remains the only executor.</p>
+    <div class="kpi-grid">
+      <article class="kpi-card">
+        <span class="kpi-card__label">Bridge</span>
+        <strong class="kpi-card__value">{{ ai2_enrichment.status|replace('_', ' ')|title }}</strong>
+        <span>{{ pill("safe" if not ai2_enrichment.enabled else "warning", "Disabled" if not ai2_enrichment.enabled else "Enabled") }}</span>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">StockML candidates</span>
+        <strong class="kpi-card__value">{{ number(ai2_enrichment.candidate_rows, 0) }}</strong>
+        <span>execution-ranked source</span>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">AI2 input</span>
+        <strong class="kpi-card__value">{{ number(ai2_enrichment.ai2_input_rows, 0) }}</strong>
+        <span>export rows</span>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">AI2 proceed</span>
+        <strong class="kpi-card__value">{{ number(ai2_enrichment.proceed_count, 0) }}</strong>
+        <span>merged evidence</span>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-card__label">Allowed by AI2</span>
+        <strong class="kpi-card__value">{{ number(ai2_enrichment.auto_open_allowed_count, 0) }}</strong>
+        <span>diagnostic unless enabled</span>
+      </article>
+    </div>
+    <div class="file-list">
+      {% for file in ai2_enrichment.files %}
+        <div class="file-row">
+          <span>{{ file.label }}</span>
+          <span>{{ pill("safe" if file.exists else "warning", "Found" if file.exists else "Missing") }}</span>
+          <code>{{ file.name }}</code>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Rank</th>
+            <th>Side</th>
+            <th>StockML</th>
+            <th>AI2 decision</th>
+            <th>AI2 price</th>
+            <th>Allowed</th>
+            <th>Block</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not ai2_enrichment.rows %}
+            <tr><td colspan="8" class="empty small">No merged AI2 candidate file yet.</td></tr>
+          {% else %}
+            {% for row in ai2_enrichment.rows %}
+              <tr>
+                <td class="symbol">{{ row.symbol }}</td>
+                <td>{{ row.execution_rank }}</td>
+                <td>{{ row.final_execution_side }}</td>
+                <td>{{ pill(row.execution_domain or row.status) }}</td>
+                <td>{{ pill(row.ai2_decision_status or "missing", row.ai2_decision or row.ai2_decision_status or "Missing") }}</td>
+                <td>{{ row.ai2_latest_intraday_price }}</td>
+                <td>{{ pill("safe" if row.ai2_auto_open_allowed else "warning", "Yes" if row.ai2_auto_open_allowed else "No") }}</td>
+                <td>{{ row.ai2_block_reason }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>

@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 
 from stockml.candidates.short_side_policy import ShortSidePolicy, load_short_side_policy, short_side_block_reason
-from stockml.common.paths import PROJECT_ROOT, timestamp
+from stockml.common.paths import DATA_DIR, PROJECT_ROOT, timestamp
 from stockml.trading.direction_gate import evaluate_direction_gate
 from stockml.trading.direction_authority import AUTHORITY_COLUMNS, resolve_direction_authority
 from stockml.trading.lifecycle_ids import candidate_lineage, current_strategy_version
@@ -705,8 +705,7 @@ def build_execution_ranked_candidates(
 
 
 def latest_candidate_or_plan(root: Path | str | None = None) -> tuple[Path | None, pd.DataFrame]:
-    base = Path(root) if root else PROJECT_ROOT
-    portal = base / "data" / "portal_outputs"
+    portal = DATA_DIR / "portal_outputs"
     candidate_files = [path for path in portal.glob("08_alpaca_paper_candidate_pool_*.csv") if path.is_file()]
     if candidate_files:
         path = max(candidate_files, key=lambda item: item.stat().st_mtime)
@@ -726,7 +725,7 @@ def write_execution_ranked_candidates(
     short_policy: ShortSidePolicy | None = None,
     source_path: Path | str | None = None,
 ) -> Path:
-    out_dir = Path(output_dir) if output_dir else PROJECT_ROOT / "data" / "portal_outputs"
+    out_dir = Path(output_dir) if output_dir else DATA_DIR / "portal_outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
     run_stamp = stamp or timestamp()
     source = Path(source_path) if source_path else None
@@ -744,8 +743,7 @@ def write_execution_ranked_candidates(
 
 
 def latest_execution_ranked_path(root: Path | str | None = None) -> Path | None:
-    base = Path(root) if root else PROJECT_ROOT
-    portal = base / "data" / "portal_outputs"
+    portal = DATA_DIR / "portal_outputs"
     files = [path for path in portal.glob("execution_ranked_candidates_*.csv") if path.is_file()]
     return max(files, key=lambda item: item.stat().st_mtime) if files else None
 

@@ -10,11 +10,11 @@ try:
 except Exception:  # pragma: no cover - optional in lightweight runtimes
     yaml = None
 
-from stockml.common.paths import PROJECT_ROOT, timestamp
+from stockml.common.paths import DATA_DIR, PROJECT_ROOT, timestamp
 
 
 CONFIG_PATH = PROJECT_ROOT / "config" / "ai2_enrichment.yaml"
-OUTPUT_DIR = PROJECT_ROOT / "data" / "portal_outputs"
+OUTPUT_DIR = DATA_DIR / "portal_outputs"
 
 PROCEED_DECISIONS = {"proceed candidate", "proceed", "execute", "clean"}
 REVIEW_DECISIONS = {"review before execution", "review", "watch"}
@@ -65,12 +65,11 @@ def load_ai2_enrichment_config(path: Path | str | None = None) -> Ai2EnrichmentC
 
 
 def latest_ai2_enrichment_path(root: Path | str | None = None) -> Path | None:
-    base = Path(root) if root else PROJECT_ROOT
     candidates: list[Path] = []
     for directory in (
-        base / "data" / "ai2",
-        base / "data" / "portal_outputs",
-        base / "data" / "trading" / "exports",
+        DATA_DIR / "ai2",
+        DATA_DIR / "portal_outputs",
+        DATA_DIR / "trading" / "exports",
     ):
         if directory.exists():
             candidates.extend(path for path in directory.glob("*ai2*_candidate*.csv") if path.is_file())
@@ -182,7 +181,7 @@ def write_ai2_enriched_candidates(
     config: Ai2EnrichmentConfig | None = None,
     stamp: str | None = None,
 ) -> Path:
-    out_dir = Path(output_dir) if output_dir else OUTPUT_DIR
+    out_dir = Path(output_dir) if output_dir else DATA_DIR / "portal_outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
     merged = apply_ai2_enrichment(candidates, ai2, config=config)
     path = out_dir / f"ai2_enriched_execution_ranked_candidates_{stamp or timestamp()}.csv"

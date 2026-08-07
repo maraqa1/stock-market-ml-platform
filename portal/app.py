@@ -32,6 +32,7 @@ from portal.services.signal_service import no_decision_context, signal_context
 from portal.services.symbol_detail import get as symbol_detail_get
 from portal.services.stock_detail_service import stock_detail_context
 from portal.services.action_queue_service import action_queue_context
+from portal.services.ai2_enrichment_service import ai2_enrichment_context
 from portal.services.admin_service import admin_context, run_admin_action
 from portal.services.trading_api_service import (
     basket_integrity_context,
@@ -333,6 +334,7 @@ def create_app(root: Path | None = None) -> Flask:
                 "trading_header": trading_header_context(root),
                 "trading_cadence": trading_cadence_context(root, pipeline=pipeline_current),
                 "trading_kpis": trading_kpi_context(root, positions=positions_api, basket=basket_today, queue=action_queue),
+                "ai2_enrichment": ai2_enrichment_context(root),
                 "pipeline_current": pipeline_current,
                 "pipeline_history": pipeline_history_context(root, days=14),
                 "basket_integrity": basket_integrity_context(root),

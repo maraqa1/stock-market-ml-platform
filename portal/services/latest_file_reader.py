@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -9,7 +10,8 @@ import pandas as pd
 from stockml.decisions.reason_formatter import format_reasons
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(os.getenv("STOCKML_PROJECT_ROOT") or Path(__file__).resolve().parents[2]).resolve()
+DATA_ROOT = Path(os.getenv("STOCKML_DATA_ROOT") or REPO_ROOT / "data").resolve()
 DATA_DIRS = {
     "raw": "data/raw",
     "interim": "data/interim",
@@ -17,6 +19,7 @@ DATA_DIRS = {
     "gold": "data/gold",
     "model_outputs": "data/model_outputs",
     "portal_outputs": "data/portal_outputs",
+    "ai2": "data/ai2",
     "paper_trade_journal": "data/trading/paper_trade_journal",
     "paper_pnl": "data/trading/paper_pnl",
     "paper_positions": "data/trading/paper_positions",
@@ -37,7 +40,10 @@ def project_root(root: Optional[Path] = None) -> Path:
 
 
 def data_path(root: Optional[Path], key: str) -> Path:
-    return project_root(root) / DATA_DIRS[key]
+    relative = DATA_DIRS[key]
+    if relative.startswith("data/"):
+        return DATA_ROOT / relative.removeprefix("data/")
+    return project_root(root) / relative
 
 
 def latest_file(root: Optional[Path], key: str, pattern: str, fallback_keys: Iterable[str] = ()) -> Optional[Path]:
