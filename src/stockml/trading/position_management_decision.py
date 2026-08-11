@@ -411,7 +411,7 @@ def decide_position(row: dict[str, Any], *, now: datetime | None = None, config:
     monitor_decision = _lower(row.get("decision") or row.get("recommended_action"))
     age_minutes = _float(out.get("position_age_minutes"))
     fresh_hold_active = age_minutes is not None and age_minutes < cfg.minimum_hold_minutes
-    if fresh_hold_active and monitor_decision in {"close", "replace", "rotate"}:
+    if fresh_hold_active:
         return _finalize(
             out,
             "hold",
