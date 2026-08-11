@@ -139,9 +139,11 @@ def _opened_at(position: dict[str, Any]) -> datetime | None:
 def _position_age_minutes(position: dict[str, Any] | None, now: datetime) -> float | None:
     if not position:
         return None
-    if position.get("age_minutes") not in (None, ""):
+    for key in ("age_minutes", "position_age_minutes"):
+        if position.get(key) in (None, ""):
+            continue
         try:
-            return max(0.0, float(position.get("age_minutes")))
+            return max(0.0, float(position.get(key)))
         except Exception:
             pass
     opened = _opened_at(position)

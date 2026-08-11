@@ -246,6 +246,32 @@ def test_central_brain_replace_closes_weak_position_with_eligible_replacement():
     assert "central_brain_replacement" in decision["supporting_reasons"]
 
 
+def test_fresh_position_replacement_waits_for_minimum_hold():
+    decision = action(
+        pos(
+            decision="replace",
+            decision_reason="replacement_rank_improvement",
+            position_age_minutes=6,
+            unrealized_plpc=-0.003,
+            holding_quality="watch",
+            replacement_symbol="SNOW",
+            replacement_edge_bps=225,
+            replacement_quality_status="approved",
+            replacement_risk_tier="high_quality",
+        )
+    )
+
+    assert decision["recommended_action"] == "hold"
+    assert decision["primary_reason"] == "minimum_hold_period_not_met"
+    assert decision["blocking_guard"] == "minimum_hold_period_not_met"
+
+
+def test_fresh_position_hard_stop_can_close_before_minimum_hold():
+    decision = action(pos(position_age_minutes=6, unrealized_plpc=-0.05))
+    assert decision["recommended_action"] == "close"
+    assert decision["primary_reason"] == "hard_stop_hit"
+
+
 def test_profitable_strong_aligned_signal_can_increase_when_below_cap():
     decision = action(pos(unrealized_plpc=0.03, peak_pnl_pct=0.03, qty=100, max_allowed_position_qty=150))
     assert decision["recommended_action"] in {"hold", "increase"}

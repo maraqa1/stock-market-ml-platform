@@ -14,6 +14,14 @@ def test_fresh_position_close_before_minimum_hold_is_blocked():
     assert report.iloc[0]["reason"] == "minimum_hold_not_met"
 
 
+def test_fresh_position_age_minutes_blocks_close_when_open_timestamp_missing():
+    actions = [{"symbol": "DFTX", "action": "close", "side": "sell", "reason": "confirmed_signal_reversal"}]
+    positions = [{"symbol": "DFTX", "position_age_minutes": 5}]
+    allowed, report = guard_actions(actions, open_positions=positions, now=NOW, config=AntiChurnConfig(minimum_hold_minutes=30))
+    assert allowed == []
+    assert report.iloc[0]["reason"] == "minimum_hold_not_met"
+
+
 def test_fresh_position_close_before_minimum_hold_allowed_for_hard_stop():
     actions = [{"symbol": "DFTX", "action": "close", "side": "sell", "reason": "hard_stop_hit"}]
     positions = [{"symbol": "DFTX", "opened_at": (NOW - timedelta(minutes=5)).isoformat()}]

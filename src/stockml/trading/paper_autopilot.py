@@ -945,6 +945,15 @@ def apply_paper_autopilot_decisions(
     if not candidates.empty:
         position_rows = positions.to_dict("records") if isinstance(positions, pd.DataFrame) else list(positions or [])
         enriched_positions = enrich_open_positions_with_order_history(position_rows, root=root)
+        age_by_symbol = {
+            str(row.get("__symbol") or row.get("symbol") or "").upper(): row.get("position_age_minutes")
+            for row in candidates.to_dict("records")
+            if str(row.get("__symbol") or row.get("symbol") or "").strip()
+        }
+        for position in enriched_positions:
+            symbol = str(position.get("symbol") or position.get("ticker") or "").upper()
+            if symbol and position.get("age_minutes") in (None, "") and symbol in age_by_symbol:
+                position["age_minutes"] = age_by_symbol[symbol]
         actions = [
             {
                 "symbol": row.get("__symbol") or row.get("symbol"),
