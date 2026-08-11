@@ -685,7 +685,7 @@ def test_paper_autopilot_enriches_recent_fill_age_before_position_management(mon
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
     portal = tmp_path / "data" / "portal_outputs"
-    portal.mkdir(parents=True)
+    portal.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
             {
