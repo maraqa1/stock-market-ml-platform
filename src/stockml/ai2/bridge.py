@@ -15,12 +15,14 @@ from stockml.ai2.candidate_enrichment import (
     Ai2EnrichmentConfig,
     apply_ai2_enrichment,
     load_ai2_enrichment_config,
+    latest_ai2_merged_candidates_path,
     normalize_ai2_enrichment,
     write_ai2_enriched_candidates,
 )
 from stockml.ai2.candidate_input import build_ai2_candidate_input, write_ai2_candidate_input
-from stockml.candidates.execution_ranker import latest_execution_ranked_path
+from stockml.candidates.execution_ranker import latest_candidate_or_plan, latest_execution_ranked_path, write_execution_ranked_candidates
 from stockml.common.paths import data_root, timestamp
+from stockml.trading.ticker_direction_memory import apply_ticker_direction_memory, load_latest_ticker_direction_memory
 
 
 Transport = Callable[[str, bytes, dict[str, str], int], tuple[bytes, dict[str, str]]]
@@ -38,6 +40,30 @@ class Ai2BridgeResult:
     ai2_rows: int = 0
     ai2_auto_open_allowed: int = 0
     message: str = ""
+
+
+def ai2_enrichment_refresh_needed(
+    *,
+    root: Path | str | None = None,
+    config: Ai2EnrichmentConfig | None = None,
+) -> bool:
+    cfg = config or load_ai2_enrichment_config()
+    if not cfg.enabled or not cfg.auto_refresh_before_autopilot_tick:
+        return False
+    source_path, _ = latest_candidate_or_plan(root)
+    ranked_path = latest_execution_ranked_path(root)
+    ai2_path = latest_ai2_merged_candidates_path(root)
+    if ai2_path is None or not ai2_path.exists():
+        return True
+    ai2_mtime = ai2_path.stat().st_mtime
+    if source_path is not None and source_path.exists() and source_path.stat().st_mtime > ai2_mtime:
+        return True
+    if ranked_path is not None and ranked_path.exists() and ranked_path.stat().st_mtime > ai2_mtime:
+        return True
+    max_age_seconds = max(int(cfg.max_enrichment_age_minutes or 0), 0) * 60
+    if max_age_seconds <= 0:
+        return False
+    return (datetime.now(timezone.utc).timestamp() - ai2_mtime) > max_age_seconds
 
 
 def run_ai2_enrichment_bridge(
@@ -58,7 +84,7 @@ def run_ai2_enrichment_bridge(
     ai2_dir.mkdir(parents=True, exist_ok=True)
     portal_dir.mkdir(parents=True, exist_ok=True)
 
-    candidate_path = Path(candidate_file) if candidate_file else latest_execution_ranked_path(root)
+    candidate_path = Path(candidate_file) if candidate_file else _ensure_execution_ranked_candidates(root=root, stamp=run_stamp)
     if candidate_path is None or not candidate_path.exists():
         return _write_manifest(
             Ai2BridgeResult(status="missing_data", message="execution_ranked_candidates_missing"),
@@ -137,6 +163,24 @@ def run_ai2_enrichment_bridge(
         ai2_dir=ai2_dir,
         stamp=run_stamp,
         config=cfg,
+    )
+
+
+def _ensure_execution_ranked_candidates(*, root: Path | str | None = None, stamp: str | None = None) -> Path | None:
+    ranked_path = latest_execution_ranked_path(root)
+    source_path, candidates = latest_candidate_or_plan(root)
+    if source_path is None or candidates.empty:
+        return ranked_path
+    if ranked_path is not None and ranked_path.exists() and ranked_path.stat().st_mtime >= source_path.stat().st_mtime:
+        return ranked_path
+
+    _, memory = load_latest_ticker_direction_memory(root)
+    candidates = apply_ticker_direction_memory(candidates, memory)
+    return write_execution_ranked_candidates(
+        candidates,
+        output_dir=data_root(root) / "portal_outputs",
+        stamp=stamp,
+        source_path=source_path,
     )
 
 

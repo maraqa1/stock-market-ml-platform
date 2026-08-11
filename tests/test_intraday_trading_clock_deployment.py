@@ -17,14 +17,14 @@ def test_intraday_trading_clock_systemd_units_are_utc_and_synchronized():
 def test_intraday_trading_clock_script_runs_pipeline_in_order():
     script = (ROOT / "scripts" / "run_intraday_trading_clock.py").read_text(encoding="utf-8")
 
-    refresh_index = script.index("candidate_refresh_tick")
-    scoring_index = script.index("score_unscored_snapshots")
+    autopilot_index = script.index("state = _run_paper_autopilot_first()")
+    refresh_index = script.index("refresh = candidate_refresh_tick()")
+    scoring_index = script.index("scoring = score_unscored_snapshots()")
     forecast_index = script.index("forecast = generate_per_symbol_forecast")
     rotation_index = script.index("run_rotation_recommendations()")
-    autopilot_index = script.index("state = autopilot_tick")
     snapshot_index = script.index("snapshot = export_trading_snapshot")
 
-    assert refresh_index < scoring_index < forecast_index < rotation_index < autopilot_index < snapshot_index
+    assert autopilot_index < refresh_index < scoring_index < forecast_index < rotation_index < snapshot_index
 
 
 def test_intraday_trading_clock_allows_overnight_auto_open_when_market_closed():

@@ -13,7 +13,7 @@ from sqlalchemy.engine import Engine
 
 from stockml.autopilot.basket_risk import evaluate_basket_risk
 from stockml.autopilot.candidate_arbitration import arbitrate_candidates, arbitration_score
-from stockml.common.paths import HOLDING_PERIOD_DIR, PORTAL_OUTPUTS_DIR, PROJECT_ROOT, TRADING_DIR, latest_file
+from stockml.common.paths import HOLDING_PERIOD_DIR, PORTAL_OUTPUTS_DIR, PROJECT_ROOT, TRADING_DIR, data_root, latest_file
 from stockml.db.connection import get_engine
 from stockml.db.schema import autopilot_open_log, intraday_candidate_snapshots, intraday_promotion_log
 from stockml.intraday.provider import IntradayProvider
@@ -1364,6 +1364,61 @@ def _quote_execution_context(symbol: str, side: str, quote_provider: Any | None,
     return {key: value for key, value in out.items() if value not in [None, ""]}
 
 
+def _auto_open_result_row(
+    candidate: dict[str, Any],
+    details: dict[str, Any],
+    order: dict[str, Any],
+    response: dict[str, Any],
+    *,
+    status: str,
+    message: str = "",
+    api_error: str = "",
+) -> dict[str, Any]:
+    symbol = str(order.get("symbol") or candidate.get("symbol") or "").upper()
+    order_id = str(response.get("id") or "")
+    return {
+        "symbol": symbol,
+        "side": order.get("side", candidate.get("side", "")),
+        "type": order.get("type", ""),
+        "time_in_force": order.get("time_in_force", ""),
+        "extended_hours": bool(order.get("extended_hours", False)),
+        "qty": order.get("qty", candidate.get("suggested_quantity", "")),
+        "suggested_quantity": candidate.get("suggested_quantity", order.get("qty", "")),
+        "notional": candidate.get("notional", candidate.get("approved_notional", "")),
+        "approved_notional": candidate.get("approved_notional", ""),
+        "limit_price": order.get("limit_price", ""),
+        "current_price": candidate.get("current_price", details.get("current_price", "")),
+        "status": status,
+        "order_id": order_id,
+        "broker_order_id": order_id,
+        "client_order_id": order.get("client_order_id", response.get("client_order_id", "")),
+        "alpaca_status": response.get("status", ""),
+        "filled_qty": response.get("filled_qty", ""),
+        "filled_avg_price": response.get("filled_avg_price", ""),
+        "submitted_at": response.get("submitted_at", ""),
+        "updated_at": response.get("updated_at", ""),
+        "message": message,
+        "api_error": api_error,
+        "candidate_source": details.get("candidate_source", candidate.get("candidate_source", "")),
+        "model_evidence_source": details.get("model_evidence_source", candidate.get("model_evidence_source", "")),
+        "ai2_enrichment_required": bool(details.get("ai2_enrichment_required", False)),
+        "ai2_decision_status": details.get("ai2_decision_status", candidate.get("ai2_decision_status", "")),
+        "execution_rank": candidate.get("execution_rank", details.get("execution_rank", "")),
+        "raw_rank": candidate.get("raw_rank", details.get("raw_rank", "")),
+        "cycle_id": details.get("cycle_id", ""),
+        "candidate_id": details.get("candidate_id", ""),
+        "signal_id": details.get("signal_id", ""),
+    }
+
+
+def _write_auto_open_results(rows: list[dict[str, Any]], *, root: Path | str | None, stamp: datetime) -> str:
+    out_dir = data_root(root) / "portal_outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"08_alpaca_paper_order_results_{stamp.strftime('%Y%m%d_%H%M%S')}.csv"
+    pd.DataFrame(rows).to_csv(path, index=False)
+    return str(path)
+
+
 def apply_auto_open(
     candidates: list[dict[str, Any]],
     open_positions: list[dict[str, Any]],
@@ -1385,6 +1440,7 @@ def apply_auto_open(
     held = {str(row.get("symbol") or "").upper() for row in open_positions if row.get("symbol")}
     opened = 0
     blocked = 0
+    result_rows: list[dict[str, Any]] = []
     position_intent_rows: list[dict[str, Any]] = []
     notes: list[str] = []
     holding_reviews = latest_holding_review_map(root) if cfg.holding_review_gate_enabled and root is not None else {}
@@ -1842,6 +1898,7 @@ def apply_auto_open(
             response = submit_paper_order_payload(order, config=trade_cfg, client=broker)
             order_id = str(response.get("id") or "")
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="opened", order_id=order_id, details={**asset_details, "order": order, "response": response}, engine=db, now=stamp)
+            result_rows.append(_auto_open_result_row(candidate, details, order, response, status="submitted", message="paper_autopilot_open"))
             opened += 1
             held.add(symbol)
             slots -= 1
@@ -1849,15 +1906,19 @@ def apply_auto_open(
             notes.append(f"{symbol}:{prefix}:{order_id or 'submitted'}")
         except AlpacaAPIError as exc:
             blocked += 1
+            result_rows.append(_auto_open_result_row(candidate, details, order, {}, status="error", message="alpaca_order_submit_failed", api_error=exc.response_text))
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="failed", block_reason="alpaca_api_error", details={**asset_details, **exc.as_dict(), "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:failed:alpaca_api_error")
         except Exception as exc:
             blocked += 1
+            result_rows.append(_auto_open_result_row(candidate, details, order, {}, status="error", message=f"submit_exception:{exc}"))
             _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="failed", block_reason="submit_exception", details={**asset_details, "error": str(exc), "order": order}, engine=db, now=stamp)
             notes.append(f"{symbol}:failed:submit_exception")
+    result_path = _write_auto_open_results(result_rows, root=root, stamp=stamp) if result_rows else ""
     return {
         "autopilot_open_attempted": opened + blocked,
         "autopilot_open_submitted": opened,
         "autopilot_open_blocked": blocked,
         "autopilot_open_notes": "; ".join(notes[:10]),
+        "autopilot_open_result_path": result_path,
     }

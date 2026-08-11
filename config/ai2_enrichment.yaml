@@ -9,6 +9,6 @@ ai2_enrichment:
   api_key_env: AI2_API_KEY
   timeout_seconds: 60
   candidate_limit: 300
-  auto_refresh_before_autopilot_tick: false
+  auto_refresh_before_autopilot_tick: true
   max_enrichment_age_minutes: 60
   require_fresh_enrichment_for_auto_open: false

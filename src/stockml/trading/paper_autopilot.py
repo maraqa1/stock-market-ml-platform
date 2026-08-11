@@ -9,7 +9,7 @@ import pandas as pd
 from sqlalchemy import desc, select
 
 from stockml.agents.position_decision_engine import build_position_decisions
-from stockml.ai2.bridge import run_ai2_enrichment_bridge
+from stockml.ai2.bridge import ai2_enrichment_refresh_needed, run_ai2_enrichment_bridge
 from stockml.ai2.candidate_enrichment import load_ai2_enrichment_config
 from stockml.autopilot.basket_risk import evaluate_basket_risk, load_basket_risk_config
 from stockml.autopilot.eod import run_eod_tick
@@ -1284,7 +1284,7 @@ def tick(
             allow_auto_open
             and state.get("mode") == "paper_autopilot"
             and ai2_cfg.enabled
-            and ai2_cfg.auto_refresh_before_autopilot_tick
+            and ai2_enrichment_refresh_needed(root=root, config=ai2_cfg)
         ):
             bridge = run_ai2_enrichment_bridge(root=root, config=ai2_cfg, submit=True)
             ai2_bridge_result = {

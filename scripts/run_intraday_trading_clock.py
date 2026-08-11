@@ -26,7 +26,49 @@ from stockml.trading.session_mode import classify_session_mode
 from scripts.run_rotation_recommendations import main as run_rotation_recommendations
 
 
+def _run_paper_autopilot_first() -> dict:
+    trading_cfg = alpaca_config()
+    session_mode = classify_session_mode()
+    print("session_mode:", session_mode)
+    regular_auto_open = session_mode == "regular_session"
+    extended_auto_open = bool(trading_cfg.extended_hours and session_mode in {"pre_market", "after_hours"})
+    overnight_auto_open = bool(trading_cfg.overnight_trading_enabled and session_mode == "overnight_24_5")
+    allow_auto_open = regular_auto_open or extended_auto_open or overnight_auto_open
+    if overnight_auto_open:
+        print("auto_open_gate:", "overnight_enabled_market_closed")
+    elif not allow_auto_open:
+        print("auto_open_gate:", f"skipped_{session_mode}")
+
+    current_autopilot = load_autopilot_state()
+    if current_autopilot.get("mode") == "paper_autopilot" and current_autopilot.get("status") != "running":
+        last_error = current_autopilot.get("last_error")
+        termination_reason = current_autopilot.get("termination_reason")
+        benign_stop = termination_reason in {"", "no_open_orders_or_positions"} or (
+            termination_reason == "autopilot_error" and last_error == "autopilot_not_running"
+        )
+        benign_error = last_error in {"", "autopilot_not_running"}
+        if benign_stop and benign_error:
+            restarted = start_autopilot()
+            print("paper_autopilot_rearm:", restarted.get("status"))
+
+    state = autopilot_tick(allow_auto_open=allow_auto_open)
+    print("paper_autopilot_mode:", state.get("mode"))
+    print("paper_autopilot_status:", state.get("status"))
+    print("paper_autopilot_phase:", state.get("phase"))
+    print("open_orders:", state.get("open_orders"))
+    print("open_positions:", state.get("open_positions"))
+    print("auto_rotations_attempted:", state.get("auto_rotations_attempted", 0))
+    print("auto_rotations_confirmed:", state.get("auto_rotations_confirmed", 0))
+    print("auto_rotation_notes:", state.get("auto_rotation_notes", ""))
+    print("autopilot_open_submitted:", state.get("autopilot_open_submitted"))
+    print("autopilot_open_notes:", state.get("autopilot_open_notes"))
+    print("last_error:", state.get("last_error"))
+    return state
+
+
 def main() -> int:
+    state = _run_paper_autopilot_first()
+
     refresh = candidate_refresh_tick()
     print("candidate_refresh_status:", refresh.get("status"))
     print("candidate_refresh_reason:", refresh.get("reason", ""))
@@ -59,42 +101,6 @@ def main() -> int:
     print("holding_review_blocked:", holding.get("review_blocked", 0))
 
     run_rotation_recommendations()
-
-    trading_cfg = alpaca_config()
-    session_mode = classify_session_mode()
-    print("session_mode:", session_mode)
-    market_closed = refresh.get("reason") == "market_closed" or refresh.get("status") == "market_closed"
-    overnight_auto_open = bool(trading_cfg.overnight_trading_enabled and market_closed and session_mode != "weekend_closed")
-    allow_auto_open = refresh.get("status") == "ok" or overnight_auto_open
-    if overnight_auto_open:
-        print("auto_open_gate:", "overnight_enabled_market_closed")
-    elif not allow_auto_open:
-        print("auto_open_gate:", f"skipped_{refresh.get('reason') or refresh.get('status')}")
-
-    current_autopilot = load_autopilot_state()
-    if current_autopilot.get("mode") == "paper_autopilot" and current_autopilot.get("status") != "running":
-        last_error = current_autopilot.get("last_error")
-        termination_reason = current_autopilot.get("termination_reason")
-        benign_stop = termination_reason in {"", "no_open_orders_or_positions"} or (
-            termination_reason == "autopilot_error" and last_error == "autopilot_not_running"
-        )
-        benign_error = last_error in {"", "autopilot_not_running"}
-        if benign_stop and benign_error:
-            restarted = start_autopilot()
-            print("paper_autopilot_rearm:", restarted.get("status"))
-
-    state = autopilot_tick(allow_auto_open=allow_auto_open)
-    print("paper_autopilot_mode:", state.get("mode"))
-    print("paper_autopilot_status:", state.get("status"))
-    print("paper_autopilot_phase:", state.get("phase"))
-    print("open_orders:", state.get("open_orders"))
-    print("open_positions:", state.get("open_positions"))
-    print("auto_rotations_attempted:", state.get("auto_rotations_attempted", 0))
-    print("auto_rotations_confirmed:", state.get("auto_rotations_confirmed", 0))
-    print("auto_rotation_notes:", state.get("auto_rotation_notes", ""))
-    print("autopilot_open_submitted:", state.get("autopilot_open_submitted"))
-    print("autopilot_open_notes:", state.get("autopilot_open_notes"))
-    print("last_error:", state.get("last_error"))
 
     snapshot = export_trading_snapshot(ROOT)
     print("trading_snapshot_status:", snapshot.get("status"))

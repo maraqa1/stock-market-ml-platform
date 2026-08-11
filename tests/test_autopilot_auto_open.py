@@ -129,6 +129,18 @@ def _candidate(symbol: str = "CSTL", score: float = 0.72, bias: str = "long") ->
     }
 
 
+def _allow_legacy_fallback_brains(root) -> None:
+    config_dir = root / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "autopilot.yaml").write_text(
+        "daily_trading_authority:\n"
+        "  enabled: true\n"
+        "  decision_owner: paper_autopilot\n"
+        "  allow_fallback_candidate_brains: true\n",
+        encoding="utf-8",
+    )
+
+
 def test_record_open_sanitizes_nan_details_for_json_log():
     engine = _engine()
     now = datetime(2026, 7, 1, 20, 30, tzinfo=timezone.utc)
@@ -306,7 +318,7 @@ def test_auto_open_is_disabled_by_default_and_writes_no_order():
     assert client.orders == []
 
 
-def test_auto_open_submits_paper_order_and_logs_opened():
+def test_auto_open_submits_paper_order_and_logs_opened(tmp_path):
     engine = _engine()
     client = FakeClient()
 
@@ -319,9 +331,15 @@ def test_auto_open_submits_paper_order_and_logs_opened():
         alpaca_cfg=_trade_config(),
         client=client,
         now=datetime(2026, 5, 12, 15, 0, tzinfo=timezone.utc),
+        root=tmp_path,
     )
 
     assert result["autopilot_open_submitted"] == 1
+    assert result["autopilot_open_result_path"]
+    result_frame = pd.read_csv(result["autopilot_open_result_path"])
+    assert result_frame.loc[0, "symbol"] == "CSTL"
+    assert result_frame.loc[0, "order_id"] == "order-CSTL"
+    assert result_frame.loc[0, "status"] == "submitted"
     assert client.orders[0]["symbol"] == "CSTL"
     assert client.orders[0]["side"] == "buy"
     assert client.orders[0]["qty"] == "10"
@@ -1780,6 +1798,7 @@ def test_auto_open_blocks_when_kill_switch_active():
 
 def test_paper_autopilot_tick_invokes_auto_open_when_idle(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    _allow_legacy_fallback_brains(tmp_path)
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
     tracking = tmp_path / "tracking.csv"
@@ -1885,6 +1904,7 @@ def test_paper_autopilot_tick_builds_monitor_and_closes_max_holding_days(monkeyp
 
 def test_paper_autopilot_tick_uses_flat_fallback_when_account_is_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    _allow_legacy_fallback_brains(tmp_path)
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
     tracking = tmp_path / "tracking.csv"
@@ -1916,6 +1936,7 @@ def test_paper_autopilot_tick_uses_flat_fallback_when_account_is_empty(monkeypat
 
 def test_paper_autopilot_tick_prefers_near_miss_before_flat_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    _allow_legacy_fallback_brains(tmp_path)
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
     tracking = tmp_path / "tracking.csv"
@@ -1958,6 +1979,7 @@ def test_paper_autopilot_tick_prefers_near_miss_before_flat_fallback(monkeypatch
 
 def test_paper_autopilot_tick_prefers_per_symbol_forecast_before_near_miss(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    _allow_legacy_fallback_brains(tmp_path)
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
     tracking = tmp_path / "tracking.csv"
@@ -2031,6 +2053,7 @@ def test_latest_plan_fallback_candidates_loads_approved_order_plan(tmp_path):
 
 def test_paper_autopilot_tick_uses_order_plan_when_intraday_sources_are_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    _allow_legacy_fallback_brains(tmp_path)
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
     tracking = tmp_path / "tracking.csv"
@@ -2072,6 +2095,7 @@ def test_paper_autopilot_tick_uses_order_plan_when_intraday_sources_are_empty(mo
 
 def test_paper_autopilot_tick_uses_near_miss_when_position_is_open(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _trade_config())
+    _allow_legacy_fallback_brains(tmp_path)
     paper_autopilot.start(tmp_path)
     paper_autopilot.set_mode("paper_autopilot", tmp_path)
     tracking = tmp_path / "tracking.csv"
