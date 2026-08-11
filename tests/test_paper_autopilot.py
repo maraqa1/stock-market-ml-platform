@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pandas as pd
 
 from stockml.trading.config import AlpacaConfig
@@ -670,6 +672,41 @@ def test_paper_autopilot_does_not_close_replace_when_rotation_disabled(monkeypat
     )
 
     assert result["autopilot_actions"] == 0
+    assert result["autopilot_close_submitted"] == 0
+
+
+def test_paper_autopilot_enriches_recent_fill_age_before_position_management(monkeypatch, tmp_path):
+    monkeypatch.setattr(paper_autopilot, "alpaca_config", lambda: _config())
+    monkeypatch.setattr(
+        paper_autopilot,
+        "datetime",
+        type("FixedDateTime", (), {"now": staticmethod(lambda tz=None: datetime(2026, 8, 11, 17, 5, tzinfo=timezone.utc))}),
+    )
+    paper_autopilot.start(tmp_path)
+    paper_autopilot.set_mode("paper_autopilot", tmp_path)
+    portal = tmp_path / "data" / "portal_outputs"
+    portal.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "AAA",
+                "side": "buy",
+                "alpaca_status": "filled",
+                "submitted_at": "2026-08-11T16:50:00+00:00",
+            }
+        ]
+    ).to_csv(portal / "08_alpaca_paper_order_tracking_20260811_165001.csv", index=False)
+    positions = pd.DataFrame([_position("AAA", qty=5, unrealized_plpc=0.003, holding_quality="watch")])
+
+    result = paper_autopilot.apply_paper_autopilot_decisions(
+        tmp_path,
+        positions,
+        state=paper_autopilot.load_state(tmp_path),
+        action_func=lambda symbol, action: {"status": "submitted", "message": f"auto_{action}", "order_id": "order-1"},
+    )
+
+    assert result["autopilot_actions"] == 0
+    assert result["autopilot_reduce_submitted"] == 0
     assert result["autopilot_close_submitted"] == 0
 
 

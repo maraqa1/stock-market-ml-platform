@@ -693,7 +693,8 @@ def _auto_close_candidates(root: Path | None, positions: pd.DataFrame, state: di
 def _positions_for_position_management(root: Path | None, positions: pd.DataFrame, state: dict[str, Any] | None = None) -> pd.DataFrame:
     if positions.empty or "symbol" not in positions.columns:
         return positions
-    out = attach_holding_review_to_positions(positions.copy(), root)
+    enriched_rows = enrich_open_positions_with_order_history(positions.to_dict("records"), root=root)
+    out = attach_holding_review_to_positions(pd.DataFrame(enriched_rows), root)
     out["__symbol"] = out["symbol"].fillna("").astype(str).str.upper()
     plan = _read_csv(_latest_csv(_portal_outputs_dir(root), "08_alpaca_paper_order_plan_*.csv"))
     if not plan.empty and "symbol" in plan.columns:
