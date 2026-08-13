@@ -135,7 +135,7 @@ def test_ap_b03_validates_fixture_candidates():
     reason_map = {issue.candidate.symbol: issue.reasons for issue in result.invalid_candidates if issue.candidate is not None}
     assert any("symbol_missing" in issue.reasons for issue in result.invalid_candidates)
     assert "close_price_missing_or_non_positive" in reason_map["NOPRICE"]
-    assert "candidate_not_executable" in reason_map["BLOCKED"]
+    assert [candidate.symbol for candidate in result.non_tradable_candidates] == ["BLOCKED"]
 
 
 def test_ap_b03_rejects_missing_price_check_status():
