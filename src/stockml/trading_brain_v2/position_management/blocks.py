@@ -1,0 +1,31 @@
+from __future__ import annotations
+
+from stockml.trading_brain_v2.position_management.pm_b01_position_creation import PositionCreationBlock
+from stockml.trading_brain_v2.position_management.pm_b02_initial_risk_attachment import InitialRiskAttachmentBlock
+from stockml.trading_brain_v2.position_management.pm_b03_live_mark_to_market import LiveMarkToMarketBlock
+from stockml.trading_brain_v2.position_management.pm_b04_stop_loss_engine import StopLossEngineBlock
+from stockml.trading_brain_v2.position_management.pm_b05_profit_taking_engine import ProfitTakingEngineBlock
+from stockml.trading_brain_v2.position_management.pm_b06_trailing_stop_engine import TrailingStopEngineBlock
+from stockml.trading_brain_v2.position_management.pm_b07_time_based_exit_engine import TimeBasedExitEngineBlock
+from stockml.trading_brain_v2.position_management.pm_b08_portfolio_risk_overlay import PortfolioRiskOverlayBlock
+from stockml.trading_brain_v2.position_management.pm_b09_reentry_addon_logic import ReEntryAddOnLogicBlock
+from stockml.trading_brain_v2.position_management.pm_b10_exit_decision_engine import ExitDecisionEngineBlock
+from stockml.trading_brain_v2.position_management.pm_b11_performance_attribution import PerformanceAttributionBlock
+from stockml.trading_brain_v2.position_management.pm_b12_feedback_store import FeedbackStoreBlock
+
+
+POSITION_MANAGEMENT_BLOCKS = (
+    PositionCreationBlock,
+    InitialRiskAttachmentBlock,
+    LiveMarkToMarketBlock,
+    StopLossEngineBlock,
+    ProfitTakingEngineBlock,
+    TrailingStopEngineBlock,
+    TimeBasedExitEngineBlock,
+    PortfolioRiskOverlayBlock,
+    ReEntryAddOnLogicBlock,
+    ExitDecisionEngineBlock,
+    PerformanceAttributionBlock,
+    FeedbackStoreBlock,
+)
+
