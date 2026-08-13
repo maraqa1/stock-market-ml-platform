@@ -245,6 +245,66 @@ def test_http_adapter_persists_json_csv_response(tmp_path: Path, monkeypatch):
     assert "GCT" in result.enriched_file.read_text(encoding="utf-8")
 
 
+def test_http_adapter_persists_ai2_files_enriched_csv_response(tmp_path: Path, monkeypatch):
+    raw = _raw_candidate_file(tmp_path)
+
+    class FakeResponse:
+        headers = {"Content-Type": "application/json"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return (
+                b'{"status":"partial_ok","files":{"enriched_csv":'
+                b'{"content":"symbol,execution_decision,ai2_realtime_price\\nATRC,Proceed candidate,40.12\\n"}}}'
+            )
+
+    monkeypatch.setattr("stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter.request.urlopen", lambda *_args, **_kwargs: FakeResponse())
+
+    result = AI2HttpEnrichmentAdapter(endpoint_url="https://ai2.example/enrich").enrich(raw, output_dir=tmp_path / "out", run_id="run-ai2-files")
+
+    assert result.status == "ok"
+    assert result.enriched_file is not None
+    loaded = pd.read_csv(result.enriched_file)
+    assert loaded.loc[0, "symbol"] == "ATRC"
+    assert loaded.loc[0, "ai2_realtime_price"] == 40.12
+
+
+def test_http_adapter_persists_ai2_json_rows_response(tmp_path: Path, monkeypatch):
+    raw = _raw_candidate_file(tmp_path)
+
+    class FakeResponse:
+        headers = {"Content-Type": "application/json"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return (
+                b'{"status":"partial_ok","rows":['
+                b'{"symbol":"ATRC","execution_decision":"Proceed candidate","ai2_realtime_price":40.12},'
+                b'{"symbol":"GCT","execution_decision":"Proceed candidate","ai2_realtime_price":54.10}'
+                b"]}"
+            )
+
+    monkeypatch.setattr("stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter.request.urlopen", lambda *_args, **_kwargs: FakeResponse())
+
+    result = AI2HttpEnrichmentAdapter(endpoint_url="https://ai2.example/enrich").enrich(raw, output_dir=tmp_path / "out", run_id="run-ai2-rows")
+
+    assert result.status == "ok"
+    assert result.enriched_file is not None
+    loaded = pd.read_csv(result.enriched_file)
+    assert list(loaded["symbol"]) == ["ATRC", "GCT"]
+    assert list(loaded["ai2_realtime_price"]) == [40.12, 54.10]
+
+
 def test_adapter_factory_uses_http_when_endpoint_configured():
     assert isinstance(build_ai2_enrichment_adapter(endpoint_url="https://ai2.example/enrich"), AI2HttpEnrichmentAdapter)
 

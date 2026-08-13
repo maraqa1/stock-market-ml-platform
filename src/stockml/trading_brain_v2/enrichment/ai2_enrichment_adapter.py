@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import csv
+import io
 from pathlib import Path
 import re
 import shutil
@@ -165,6 +167,13 @@ class HttpCandidateEnrichmentAdapter:
             for key in ("csv", "content", "shortlist_csv"):
                 if payload.get(key):
                     return self._write_csv_text(str(payload[key]), output_dir=output_dir, run_id=run_id)
+            nested_csv = self._nested_csv_payload(payload)
+            if nested_csv:
+                return self._write_csv_text(nested_csv, output_dir=output_dir, run_id=run_id)
+            for key in ("rows", "shortlist_rows"):
+                rows = payload.get(key)
+                if isinstance(rows, list) and rows:
+                    return self._write_rows_csv(rows, output_dir=output_dir, run_id=run_id)
             file_path = payload.get("file_path") or payload.get("path")
             if file_path:
                 source = Path(str(file_path))
@@ -178,6 +187,32 @@ class HttpCandidateEnrichmentAdapter:
                 return self._download_csv(str(download_url), output_dir=output_dir, run_id=run_id)
             raise RuntimeError("ai2_json_response_missing_csv")
         return self._write_csv_text(text, output_dir=output_dir, run_id=run_id)
+
+    def _nested_csv_payload(self, payload: dict) -> str:
+        files = payload.get("files")
+        if not isinstance(files, dict):
+            return ""
+        for value in files.values():
+            if isinstance(value, dict):
+                content = value.get("content") or value.get("csv") or value.get("shortlist_csv")
+                if content:
+                    return str(content)
+        return ""
+
+    def _write_rows_csv(self, rows: list, *, output_dir: Path, run_id: str) -> Path:
+        records = [row for row in rows if isinstance(row, dict)]
+        if not records:
+            raise RuntimeError("ai2_json_rows_missing_records")
+        columns: list[str] = []
+        for row in records:
+            for key in row:
+                if key not in columns:
+                    columns.append(str(key))
+        handle = io.StringIO()
+        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore", lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(records)
+        return self._write_csv_text(handle.getvalue(), output_dir=output_dir, run_id=run_id)
 
     def _write_csv_text(self, text: str, *, output_dir: Path, run_id: str) -> Path:
         target = output_dir / f"{self.provider}_candidate_input_{run_id}.shortlist.csv"
