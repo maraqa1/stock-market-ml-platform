@@ -20,6 +20,7 @@ class TradingBrainConfig:
     v2_allow_live_execution: bool = False
     v2_paper_execution: bool = False
     ai2_enrichment_enabled: bool = True
+    ai2_enrichment_provider: str = "ai2"
     ai2_enrichment_input_mode: str = "raw_candidate_pool"
     ai2_enrichment_output_dir: str = "data/ai2"
     ai2_enrichment_fail_safe_on_error: bool = True
@@ -145,18 +146,28 @@ def load_trading_brain_config(path: Path | str | None = CONFIG_PATH) -> TradingB
     policy = policy if isinstance(policy, dict) else {}
     ai2_enrichment = section.get("ai2_enrichment") or legacy_v2_section.get("ai2_enrichment")
     ai2_enrichment = ai2_enrichment if isinstance(ai2_enrichment, dict) else {}
+    enrichment_provider = str(ai2_enrichment.get("provider") or "ai2").strip().lower() or "ai2"
+    provider_env_prefix = enrichment_provider.upper().replace("-", "_")
+    endpoint_url = (
+        ai2_enrichment.get("endpoint_url")
+        or os.environ.get("ENRICHMENT_ENDPOINT", "")
+        or os.environ.get(f"{provider_env_prefix}_ENRICHMENT_ENDPOINT", "")
+        or os.environ.get("AI2_ENRICHMENT_ENDPOINT", "")
+    )
+    api_key_env = str(ai2_enrichment.get("api_key_env") or f"{provider_env_prefix}_API_KEY").strip() or f"{provider_env_prefix}_API_KEY"
     cfg = TradingBrainConfig(
         active_version=str(section.get("active_version") or "v1").strip().lower() or "v1",
         v2_shadow_mode=_bool(section.get("v2_shadow_mode"), True),
         v2_allow_live_execution=_bool(section.get("v2_allow_live_execution"), False),
         v2_paper_execution=_bool(section.get("v2_paper_execution"), False),
         ai2_enrichment_enabled=_bool(ai2_enrichment.get("enabled"), True),
+        ai2_enrichment_provider=enrichment_provider,
         ai2_enrichment_input_mode=str(ai2_enrichment.get("input_mode") or "raw_candidate_pool").strip() or "raw_candidate_pool",
         ai2_enrichment_output_dir=str(ai2_enrichment.get("output_dir") or "data/ai2").strip() or "data/ai2",
         ai2_enrichment_fail_safe_on_error=_bool(ai2_enrichment.get("fail_safe_on_error"), True),
-        ai2_enrichment_endpoint_url=str(ai2_enrichment.get("endpoint_url") or os.environ.get("AI2_ENRICHMENT_ENDPOINT", "")).strip(),
-        ai2_enrichment_api_key_env=str(ai2_enrichment.get("api_key_env") or "AI2_API_KEY").strip() or "AI2_API_KEY",
-        ai2_enrichment_api_key=str(os.environ.get(str(ai2_enrichment.get("api_key_env") or "AI2_API_KEY").strip() or "AI2_API_KEY", "")).strip(),
+        ai2_enrichment_endpoint_url=str(endpoint_url or "").strip(),
+        ai2_enrichment_api_key_env=api_key_env,
+        ai2_enrichment_api_key=str(os.environ.get(api_key_env, "")).strip(),
         ai2_enrichment_timeout_seconds=_float(ai2_enrichment.get("timeout_seconds"), 120.0),
         ai2_enrichment_auth_header=str(ai2_enrichment.get("auth_header") or "Authorization").strip() or "Authorization",
         max_live_gap_block_pct=_float(policy.get("max_live_gap_block_pct"), 0.05),

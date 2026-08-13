@@ -24,39 +24,45 @@ class AdapterEnrichmentResult:
     enriched_file: Path | None = None
     reason: str = ""
     adapter_version: str = ""
+    provider: str = "ai2"
 
 
-class AI2EnrichmentAdapter(Protocol):
+class CandidateEnrichmentAdapter(Protocol):
     adapter_version: str
+    provider: str
 
     def enrich(self, raw_candidate_file: Path, *, output_dir: Path, run_id: str) -> AdapterEnrichmentResult:
         ...
 
 
-class ExistingFileAI2EnrichmentAdapter:
-    """Adapter for the current local workflow where AI2 writes a shortlist artifact.
+class ExistingFileCandidateEnrichmentAdapter:
+    """Adapter for workflows where an external enrichment service writes a shortlist.
 
     This deliberately does not fabricate an enriched file. If a repository-side AI2
-    API or script is added later, it should implement the same adapter protocol.
+    API, Claude workflow, or ChatGPT workflow is added later, it should implement
+    the same adapter protocol.
     """
 
     adapter_version = "existing_file_v1"
 
-    def __init__(self, *, search_root: Path | str | None = None):
+    def __init__(self, *, search_root: Path | str | None = None, provider: str = "ai2"):
         self.search_root = Path(search_root) if search_root is not None else PROJECT_ROOT
+        self.provider = str(provider or "ai2").strip().lower() or "ai2"
 
     def enrich(self, raw_candidate_file: Path, *, output_dir: Path, run_id: str) -> AdapterEnrichmentResult:
         candidates = self._candidate_outputs(raw_candidate_file, output_dir=output_dir)
         if not candidates:
             return AdapterEnrichmentResult(
                 status="failed",
-                reason="ai2_enrichment_mechanism_missing_or_output_not_found",
+                reason="enrichment_mechanism_missing_or_output_not_found",
                 adapter_version=self.adapter_version,
+                provider=self.provider,
             )
         return AdapterEnrichmentResult(
             status="ok",
             enriched_file=max(candidates, key=lambda path: (path.stat().st_mtime, _timestamp_key(path), path.name)),
             adapter_version=self.adapter_version,
+            provider=self.provider,
         )
 
     def _candidate_outputs(self, raw_candidate_file: Path, *, output_dir: Path) -> list[Path]:
@@ -70,6 +76,8 @@ class ExistingFileAI2EnrichmentAdapter:
         patterns = [
             f"{raw_stem}.shortlist.csv",
             f"{raw_stem}*.shortlist.csv",
+            f"{self.provider}_candidate_input_*.shortlist.csv",
+            f"{self.provider}_enriched_candidates_*.csv",
             "ai2_candidate_input_*.shortlist.csv",
             "ai2_enriched_candidates_*.csv",
         ]
@@ -83,8 +91,8 @@ class ExistingFileAI2EnrichmentAdapter:
         return sorted({path.resolve() for path in found if path.resolve() != raw_resolved})
 
 
-class AI2HttpEnrichmentAdapter:
-    """HTTP client for server-side AI2 enrichment.
+class HttpCandidateEnrichmentAdapter:
+    """HTTP client for server-side candidate enrichment.
 
     The API key stays in the environment/config and is sent only as a server-side
     header. The adapter accepts either a CSV response body or a JSON response
@@ -92,17 +100,19 @@ class AI2HttpEnrichmentAdapter:
     ``download_url``.
     """
 
-    adapter_version = "ai2_http_v1"
+    adapter_version = "http_enrichment_v1"
 
     def __init__(
         self,
         *,
         endpoint_url: str,
+        provider: str = "ai2",
         api_key: str = "",
         timeout_seconds: float = 120.0,
         auth_header: str = "Authorization",
         extra_headers: dict[str, str] | None = None,
     ):
+        self.provider = str(provider or "ai2").strip().lower() or "ai2"
         self.endpoint_url = str(endpoint_url or "").strip()
         self.api_key = str(api_key or "").strip()
         self.timeout_seconds = float(timeout_seconds)
@@ -111,16 +121,16 @@ class AI2HttpEnrichmentAdapter:
 
     def enrich(self, raw_candidate_file: Path, *, output_dir: Path, run_id: str) -> AdapterEnrichmentResult:
         if not self.endpoint_url:
-            return AdapterEnrichmentResult("failed", reason="ai2_endpoint_missing", adapter_version=self.adapter_version)
+            return AdapterEnrichmentResult("failed", reason="enrichment_endpoint_missing", adapter_version=self.adapter_version, provider=self.provider)
         if not raw_candidate_file.exists():
-            return AdapterEnrichmentResult("failed", reason="raw_candidate_file_missing", adapter_version=self.adapter_version)
+            return AdapterEnrichmentResult("failed", reason="raw_candidate_file_missing", adapter_version=self.adapter_version, provider=self.provider)
         output_dir.mkdir(parents=True, exist_ok=True)
         try:
             response_body, content_type = self._post_file(raw_candidate_file)
             enriched = self._persist_response(response_body, content_type, output_dir=output_dir, run_id=run_id)
         except Exception as exc:
-            return AdapterEnrichmentResult("failed", reason=f"ai2_http_error:{exc}", adapter_version=self.adapter_version)
-        return AdapterEnrichmentResult("ok", enriched_file=enriched, adapter_version=self.adapter_version)
+            return AdapterEnrichmentResult("failed", reason=f"enrichment_http_error:{exc}", adapter_version=self.adapter_version, provider=self.provider)
+        return AdapterEnrichmentResult("ok", enriched_file=enriched, adapter_version=self.adapter_version, provider=self.provider)
 
     def _headers(self, boundary: str) -> dict[str, str]:
         headers = {
@@ -170,7 +180,7 @@ class AI2HttpEnrichmentAdapter:
         return self._write_csv_text(text, output_dir=output_dir, run_id=run_id)
 
     def _write_csv_text(self, text: str, *, output_dir: Path, run_id: str) -> Path:
-        target = output_dir / f"ai2_candidate_input_{run_id}.shortlist.csv"
+        target = output_dir / f"{self.provider}_candidate_input_{run_id}.shortlist.csv"
         target.write_text(text, encoding="utf-8")
         return target
 
@@ -181,9 +191,42 @@ class AI2HttpEnrichmentAdapter:
         with tempfile.NamedTemporaryFile(delete=False) as handle:
             handle.write(body)
             temp = Path(handle.name)
-        target = output_dir / f"ai2_candidate_input_{run_id}.shortlist.csv"
+        target = output_dir / f"{self.provider}_candidate_input_{run_id}.shortlist.csv"
         shutil.move(str(temp), target)
         return target
+
+
+AI2EnrichmentAdapter = CandidateEnrichmentAdapter
+ExistingFileAI2EnrichmentAdapter = ExistingFileCandidateEnrichmentAdapter
+
+
+class AI2HttpEnrichmentAdapter(HttpCandidateEnrichmentAdapter):
+    adapter_version = "ai2_http_v1"
+
+    def __init__(self, **kwargs):
+        super().__init__(provider="ai2", **kwargs)
+
+
+def build_candidate_enrichment_adapter(
+    *,
+    provider: str = "ai2",
+    endpoint_url: str = "",
+    api_key: str = "",
+    timeout_seconds: float = 120.0,
+    auth_header: str = "Authorization",
+    search_root: Path | str | None = None,
+) -> CandidateEnrichmentAdapter:
+    provider_name = str(provider or "ai2").strip().lower() or "ai2"
+    if str(endpoint_url or "").strip():
+        adapter_cls = AI2HttpEnrichmentAdapter if provider_name == "ai2" else HttpCandidateEnrichmentAdapter
+        return adapter_cls(
+            endpoint_url=endpoint_url,
+            **({} if provider_name == "ai2" else {"provider": provider_name}),
+            api_key=api_key,
+            timeout_seconds=timeout_seconds,
+            auth_header=auth_header,
+        )
+    return ExistingFileCandidateEnrichmentAdapter(search_root=search_root, provider=provider_name)
 
 
 def build_ai2_enrichment_adapter(
@@ -194,11 +237,11 @@ def build_ai2_enrichment_adapter(
     auth_header: str = "Authorization",
     search_root: Path | str | None = None,
 ) -> AI2EnrichmentAdapter:
-    if str(endpoint_url or "").strip():
-        return AI2HttpEnrichmentAdapter(
-            endpoint_url=endpoint_url,
-            api_key=api_key,
-            timeout_seconds=timeout_seconds,
-            auth_header=auth_header,
-        )
-    return ExistingFileAI2EnrichmentAdapter(search_root=search_root)
+    return build_candidate_enrichment_adapter(
+        provider="ai2",
+        endpoint_url=endpoint_url,
+        api_key=api_key,
+        timeout_seconds=timeout_seconds,
+        auth_header=auth_header,
+        search_root=search_root,
+    )

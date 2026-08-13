@@ -11,7 +11,7 @@ import pandas as pd
 from stockml.common.paths import PROJECT_ROOT
 from stockml.trading_brain_v2.audit.logger import AuditLogger, build_audit_event
 from stockml.trading_brain_v2.autopilot.ap_b01_gold_dataset_intake import GoldDatasetIntakeBlock
-from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import AI2EnrichmentAdapter, build_ai2_enrichment_adapter
+from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import AI2EnrichmentAdapter, build_candidate_enrichment_adapter
 from stockml.trading_brain_v2.enrichment.ai2_enrichment_result import AI2EnrichmentResult
 from stockml.trading_brain_v2.shared.config import TradingBrainConfig, load_trading_brain_config
 
@@ -30,7 +30,8 @@ class AI2EnrichmentOrchestrator:
     ):
         self.root = Path(root) if root is not None else PROJECT_ROOT
         self.config = config or load_trading_brain_config()
-        self.adapter = adapter or build_ai2_enrichment_adapter(
+        self.adapter = adapter or build_candidate_enrichment_adapter(
+            provider=self.config.ai2_enrichment_provider,
             endpoint_url=self.config.ai2_enrichment_endpoint_url,
             api_key=self.config.ai2_enrichment_api_key,
             timeout_seconds=self.config.ai2_enrichment_timeout_seconds,
@@ -57,6 +58,7 @@ class AI2EnrichmentOrchestrator:
                     "raw_candidate_file": str(raw),
                     "timestamp": timestamp,
                     "adapter_version": getattr(self.adapter, "adapter_version", ""),
+                    "enrichment_provider": getattr(self.adapter, "provider", self.config.ai2_enrichment_provider),
                     **(details or {}),
                 },
             )
@@ -77,8 +79,8 @@ class AI2EnrichmentOrchestrator:
             return self._result("fail_safe", raw, None, None, run, timestamp, events, "raw_candidate_file_unreadable")
 
         if not self.config.ai2_enrichment_enabled:
-            event("ai2_enrichment_failed", "AI2 enrichment disabled", {"reason": "ai2_enrichment_disabled"})
-            return self._result("fail_safe", raw, None, None, run, timestamp, events, "ai2_enrichment_disabled")
+            event("ai2_enrichment_failed", "enrichment disabled", {"reason": "enrichment_disabled"})
+            return self._result("fail_safe", raw, None, None, run, timestamp, events, "enrichment_disabled")
 
         output_dir = self._output_dir()
         output_dir.mkdir(parents=True, exist_ok=True)

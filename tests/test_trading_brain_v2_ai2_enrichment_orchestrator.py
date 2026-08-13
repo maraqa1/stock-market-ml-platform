@@ -4,9 +4,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import AI2HttpEnrichmentAdapter, AdapterEnrichmentResult, build_ai2_enrichment_adapter
+from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import (
+    AI2HttpEnrichmentAdapter,
+    AdapterEnrichmentResult,
+    HttpCandidateEnrichmentAdapter,
+    build_ai2_enrichment_adapter,
+    build_candidate_enrichment_adapter,
+)
 from stockml.trading_brain_v2.enrichment.ai2_enrichment_orchestrator import AI2EnrichmentOrchestrator
-from stockml.trading_brain_v2.shared.config import TradingBrainConfig
+from stockml.trading_brain_v2.shared.config import TradingBrainConfig, load_trading_brain_config
 from stockml.trading_brain_v2.shared.safety import assert_v2_live_execution_allowed
 
 
@@ -241,3 +247,33 @@ def test_http_adapter_persists_json_csv_response(tmp_path: Path, monkeypatch):
 
 def test_adapter_factory_uses_http_when_endpoint_configured():
     assert isinstance(build_ai2_enrichment_adapter(endpoint_url="https://ai2.example/enrich"), AI2HttpEnrichmentAdapter)
+
+
+def test_generic_adapter_factory_supports_future_providers():
+    adapter = build_candidate_enrichment_adapter(provider="chatgpt", endpoint_url="https://agent.example/enrich")
+
+    assert isinstance(adapter, HttpCandidateEnrichmentAdapter)
+    assert adapter.provider == "chatgpt"
+
+
+def test_provider_specific_config_reads_endpoint_and_key_env(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "autopilot.yaml"
+    config_path.write_text(
+        """
+trading_brain:
+  ai2_enrichment:
+    enabled: true
+    provider: claude
+    output_dir: data/ai2
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CLAUDE_ENRICHMENT_ENDPOINT", "https://claude.example/enrich")
+    monkeypatch.setenv("CLAUDE_API_KEY", "secret-value")
+
+    cfg = load_trading_brain_config(config_path)
+
+    assert cfg.ai2_enrichment_provider == "claude"
+    assert cfg.ai2_enrichment_endpoint_url == "https://claude.example/enrich"
+    assert cfg.ai2_enrichment_api_key_env == "CLAUDE_API_KEY"
+    assert cfg.ai2_enrichment_api_key == "secret-value"
