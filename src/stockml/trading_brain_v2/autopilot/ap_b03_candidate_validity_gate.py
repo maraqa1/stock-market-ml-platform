@@ -89,7 +89,7 @@ class CandidateValidityGateBlock(PlaceholderBlock):
             reasons.append("latest_eod_date_missing")
         if not candidate.decision_label:
             reasons.append("execution_decision_missing")
-        if not candidate.notes:
+        if "execution_decision" in candidate.raw_source_fields and not candidate.notes:
             reasons.append("notes_missing")
         if candidate.ai2_status == "unknown":
             reasons.append("ai2_status_unknown")
