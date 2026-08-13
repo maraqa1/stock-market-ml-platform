@@ -82,6 +82,29 @@ def _status_counts(results, column: str = "status") -> dict[str, int]:
     return {str(key): int(value) for key, value in results[column].fillna("").value_counts().to_dict().items() if str(key)}
 
 
+def _ai2_enrichment_context(root: Path) -> dict:
+    enriched_file = latest_file(root, "ai2", "ai2_candidate_input_*.shortlist.csv", fallback_keys=["portal_outputs"])
+    canonical_file = latest_file(root, "ai2", "ai2_enriched_candidates_*.csv")
+    path = canonical_file or enriched_file
+    frame = safe_read_csv(path, nrows=1000)
+    decision_counts = _status_counts(frame, "Decision") or _status_counts(frame, "ai2_status") or _status_counts(frame, "decision")
+    symbol_column = next((column for column in ["Symbol", "symbol", "ticker"] if column in frame.columns), "")
+    symbols = []
+    if symbol_column:
+        symbols = [str(symbol).upper() for symbol in frame[symbol_column].dropna().head(10)]
+    status = "ok" if path and not frame.empty else "missing"
+    if path and frame.empty:
+        status = "empty_or_unreadable"
+    return {
+        "status": status,
+        "file": file_status(path, "AI2 enriched shortlist"),
+        "row_count": len(frame),
+        "decision_counts": decision_counts,
+        "symbols": symbols,
+        "download_url": "/trading/ai2-enrichment/latest.csv" if path else "",
+    }
+
+
 def _latest_autopilot_action_notes(frame: pd.DataFrame) -> str:
     if frame.empty or "autopilot_action_notes" not in frame.columns:
         return ""
@@ -553,6 +576,7 @@ def trading_context(root: Path) -> dict:
             positions_file=positions_file,
             autopilot_file=autopilot_tick_file,
         ),
+        "ai2_enrichment": _ai2_enrichment_context(root),
         "candidate_pool_display_limit": CANDIDATE_POOL_DISPLAY_LIMIT,
         "candidate_pool_display_count": min(len(candidate_pool), CANDIDATE_POOL_DISPLAY_LIMIT),
         "candidate_pool_rows": _records_by_rank(candidate_pool, limit=CANDIDATE_POOL_DISPLAY_LIMIT),

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import AdapterEnrichmentResult
+from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import AI2HttpEnrichmentAdapter, AdapterEnrichmentResult, build_ai2_enrichment_adapter
 from stockml.trading_brain_v2.enrichment.ai2_enrichment_orchestrator import AI2EnrichmentOrchestrator
 from stockml.trading_brain_v2.shared.config import TradingBrainConfig
 from stockml.trading_brain_v2.shared.safety import assert_v2_live_execution_allowed
@@ -164,3 +164,64 @@ def test_no_live_execution_occurs_or_is_allowed(tmp_path: Path):
         assert str(exc) == "trading_brain_v2_live_execution_disabled"
     else:
         raise AssertionError("V2 live execution guard should remain closed")
+
+
+def test_http_adapter_persists_csv_response(tmp_path: Path, monkeypatch):
+    raw = _raw_candidate_file(tmp_path)
+
+    class FakeResponse:
+        headers = {"Content-Type": "text/csv"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b"Symbol,Decision\nATRC,Proceed candidate\n"
+
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["auth"] = req.headers.get("Authorization")
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter.request.urlopen", fake_urlopen)
+
+    result = AI2HttpEnrichmentAdapter(endpoint_url="https://ai2.example/enrich", api_key="secret", timeout_seconds=5).enrich(raw, output_dir=tmp_path / "out", run_id="run-1")
+
+    assert result.status == "ok"
+    assert result.enriched_file is not None
+    assert result.enriched_file.read_text(encoding="utf-8") == "Symbol,Decision\nATRC,Proceed candidate\n"
+    assert captured == {"url": "https://ai2.example/enrich", "auth": "Bearer secret", "timeout": 5.0}
+
+
+def test_http_adapter_persists_json_csv_response(tmp_path: Path, monkeypatch):
+    raw = _raw_candidate_file(tmp_path)
+
+    class FakeResponse:
+        headers = {"Content-Type": "application/json"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"csv":"Symbol,Decision\\nGCT,Proceed candidate\\n"}'
+
+    monkeypatch.setattr("stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter.request.urlopen", lambda *_args, **_kwargs: FakeResponse())
+
+    result = AI2HttpEnrichmentAdapter(endpoint_url="https://ai2.example/enrich").enrich(raw, output_dir=tmp_path / "out", run_id="run-json")
+
+    assert result.status == "ok"
+    assert result.enriched_file is not None
+    assert "GCT" in result.enriched_file.read_text(encoding="utf-8")
+
+
+def test_adapter_factory_uses_http_when_endpoint_configured():
+    assert isinstance(build_ai2_enrichment_adapter(endpoint_url="https://ai2.example/enrich"), AI2HttpEnrichmentAdapter)

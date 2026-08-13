@@ -52,6 +52,23 @@ def test_main_routes_return_200(client):
         assert response.status_code == 200
 
 
+def test_trading_ai2_enrichment_download_route_serves_latest_csv(tmp_path):
+    root = tmp_path / "portal_ai2"
+    write_csv(root / "data" / "ai2" / "ai2_enriched_candidates_20260813_100000.csv", [{"Symbol": "ATRC", "Decision": "Proceed candidate"}])
+    app = create_app(root)
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    page = client.get("/trading")
+    assert page.status_code == 200
+    assert b"Download latest AI2 enriched CSV" in page.data
+
+    response = client.get("/trading/ai2-enrichment/latest.csv")
+    assert response.status_code == 200
+    assert response.mimetype == "text/csv"
+    assert b"ATRC" in response.data
+
+
 def test_admin_page_exposes_repair_actions(client):
     response = client.get("/admin")
     assert response.status_code == 200

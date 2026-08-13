@@ -29,6 +29,7 @@ DATA_DIRS = {
     "near_miss": "data/trading/near_miss",
     "per_symbol_forecast": "data/trading/per_symbol_forecast",
     "holding_period": "data/trading/holding_period",
+    "ai2": "data/ai2",
 }
 
 

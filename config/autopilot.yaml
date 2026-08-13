@@ -10,6 +10,10 @@ trading_brain:
     input_mode: raw_candidate_pool
     output_dir: data/ai2
     fail_safe_on_error: true
+    endpoint_url: ''
+    api_key_env: AI2_API_KEY
+    timeout_seconds: 120
+    auth_header: Authorization
   v2_policy:
     max_live_gap_block_pct: 0.05
     max_live_gap_refresh_pct: 0.025

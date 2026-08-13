@@ -11,7 +11,7 @@ import pandas as pd
 from stockml.common.paths import PROJECT_ROOT
 from stockml.trading_brain_v2.audit.logger import AuditLogger, build_audit_event
 from stockml.trading_brain_v2.autopilot.ap_b01_gold_dataset_intake import GoldDatasetIntakeBlock
-from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import AI2EnrichmentAdapter, ExistingFileAI2EnrichmentAdapter
+from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import AI2EnrichmentAdapter, build_ai2_enrichment_adapter
 from stockml.trading_brain_v2.enrichment.ai2_enrichment_result import AI2EnrichmentResult
 from stockml.trading_brain_v2.shared.config import TradingBrainConfig, load_trading_brain_config
 
@@ -30,7 +30,13 @@ class AI2EnrichmentOrchestrator:
     ):
         self.root = Path(root) if root is not None else PROJECT_ROOT
         self.config = config or load_trading_brain_config()
-        self.adapter = adapter or ExistingFileAI2EnrichmentAdapter(search_root=self.root)
+        self.adapter = adapter or build_ai2_enrichment_adapter(
+            endpoint_url=self.config.ai2_enrichment_endpoint_url,
+            api_key=self.config.ai2_enrichment_api_key,
+            timeout_seconds=self.config.ai2_enrichment_timeout_seconds,
+            auth_header=self.config.ai2_enrichment_auth_header,
+            search_root=self.root,
+        )
         self.audit_logger = AuditLogger(audit_path) if audit_path is not None else None
 
     def enrich_and_intake(self, raw_candidate_file: Path | str, *, run_id: str | None = None) -> AI2EnrichmentResult:

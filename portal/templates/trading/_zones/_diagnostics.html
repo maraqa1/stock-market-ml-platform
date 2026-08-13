@@ -92,6 +92,41 @@
         {% endfor %}
       </div>
     </details>
+    <details data-key="diagnostics-ai2-enrichment" open>
+      <summary class="details-summary">AI2 Enrichment</summary>
+      <div class="diagnostic-grid">
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Status</span>
+          <strong class="diagnostic-card__value">{{ ai2_enrichment.status }}</strong>
+          <span>{{ pill("ok" if ai2_enrichment.status == "ok" else "missing") }}</span>
+        </article>
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">Rows</span>
+          <strong class="diagnostic-card__value">{{ number(ai2_enrichment.row_count or 0, 0) }}</strong>
+          <span class="text-tertiary">latest enriched shortlist</span>
+        </article>
+        <article class="diagnostic-card">
+          <span class="diagnostic-card__label">File</span>
+          <strong class="diagnostic-card__value">{{ ai2_enrichment.file.name }}</strong>
+          <span class="text-tertiary">{{ ai2_enrichment.file.timestamp or "not available" }}</span>
+        </article>
+      </div>
+      {% if ai2_enrichment.decision_counts %}
+        <p class="small text-tertiary">Decisions:
+          {% for key, value in ai2_enrichment.decision_counts.items() %}
+            {{ key }}={{ number(value, 0) }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </p>
+      {% endif %}
+      {% if ai2_enrichment.symbols %}
+        <p class="small text-tertiary">Sample: {{ ai2_enrichment.symbols|join(", ") }}</p>
+      {% endif %}
+      {% if ai2_enrichment.download_url %}
+        <a class="button button-ghost button-small" href="{{ ai2_enrichment.download_url }}">Download latest AI2 enriched CSV</a>
+      {% else %}
+        <div class="empty small">No AI2 enriched shortlist found yet. Run the AI2 enrichment step after candidate generation.</div>
+      {% endif %}
+    </details>
     <details data-key="diagnostics-cadence-settings" open>
       <summary class="details-summary">Cadence Settings</summary>
       <form class="settings-grid" method="post" action="/trading/timer-settings" aria-label="Portal cadence settings">

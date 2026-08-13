@@ -361,6 +361,15 @@ def create_app(root: Path | None = None) -> Flask:
             headers={"Content-Disposition": f"attachment; filename=trading_snapshot_{stamp}.csv"},
         )
 
+    @app.route("/trading/ai2-enrichment/latest.csv")
+    def trading_ai2_enrichment_latest_download():
+        path = latest_file(root_path(), "ai2", "ai2_enriched_candidates_*.csv")
+        if path is None:
+            path = latest_file(root_path(), "ai2", "ai2_candidate_input_*.shortlist.csv", fallback_keys=["portal_outputs"])
+        if path is None or not path.exists():
+            abort(404)
+        return send_from_directory(path.parent, path.name, mimetype="text/csv", as_attachment=True, download_name=path.name)
+
     @app.route("/trading/autopilot/<action>", methods=["POST"])
     def trading_autopilot(action: str):
         if action == "mode":

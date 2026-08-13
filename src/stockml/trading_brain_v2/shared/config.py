@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,11 @@ class TradingBrainConfig:
     ai2_enrichment_input_mode: str = "raw_candidate_pool"
     ai2_enrichment_output_dir: str = "data/ai2"
     ai2_enrichment_fail_safe_on_error: bool = True
+    ai2_enrichment_endpoint_url: str = ""
+    ai2_enrichment_api_key_env: str = "AI2_API_KEY"
+    ai2_enrichment_api_key: str = ""
+    ai2_enrichment_timeout_seconds: float = 120.0
+    ai2_enrichment_auth_header: str = "Authorization"
     max_live_gap_block_pct: float = 0.05
     max_live_gap_refresh_pct: float = 0.025
     min_price: float = 0.0
@@ -148,6 +154,11 @@ def load_trading_brain_config(path: Path | str | None = CONFIG_PATH) -> TradingB
         ai2_enrichment_input_mode=str(ai2_enrichment.get("input_mode") or "raw_candidate_pool").strip() or "raw_candidate_pool",
         ai2_enrichment_output_dir=str(ai2_enrichment.get("output_dir") or "data/ai2").strip() or "data/ai2",
         ai2_enrichment_fail_safe_on_error=_bool(ai2_enrichment.get("fail_safe_on_error"), True),
+        ai2_enrichment_endpoint_url=str(ai2_enrichment.get("endpoint_url") or os.environ.get("AI2_ENRICHMENT_ENDPOINT", "")).strip(),
+        ai2_enrichment_api_key_env=str(ai2_enrichment.get("api_key_env") or "AI2_API_KEY").strip() or "AI2_API_KEY",
+        ai2_enrichment_api_key=str(os.environ.get(str(ai2_enrichment.get("api_key_env") or "AI2_API_KEY").strip() or "AI2_API_KEY", "")).strip(),
+        ai2_enrichment_timeout_seconds=_float(ai2_enrichment.get("timeout_seconds"), 120.0),
+        ai2_enrichment_auth_header=str(ai2_enrichment.get("auth_header") or "Authorization").strip() or "Authorization",
         max_live_gap_block_pct=_float(policy.get("max_live_gap_block_pct"), 0.05),
         max_live_gap_refresh_pct=_float(policy.get("max_live_gap_refresh_pct"), 0.025),
         min_price=_float(policy.get("min_price"), 0.0),

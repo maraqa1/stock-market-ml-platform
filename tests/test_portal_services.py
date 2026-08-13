@@ -352,6 +352,24 @@ def test_trading_context_exposes_expanded_candidate_shortlist(tmp_path):
     assert ctx["candidate_pool_rows"][-1]["symbol"] == "T150"
 
 
+def test_trading_context_exposes_ai2_enriched_artifact(tmp_path):
+    write_csv(
+        tmp_path / "data" / "ai2" / "ai2_enriched_candidates_20260813_100000.csv",
+        [
+            {"Symbol": "ATRC", "Decision": "Proceed candidate"},
+            {"Symbol": "ATAI", "Decision": "Review before execution"},
+        ],
+    )
+
+    ctx = trading_context(tmp_path)
+
+    assert ctx["ai2_enrichment"]["status"] == "ok"
+    assert ctx["ai2_enrichment"]["row_count"] == 2
+    assert ctx["ai2_enrichment"]["decision_counts"] == {"Proceed candidate": 1, "Review before execution": 1}
+    assert ctx["ai2_enrichment"]["symbols"] == ["ATRC", "ATAI"]
+    assert ctx["ai2_enrichment"]["download_url"] == "/trading/ai2-enrichment/latest.csv"
+
+
 def test_trading_context_rejected_trimmed_sources(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",
