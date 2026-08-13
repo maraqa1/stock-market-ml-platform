@@ -126,6 +126,9 @@ class AutoOpenConfig:
     validation_max_new_orders_per_cycle: int = 1
     validation_max_new_orders_per_day: int = 2
     validation_max_open_positions_total: int = 3
+    entry_price_guard_enabled: bool = True
+    max_entry_price_drift_bps: float = 100.0
+    require_entry_price_within_expected_net_edge: bool = True
 
 
 def _aware(value: datetime | None = None) -> datetime:
@@ -165,6 +168,95 @@ def _bool_flag(value: Any) -> bool | None:
     if text in {"false", "0", "no"}:
         return False
     return None
+
+
+def _ai2_runtime_block_reason(candidate: dict[str, Any], details: dict[str, Any]) -> str:
+    evidence = {**candidate, **details}
+    source = str(evidence.get("model_evidence_source") or evidence.get("candidate_source") or "").lower()
+    has_ai2_fields = any(key in evidence for key in ("ai2_decision_status", "ai2_auto_open_allowed", "ai2_decision"))
+    if "ai2" not in source and not has_ai2_fields:
+        return ""
+
+    status = str(evidence.get("ai2_decision_status") or evidence.get("ai2_status") or "").strip().lower()
+    allowed = _bool_flag(evidence.get("ai2_auto_open_allowed"))
+    if status in {"refresh_required", "refresh", "do_not_execute_until_refreshed"}:
+        return "ai2_refresh_required"
+    if allowed is False:
+        return "ai2_auto_open_not_allowed"
+    if status and status not in {"proceed", "proceed_candidate"}:
+        return "ai2_not_proceed"
+    return ""
+
+
+def _entry_reference_price(evidence: dict[str, Any]) -> float | None:
+    for key in (
+        "candidate_reference_price",
+        "decision_price",
+        "ai2_latest_intraday",
+        "latest_intraday",
+        "latest_intraday_price",
+        "current_price",
+        "close_price",
+        "close",
+    ):
+        parsed = _optional_float(evidence.get(key))
+        if parsed is not None and parsed > 0:
+            return parsed
+    return None
+
+
+def _adverse_entry_drift_bps(*, side: str, reference_price: float | None, limit_price: float | None) -> float | None:
+    if reference_price is None or reference_price <= 0 or limit_price is None or limit_price <= 0:
+        return None
+    side_text = str(side or "").strip().lower()
+    if side_text == "buy":
+        return max(0.0, ((limit_price - reference_price) / reference_price) * 10000.0)
+    if side_text == "sell":
+        return max(0.0, ((reference_price - limit_price) / reference_price) * 10000.0)
+    return None
+
+
+def entry_price_guard_block_reason(
+    candidate: dict[str, Any],
+    details: dict[str, Any],
+    order: dict[str, Any],
+    *,
+    cfg: AutoOpenConfig,
+) -> tuple[str, dict[str, Any]]:
+    if not cfg.entry_price_guard_enabled:
+        return "", {}
+    if str(order.get("type") or "").lower() != "limit":
+        return "", {}
+
+    evidence = {**candidate, **details}
+    reference_price = _entry_reference_price(evidence)
+    limit_price = _optional_float(order.get("limit_price"))
+    drift_bps = _adverse_entry_drift_bps(
+        side=str(order.get("side") or evidence.get("side") or ""),
+        reference_price=reference_price,
+        limit_price=limit_price,
+    )
+    guard_details = {
+        "entry_price_guard_enabled": True,
+        "entry_price_reference": reference_price,
+        "entry_limit_price": limit_price,
+        "entry_price_adverse_drift_bps": drift_bps,
+        "entry_price_max_drift_bps": cfg.max_entry_price_drift_bps,
+    }
+    if drift_bps is None:
+        return "", guard_details
+    if drift_bps > float(cfg.max_entry_price_drift_bps):
+        return "entry_price_drift_too_wide", guard_details
+
+    expected_edge = _optional_float(
+        evidence.get("expected_net_edge_bps")
+        or evidence.get("net_expected_return_bps")
+        or evidence.get("validated_expected_return_bps")
+    )
+    guard_details["entry_price_expected_edge_bps"] = expected_edge
+    if cfg.require_entry_price_within_expected_net_edge and expected_edge is not None and expected_edge > 0 and drift_bps > expected_edge:
+        return "entry_price_drift_exceeds_expected_edge", guard_details
+    return "", guard_details
 
 
 def per_symbol_forecast_quality_block_reason(details: dict[str, Any], cfg: AutoOpenConfig) -> str:
@@ -366,6 +458,9 @@ def _default_payload() -> dict[str, Any]:
             "max_short_positions": 15,
             "near_miss_entries_with_open_positions": True,
             "close_automation_mode": "automatic",
+            "entry_price_guard_enabled": True,
+            "max_entry_price_drift_bps": 100,
+            "require_entry_price_within_expected_net_edge": True,
         },
     }
 
@@ -469,6 +564,9 @@ def load_auto_open_config(path: Path | str | None = None, *, root: Path | str | 
         validation_max_new_orders_per_cycle=int(section.get("validation_max_new_orders_per_cycle", 1)),
         validation_max_new_orders_per_day=int(section.get("validation_max_new_orders_per_day", 2)),
         validation_max_open_positions_total=int(section.get("validation_max_open_positions_total", 3)),
+        entry_price_guard_enabled=bool(section.get("entry_price_guard_enabled", True)),
+        max_entry_price_drift_bps=float(section.get("max_entry_price_drift_bps", 100)),
+        require_entry_price_within_expected_net_edge=bool(section.get("require_entry_price_within_expected_net_edge", True)),
     )
 
 
@@ -1574,6 +1672,13 @@ def apply_auto_open(
             scan_payload,
             event_key=scan_event_key,
         )
+        ai2_block_reason = _ai2_runtime_block_reason(candidate, details)
+        if ai2_block_reason:
+            blocked += 1
+            ai2_details = {**details, "ai2_runtime_status": "blocked", "ai2_runtime_reason": ai2_block_reason}
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=0.0, verdict="blocked", block_reason=ai2_block_reason, details=ai2_details, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:{ai2_block_reason}")
+            continue
         if _is_same_day_momentum_candidate(details):
             details.setdefault("strategy_stream", "same_day_momentum")
             details.setdefault("trading_stream", "same_day_momentum")
@@ -1781,6 +1886,7 @@ def apply_auto_open(
             "quote_executable_price": policy.executable_price,
             "quote_reference_price": policy.reference_price,
             "quote_executable_price_deviation_bps": policy.executable_price_deviation_bps,
+            "candidate_reference_price": quote_data.get("candidate_reference_price"),
             "expected_move_bps": policy.expected_move_bps,
             "estimated_cost_bps": policy.estimated_cost_bps,
             "expected_net_edge_bps": policy.expected_net_edge_bps,
@@ -1820,6 +1926,19 @@ def apply_auto_open(
         }
         if policy.order_type == "limit":
             order["limit_price"] = limit_price
+        entry_block_reason, entry_guard_details = entry_price_guard_block_reason(
+            candidate,
+            {**details, **asset_details},
+            order,
+            cfg=cfg,
+        )
+        if entry_guard_details:
+            asset_details = {**asset_details, **entry_guard_details}
+        if entry_block_reason:
+            blocked += 1
+            _record_open(symbol=symbol, promotion_score=candidate.get("promotion_score"), size_usd=order_size, verdict="blocked", block_reason=entry_block_reason, details={**asset_details, "order": order}, engine=db, now=stamp)
+            notes.append(f"{symbol}:blocked:{entry_block_reason}")
+            continue
         qty = _whole_share_qty(order_size, current_price)
         if planned_qty is not None and qty > planned_qty:
             qty = planned_qty

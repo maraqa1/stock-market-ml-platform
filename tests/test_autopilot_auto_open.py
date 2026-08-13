@@ -2319,6 +2319,83 @@ def test_auto_open_uses_fresh_quote_price_for_extended_limit_and_quantity():
     assert row["details"]["live_ask"] == 50.0
 
 
+def test_auto_open_blocks_ai2_refresh_required_candidate_before_submission():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True})
+    candidate = _candidate("GSHD", 0.72)
+    candidate.update(
+        {
+            "model_evidence_source": "ai2_enriched_execution_ranked_candidates",
+            "ai2_decision_status": "refresh_required",
+            "ai2_auto_open_allowed": False,
+            "order_eligible": True,
+        }
+    )
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, min_position_value_usd=1),
+        alpaca_cfg=_trade_config(extended_hours=True),
+        client=client,
+        now=datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "ai2_refresh_required" in result["autopilot_open_notes"]
+    assert client.orders == []
+
+
+def test_auto_open_blocks_limit_entry_when_drift_exceeds_expected_edge():
+    engine = _engine()
+    client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True})
+    quote_provider = FakeQuoteProvider(
+        {
+            "bid": 68.06,
+            "ask": 68.08,
+            "quote_ts": datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc),
+            "fetched_at": datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc),
+        }
+    )
+    candidate = _candidate("GSHD", 0.72)
+    candidate.update(
+        {
+            "current_price": 65.55,
+            "model_evidence_source": "ai2_enriched_execution_ranked_candidates",
+            "ai2_decision_status": "proceed",
+            "ai2_auto_open_allowed": True,
+            "order_eligible": True,
+            "expected_net_edge_bps": 17.8,
+        }
+    )
+
+    result = apply_auto_open(
+        [candidate],
+        [],
+        mode="paper_autopilot",
+        engine=engine,
+        config=AutoOpenConfig(open_enabled=True, max_positions=5, min_position_value_usd=1),
+        alpaca_cfg=_trade_config(extended_hours=True, overnight_limit_buffer_bps=50),
+        client=client,
+        quote_provider=quote_provider,
+        now=datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["autopilot_open_submitted"] == 0
+    assert result["autopilot_open_blocked"] == 1
+    assert "entry_price_drift_too_wide" in result["autopilot_open_notes"]
+    assert client.orders == []
+    with engine.connect() as conn:
+        row = conn.execute(select(autopilot_open_log)).mappings().one()
+    assert row["block_reason"] == "entry_price_drift_too_wide"
+    assert row["details"]["entry_price_reference"] == 65.55
+    assert row["details"]["entry_limit_price"] > 68
+    assert row["details"]["entry_price_adverse_drift_bps"] > 300
+
+
 def test_auto_open_blocks_extended_order_when_quote_fetch_fails():
     engine = _engine()
     client = FakeClient(asset={"tradable": True, "status": "active", "fractionable": True, "shortable": True, "overnight_tradable": True})
