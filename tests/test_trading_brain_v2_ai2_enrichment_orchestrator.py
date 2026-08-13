@@ -277,3 +277,38 @@ trading_brain:
     assert cfg.ai2_enrichment_endpoint_url == "https://claude.example/enrich"
     assert cfg.ai2_enrichment_api_key_env == "CLAUDE_API_KEY"
     assert cfg.ai2_enrichment_api_key == "secret-value"
+
+
+def test_config_reads_standalone_ai2_enrichment_yaml(tmp_path: Path, monkeypatch):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    autopilot_path = config_dir / "autopilot.yaml"
+    autopilot_path.write_text(
+        """
+trading_brain:
+  active_version: v2
+  v2_shadow_mode: true
+""",
+        encoding="utf-8",
+    )
+    (config_dir / "ai2_enrichment.yaml").write_text(
+        """
+ai2_enrichment:
+  enabled: true
+  provider: ai2
+  endpoint_url: https://ai2.example/enrich
+  api_key_env: AI2_API_KEY
+  timeout_seconds: 45
+  output_dir: data/ai2
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AI2_API_KEY", "secret-value")
+
+    cfg = load_trading_brain_config(autopilot_path)
+
+    assert cfg.ai2_enrichment_enabled is True
+    assert cfg.ai2_enrichment_endpoint_url == "https://ai2.example/enrich"
+    assert cfg.ai2_enrichment_api_key_env == "AI2_API_KEY"
+    assert cfg.ai2_enrichment_api_key == "secret-value"
+    assert cfg.ai2_enrichment_timeout_seconds == 45

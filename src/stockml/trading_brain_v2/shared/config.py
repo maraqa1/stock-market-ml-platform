@@ -132,12 +132,20 @@ def assert_startup_safety(config: TradingBrainConfig, *, policy_available: bool 
             raise RuntimeError("trading_brain_v2_paper_execution_not_enabled")
 
 
+def _load_yaml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _companion_ai2_config_path(config_path: Path) -> Path:
+    return config_path.parent / "ai2_enrichment.yaml"
+
+
 def load_trading_brain_config(path: Path | str | None = CONFIG_PATH) -> TradingBrainConfig:
-    payload: dict[str, Any] = {}
     config_path = Path(path) if path is not None else CONFIG_PATH
-    if config_path.exists():
-        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        payload = loaded if isinstance(loaded, dict) else {}
+    payload = _load_yaml(config_path)
     section = payload.get("trading_brain")
     section = section if isinstance(section, dict) else {}
     legacy_v2_section = payload.get("trading_brain_v2")
@@ -145,6 +153,10 @@ def load_trading_brain_config(path: Path | str | None = CONFIG_PATH) -> TradingB
     policy = section.get("v2_policy")
     policy = policy if isinstance(policy, dict) else {}
     ai2_enrichment = section.get("ai2_enrichment") or legacy_v2_section.get("ai2_enrichment")
+    if not isinstance(ai2_enrichment, dict):
+        standalone_payload = _load_yaml(_companion_ai2_config_path(config_path))
+        standalone_section = standalone_payload.get("ai2_enrichment")
+        ai2_enrichment = standalone_section if isinstance(standalone_section, dict) else {}
     ai2_enrichment = ai2_enrichment if isinstance(ai2_enrichment, dict) else {}
     enrichment_provider = str(ai2_enrichment.get("provider") or "ai2").strip().lower() or "ai2"
     provider_env_prefix = enrichment_provider.upper().replace("-", "_")
