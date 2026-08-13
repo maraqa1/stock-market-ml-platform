@@ -165,10 +165,16 @@ def _price_check_clear(row: dict[str, Any], warnings: tuple[str, ...]) -> bool:
     return status == "" or status.lower() in {"order_ready", "none"}
 
 
-def _return_value(row: dict[str, Any], pct_name: str, *decimal_names: str, default: float = 0.0) -> float:
-    if _text(row.get(pct_name)):
-        return _float(row, pct_name, default=default * 100.0) / 100.0
-    return _float(row, *decimal_names, default=default)
+def _return_value(row: dict[str, Any], *names: str, default: float = 0.0) -> float:
+    for name in names:
+        if not _text(row.get(name)):
+            continue
+        value = _float(row, name, default=default)
+        normalized_name = name.lower()
+        if normalized_name.endswith("_pct") or "%" in normalized_name or normalized_name in {"1d return", "5d return", "20d vol."}:
+            return value / 100.0
+        return value
+    return default
 
 
 def _stable_id(prefix: str, row: dict[str, Any], *parts: str) -> str:

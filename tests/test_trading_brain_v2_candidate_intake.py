@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from stockml.trading_brain_v2.autopilot.ap_b01_gold_dataset_intake import GoldDatasetIntakeBlock
 from stockml.trading_brain_v2.autopilot.ap_b02_candidate_normalizer import CandidateNormalizerBlock
@@ -270,9 +271,9 @@ def test_ai2_enriched_bridge_schema_is_tradable_when_clean():
     assert by_symbol["CDNA"].latest_eod_date == "2026-08-13"
     assert by_symbol["CDNA"].close_price == 47.31
     assert by_symbol["CDNA"].intraday_price == 47.25
-    assert by_symbol["CDNA"].one_day_return == 0.0017
-    assert by_symbol["CDNA"].five_day_return == 0.0398
-    assert by_symbol["CDNA"].twenty_day_volatility == 0.0464
+    assert by_symbol["CDNA"].one_day_return == pytest.approx(0.0017)
+    assert by_symbol["CDNA"].five_day_return == pytest.approx(0.0398)
+    assert by_symbol["CDNA"].twenty_day_volatility == pytest.approx(0.0464)
     assert by_symbol["CDNA"].eod_volume == 1_234_567
     assert by_symbol["CDNA"].price_check_clear is True
     assert by_symbol["AEHR"].ai2_status == "refresh_required"
