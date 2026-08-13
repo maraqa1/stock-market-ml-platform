@@ -41,6 +41,10 @@ AI2_OUTPUT_COLUMNS = [
     "ai2_eod_volume",
     "ai2_volatility_20d_pct",
     "ai2_notes",
+    "ai2_warning_codes",
+    "ai2_execution_book",
+    "ai2_machine_action",
+    "ai2_sizing_multiplier",
     "ai2_auto_open_allowed",
     "ai2_block_reason",
 ]
@@ -138,6 +142,11 @@ def normalize_ai2_enrichment(frame: pd.DataFrame, *, source_file: Path | str | N
     out["ai2_eod_volume"] = _num_column(frame, "ai2_eod_volume", "EOD volume", "eod_volume").reindex(out.index)
     out["ai2_volatility_20d_pct"] = _num_column(frame, "ai2_volatility_20d_pct", "20D vol.", "20D vol", "20d_volatility", "volatility_20d_pct").reindex(out.index)
     out["ai2_notes"] = _column(frame, "ai2_notes", "Why / notes", "Checks / notes", "notes").map(_clean_text).reindex(out.index).fillna("")
+    out["ai2_warning_codes"] = out.apply(_warning_codes, axis=1)
+    policy = out.apply(_execution_policy_row, axis=1, result_type="expand")
+    out["ai2_execution_book"] = policy["ai2_execution_book"]
+    out["ai2_machine_action"] = policy["ai2_machine_action"]
+    out["ai2_sizing_multiplier"] = policy["ai2_sizing_multiplier"]
     out["ai2_source_file"] = str(source_file or "")
 
     out = out.drop_duplicates(subset=["symbol"], keep="first").reset_index(drop=True)
@@ -193,9 +202,18 @@ def apply_ai2_enrichment(
     if "order_ready" in merged.columns:
         existing_ready &= _bool_series(merged, "order_ready")
 
-    allowed_by_ai2 = status.eq("proceed")
+    if "ai2_machine_action" not in merged.columns or merged["ai2_machine_action"].fillna("").astype(str).str.strip().eq("").any():
+        policy = merged.apply(_execution_policy_row, axis=1, result_type="expand")
+        merged["ai2_execution_book"] = policy["ai2_execution_book"]
+        merged["ai2_machine_action"] = policy["ai2_machine_action"]
+        merged["ai2_sizing_multiplier"] = policy["ai2_sizing_multiplier"]
+    if "ai2_warning_codes" not in merged.columns or merged["ai2_warning_codes"].fillna("").astype(str).str.strip().eq("").any():
+        merged["ai2_warning_codes"] = merged.apply(_warning_codes, axis=1)
+
+    machine_action = merged["ai2_machine_action"].fillna("").astype(str).str.upper()
+    allowed_by_ai2 = status.eq("proceed") & machine_action.eq("ENTER")
     if cfg.allow_review_for_auto_open:
-        allowed_by_ai2 |= status.eq("review")
+        allowed_by_ai2 |= status.eq("review") & machine_action.eq("ENTER_REDUCED")
     if not cfg.enabled:
         merged["ai2_auto_open_allowed"] = False
         merged["ai2_block_reason"] = "ai2_bridge_disabled"
@@ -207,7 +225,10 @@ def apply_ai2_enrichment(
     merged.loc[existing_ready & status.eq("missing"), "ai2_block_reason"] = "ai2_evidence_missing"
     merged.loc[existing_ready & status.eq("unknown"), "ai2_block_reason"] = "ai2_decision_unknown"
     merged.loc[existing_ready & status.eq("review") & ~cfg.allow_review_for_auto_open, "ai2_block_reason"] = "ai2_review_required"
+    merged.loc[existing_ready & status.eq("review") & cfg.allow_review_for_auto_open & ~machine_action.eq("ENTER_REDUCED"), "ai2_block_reason"] = "ai2_review_not_tradable"
     merged.loc[existing_ready & status.eq("refresh_required") & cfg.block_refresh_required, "ai2_block_reason"] = "ai2_refresh_required"
+    merged.loc[existing_ready & machine_action.eq("REFRESH_AND_RECHECK"), "ai2_block_reason"] = "ai2_refresh_required"
+    merged.loc[existing_ready & machine_action.eq("BLOCK") & merged["ai2_block_reason"].eq(""), "ai2_block_reason"] = "ai2_policy_blocked"
     merged.loc[merged["ai2_auto_open_allowed"], "ai2_block_reason"] = ""
     return merged
 
@@ -250,6 +271,47 @@ def _clean_text(value: Any) -> str:
     except Exception:
         pass
     return str(value).strip()
+
+
+def _warning_codes(row: pd.Series) -> str:
+    notes = _clean_text(row.get("ai2_notes")).lower()
+    codes: list[str] = []
+    if "high_volatility" in notes or "high volatility" in notes:
+        codes.append("high_volatility")
+    if "large_1d_move" in notes or "large 1-day" in notes or "large 1d" in notes:
+        codes.append("large_1d_move")
+    if "large_intraday_move" in notes or "large intraday" in notes:
+        codes.append("large_intraday_move")
+    if "extended momentum" in notes or "extended_5d_momentum" in notes:
+        codes.append("extended_5d_momentum")
+    if "price_checks_clear" in notes or "clean price-check" in notes:
+        codes.append("price_checks_clear")
+    if "price_check_failed" in notes or "price check failed" in notes:
+        codes.append("price_check_failed")
+    return ";".join(dict.fromkeys(codes))
+
+
+def _execution_policy_row(row: pd.Series) -> dict[str, Any]:
+    status = _clean_text(row.get("ai2_decision_status")).lower()
+    warnings = set(str(row.get("ai2_warning_codes") or _warning_codes(row)).split(";")) - {""}
+    vol = _to_number(row.get("ai2_volatility_20d_pct"))
+    five_day = _to_number(row.get("ai2_return_5d_pct"))
+
+    if status == "proceed":
+        return {"ai2_execution_book": "core", "ai2_machine_action": "ENTER", "ai2_sizing_multiplier": 1.0}
+    if status == "refresh_required":
+        return {"ai2_execution_book": "blocked", "ai2_machine_action": "REFRESH_AND_RECHECK", "ai2_sizing_multiplier": 0.0}
+    if status == "review":
+        if "price_check_failed" in warnings:
+            return {"ai2_execution_book": "blocked", "ai2_machine_action": "BLOCK", "ai2_sizing_multiplier": 0.0}
+        if "large_intraday_move" in warnings or "large_1d_move" in warnings:
+            return {"ai2_execution_book": "blocked", "ai2_machine_action": "REFRESH_AND_RECHECK", "ai2_sizing_multiplier": 0.0}
+        if five_day is not None and abs(five_day) > 30:
+            return {"ai2_execution_book": "blocked", "ai2_machine_action": "BLOCK", "ai2_sizing_multiplier": 0.0}
+        if (vol is not None and vol > 7) or "high_volatility" in warnings:
+            return {"ai2_execution_book": "reduced", "ai2_machine_action": "ENTER_REDUCED", "ai2_sizing_multiplier": 0.25}
+        return {"ai2_execution_book": "reduced", "ai2_machine_action": "ENTER_REDUCED", "ai2_sizing_multiplier": 0.35}
+    return {"ai2_execution_book": "blocked", "ai2_machine_action": "BLOCK", "ai2_sizing_multiplier": 0.0}
 
 
 def _to_number(value: Any) -> float | None:

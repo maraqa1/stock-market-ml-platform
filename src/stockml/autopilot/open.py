@@ -183,6 +183,11 @@ def _ai2_runtime_block_reason(candidate: dict[str, Any], details: dict[str, Any]
         return "ai2_refresh_required"
     if allowed is False:
         return "ai2_auto_open_not_allowed"
+    machine_action = str(evidence.get("ai2_machine_action") or "").strip().upper()
+    if machine_action in {"REFRESH_AND_RECHECK", "BLOCK"}:
+        return "ai2_refresh_required" if machine_action == "REFRESH_AND_RECHECK" else "ai2_policy_blocked"
+    if status == "review" and allowed is True and machine_action == "ENTER_REDUCED":
+        return ""
     if status and status not in {"proceed", "proceed_candidate"}:
         return "ai2_not_proceed"
     return ""
@@ -1718,6 +1723,11 @@ def apply_auto_open(
             order_size = round(size * cfg.flat_account_fallback_size_multiplier, 2)
         else:
             order_size = size
+        ai2_multiplier = _optional_float(details.get("ai2_sizing_multiplier", candidate.get("ai2_sizing_multiplier")))
+        if ai2_multiplier is not None and 0 <= ai2_multiplier < 1:
+            order_size = round(order_size * ai2_multiplier, 2)
+            details["ai2_adjusted_size_usd"] = order_size
+            details["ai2_size_multiplier_applied"] = ai2_multiplier
         planned_notional, planned_qty = _planned_order_constraints(candidate, details)
         if planned_notional is not None:
             order_size = round(min(order_size, planned_notional), 2)

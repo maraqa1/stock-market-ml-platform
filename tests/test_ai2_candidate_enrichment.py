@@ -132,8 +132,74 @@ def test_ai2_review_and_refresh_do_not_auto_open_by_default():
 
     assert bool(merged.loc[merged["symbol"].eq("ATRC"), "ai2_auto_open_allowed"].iloc[0]) is False
     assert merged.loc[merged["symbol"].eq("ATRC"), "ai2_block_reason"].iloc[0] == "ai2_review_required"
+    assert merged.loc[merged["symbol"].eq("ATRC"), "ai2_execution_book"].iloc[0] == "reduced"
+    assert merged.loc[merged["symbol"].eq("ATRC"), "ai2_machine_action"].iloc[0] == "ENTER_REDUCED"
+    assert merged.loc[merged["symbol"].eq("ATRC"), "ai2_sizing_multiplier"].iloc[0] == 0.35
     assert bool(merged.loc[merged["symbol"].eq("FRPT"), "ai2_auto_open_allowed"].iloc[0]) is False
     assert merged.loc[merged["symbol"].eq("FRPT"), "ai2_block_reason"].iloc[0] == "ai2_refresh_required"
+    assert merged.loc[merged["symbol"].eq("FRPT"), "ai2_execution_book"].iloc[0] == "blocked"
+    assert merged.loc[merged["symbol"].eq("FRPT"), "ai2_machine_action"].iloc[0] == "REFRESH_AND_RECHECK"
+
+
+def test_ai2_proceed_is_core_book_full_size():
+    merged = apply_ai2_enrichment(
+        _base_candidates(),
+        pd.DataFrame([{"symbol": "ATRC", "ai2_decision": "Proceed candidate", "ai2_decision_status": "proceed", "ai2_notes": "ok: price_checks_clear"}]),
+        config=Ai2EnrichmentConfig(enabled=True),
+    )
+
+    row = merged.loc[merged["symbol"].eq("ATRC")].iloc[0]
+    assert bool(row["ai2_auto_open_allowed"]) is True
+    assert row["ai2_execution_book"] == "core"
+    assert row["ai2_machine_action"] == "ENTER"
+    assert row["ai2_sizing_multiplier"] == 1.0
+
+
+def test_ai2_review_large_move_requires_refresh_even_when_review_lane_enabled():
+    base = _base_candidates().iloc[[0]].assign(symbol="APPS")
+    merged = apply_ai2_enrichment(
+        base,
+        pd.DataFrame(
+            [{
+                "symbol": "APPS",
+                "ai2_decision": "Review before execution",
+                "ai2_decision_status": "review",
+                "ai2_return_5d_pct": 20.0,
+                "ai2_notes": "warning: large_intraday_move",
+            }]
+        ),
+        config=Ai2EnrichmentConfig(enabled=True, allow_review_for_auto_open=True),
+    )
+
+    row = merged.loc[merged["symbol"].eq("APPS")].iloc[0]
+    assert bool(row["ai2_auto_open_allowed"]) is False
+    assert row["ai2_execution_book"] == "blocked"
+    assert row["ai2_machine_action"] == "REFRESH_AND_RECHECK"
+    assert row["ai2_block_reason"] == "ai2_refresh_required"
+
+
+def test_ai2_review_can_only_be_reduced_when_lane_enabled():
+    base = _base_candidates().iloc[[0]].assign(symbol="SAFE")
+    merged = apply_ai2_enrichment(
+        base,
+        pd.DataFrame(
+            [{
+                "symbol": "SAFE",
+                "ai2_decision": "Review before execution",
+                "ai2_decision_status": "review",
+                "ai2_volatility_20d_pct": 8.0,
+                "ai2_notes": "warning: high_volatility",
+            }]
+        ),
+        config=Ai2EnrichmentConfig(enabled=True, allow_review_for_auto_open=True),
+    )
+
+    row = merged.loc[merged["symbol"].eq("SAFE")].iloc[0]
+    assert bool(row["ai2_auto_open_allowed"]) is True
+    assert row["ai2_execution_book"] == "reduced"
+    assert row["ai2_machine_action"] == "ENTER_REDUCED"
+    assert row["ai2_sizing_multiplier"] == 0.25
+    assert row["ai2_block_reason"] == ""
 
 
 def test_ai2_refresh_market_data_phrase_is_refresh_required():
