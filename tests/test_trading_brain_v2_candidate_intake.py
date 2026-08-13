@@ -86,6 +86,19 @@ def _ai2_enriched_bridge_row(**overrides):
         "ai2_return_5d_pct": 3.98,
         "ai2_eod_volume": 1_234_567,
         "ai2_volatility_20d_pct": 4.64,
+        "ai2_realtime_price": 47.4,
+        "ai2_quote_timestamp": "2026-08-13T12:34:00Z",
+        "ai2_quote_age_seconds": 45,
+        "ai2_sma_20": 45.9,
+        "ai2_sma_50": 43.8,
+        "ai2_rsi_14": 61.5,
+        "ai2_atr_14": 1.2,
+        "ai2_news_count": 3,
+        "ai2_sentiment_score": 0.31,
+        "ai2_news_attention_score": 0.42,
+        "ai2_exchange": "NASDAQ",
+        "ai2_currency": "USD",
+        "ai2_security_type": "Common Stock",
         "ai2_notes": "execution_candidate; risk medium; ok: price_checks_clear",
     }
     row.update(overrides)
@@ -271,6 +284,19 @@ def test_ai2_enriched_bridge_schema_is_tradable_when_clean():
     assert by_symbol["CDNA"].latest_eod_date == "2026-08-13"
     assert by_symbol["CDNA"].close_price == 47.31
     assert by_symbol["CDNA"].intraday_price == 47.25
+    assert by_symbol["CDNA"].realtime_price == 47.4
+    assert by_symbol["CDNA"].quote_timestamp == "2026-08-13T12:34:00Z"
+    assert by_symbol["CDNA"].quote_age_seconds == 45
+    assert by_symbol["CDNA"].sma_20 == 45.9
+    assert by_symbol["CDNA"].sma_50 == 43.8
+    assert by_symbol["CDNA"].rsi_14 == 61.5
+    assert by_symbol["CDNA"].atr_14 == 1.2
+    assert by_symbol["CDNA"].news_count == 3
+    assert by_symbol["CDNA"].sentiment_score == 0.31
+    assert by_symbol["CDNA"].news_attention_score == 0.42
+    assert by_symbol["CDNA"].exchange == "NASDAQ"
+    assert by_symbol["CDNA"].currency == "USD"
+    assert by_symbol["CDNA"].security_type == "Common Stock"
     assert by_symbol["CDNA"].one_day_return == pytest.approx(0.0017)
     assert by_symbol["CDNA"].five_day_return == pytest.approx(0.0398)
     assert by_symbol["CDNA"].twenty_day_volatility == pytest.approx(0.0464)

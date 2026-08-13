@@ -121,6 +121,19 @@ class Candidate(SerializableModel):
     price_check_clear: bool
     source_rank: int = 0
     intraday_price: float = 0.0
+    realtime_price: float = 0.0
+    quote_timestamp: str = ""
+    quote_age_seconds: float = 0.0
+    sma_20: float = 0.0
+    sma_50: float = 0.0
+    rsi_14: float = 0.0
+    atr_14: float = 0.0
+    news_count: int = 0
+    sentiment_score: float = 0.0
+    news_attention_score: float = 0.0
+    exchange: str = ""
+    currency: str = ""
+    security_type: str = ""
     notes: str = ""
     raw_source_fields: dict[str, Any] = field(default_factory=dict)
     warning_codes: tuple[str, ...] = field(default_factory=tuple)
