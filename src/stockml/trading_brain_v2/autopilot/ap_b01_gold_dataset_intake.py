@@ -12,6 +12,7 @@ from stockml.trading_brain_v2.shared.types import BrainBlockResult, PlaceholderB
 
 DEFAULT_CANDIDATE_PATTERNS = (
     "ai2_candidate_input_*.shortlist.csv",
+    "ai2_enriched_execution_ranked_candidates_*.csv",
     "ai2_enriched_candidates_*.csv",
     "execution_ranked_candidates_*.shortlist.csv",
     "execution_ranked_candidates_*.csv",

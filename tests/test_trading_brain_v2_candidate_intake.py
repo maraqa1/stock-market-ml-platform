@@ -58,6 +58,39 @@ def _real_ai2_row(**overrides):
     return row
 
 
+def _ai2_enriched_bridge_row(**overrides):
+    row = {
+        "execution_rank": 1,
+        "raw_rank": 1,
+        "symbol": "CDNA",
+        "side": "buy",
+        "status": "executable",
+        "execution_domain": "execution_candidate",
+        "executable": True,
+        "order_eligible": True,
+        "final_execution_side": "LONG",
+        "approved_notional": 250,
+        "suggested_quantity": 5,
+        "risk_tier": "medium",
+        "validated_expected_return_bps": 31.8,
+        "signal_id": "sig-cdna",
+        "candidate_id": "cand-cdna",
+        "event_key": "evt-cdna",
+        "ai2_decision": "Proceed candidate",
+        "ai2_price_check_status": "clean",
+        "ai2_latest_eod_date": "2026-08-13",
+        "ai2_latest_eod_close": 47.31,
+        "ai2_latest_intraday_price": 47.25,
+        "ai2_return_1d_pct": 0.17,
+        "ai2_return_5d_pct": 3.98,
+        "ai2_eod_volume": 1_234_567,
+        "ai2_volatility_20d_pct": 4.64,
+        "ai2_notes": "execution_candidate; risk medium; ok: price_checks_clear",
+    }
+    row.update(overrides)
+    return row
+
+
 def _real_ai2_fixture_rows():
     return [
         _real_ai2_row(symbol="DXCM", shortlist_rank=1, source_rank=6, execution_decision="Proceed candidate", candidate_status="executable", side_action="LONG", approved_notional=500, latest_eod_close=84.75, latest_intraday_price=83.019996, volatility_20d_pct=3.91, notes="execution_candidate; risk medium; ok:price_checks_clear"),
@@ -84,9 +117,9 @@ def test_ap_b01_loads_latest_candidate_file_from_pipeline_location(tmp_path: Pat
     out = tmp_path / "data" / "portal_outputs"
     out.mkdir(parents=True)
     older = out / "execution_ranked_candidates_20260806_010000.csv"
-    newer = out / "ai2_candidate_input_20260806_092244.shortlist.csv"
+    newer = out / "ai2_enriched_execution_ranked_candidates_20260806_092244.csv"
     pd.DataFrame([_row(symbol="OLD")]).to_csv(older, index=False)
-    pd.DataFrame([_row(symbol="NEW")]).to_csv(newer, index=False)
+    pd.DataFrame([_ai2_enriched_bridge_row(symbol="NEW")]).to_csv(newer, index=False)
 
     result = GoldDatasetIntakeBlock().load_candidate_file(root=tmp_path)
 
@@ -214,3 +247,33 @@ def test_real_ai2_schema_warning_and_entry_decisions_are_deterministic():
     assert engine.decide(by_symbol["AVAV"], live_price=171.119995).action is EntryAction.REFRESH_AND_RECHECK
     assert engine.decide(by_symbol["CHCO"], live_price=120.0).action is EntryAction.BLOCK
     assert engine.decide(by_symbol["DSGR"], live_price=80.0).action is EntryAction.BLOCK
+
+
+def test_ai2_enriched_bridge_schema_is_tradable_when_clean():
+    rows = [
+        _ai2_enriched_bridge_row(),
+        _ai2_enriched_bridge_row(
+            symbol="AEHR",
+            execution_rank=2,
+            ai2_decision="Do not execute until refreshed",
+            ai2_price_check_status="warning",
+            ai2_notes="execution_candidate; warning: large_1d_move",
+        ),
+    ]
+
+    candidates = CandidateNormalizerBlock().normalize_records(rows).candidates
+    result = CandidateValidityGateBlock().validate_normalization_result(CandidateNormalizerBlock().normalize_records(rows))
+    by_symbol = {candidate.symbol: candidate for candidate in candidates}
+
+    assert by_symbol["CDNA"].ai2_status == "proceed"
+    assert by_symbol["CDNA"].decision_label == "Proceed candidate"
+    assert by_symbol["CDNA"].latest_eod_date == "2026-08-13"
+    assert by_symbol["CDNA"].close_price == 47.31
+    assert by_symbol["CDNA"].intraday_price == 47.25
+    assert by_symbol["CDNA"].one_day_return == 0.0017
+    assert by_symbol["CDNA"].five_day_return == 0.0398
+    assert by_symbol["CDNA"].twenty_day_volatility == 0.0464
+    assert by_symbol["CDNA"].eod_volume == 1_234_567
+    assert by_symbol["CDNA"].price_check_clear is True
+    assert by_symbol["AEHR"].ai2_status == "refresh_required"
+    assert [candidate.symbol for candidate in result.valid_candidates] == ["CDNA", "AEHR"]

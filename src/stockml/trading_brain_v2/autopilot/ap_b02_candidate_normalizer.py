@@ -112,6 +112,8 @@ def normalize_warning_codes(row: dict[str, Any]) -> tuple[str, ...]:
         row.get("Checks / notes"),
         row.get("Why / notes"),
         row.get("notes"),
+        row.get("ai2_notes"),
+        row.get("ai2_price_check_status"),
         row.get("all_block_reasons"),
     ]
     parts: list[str] = []
@@ -148,7 +150,11 @@ def normalize_warning_codes(row: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _price_check_clear(row: dict[str, Any], warnings: tuple[str, ...]) -> bool:
-    explicit = _first_text(row, "price_check_clear", "price_checks_clear", "order_ready")
+    explicit = _first_text(row, "price_check_clear", "price_checks_clear", "ai2_price_check_status", "order_ready")
+    if explicit.lower() in {"clean", "clear", "ok", "price_checks_clear"}:
+        return True
+    if explicit.lower() in {"failed", "fail", "price_check_failed", "blocked"}:
+        return False
     if explicit.lower() in {"true", "1", "yes", "y"}:
         return True
     if explicit.lower() in {"false", "0", "no", "n"}:
@@ -189,33 +195,33 @@ class CandidateNormalizerBlock(PlaceholderBlock):
     def normalize_record(self, row: dict[str, Any]) -> Candidate:
         warnings = normalize_warning_codes(row)
         source_file = _first_text(row, "source_file", "Source file", "execution_ranked_source_path") or "unknown_source"
-        ai2_status = normalize_ai2_status(_first_text(row, "ai2_status", "Decision", "execution_decision", "decision", "Candidate status", "candidate_status"))
+        ai2_status = normalize_ai2_status(_first_text(row, "ai2_decision", "ai2_decision_status", "ai2_status", "Decision", "execution_decision", "decision", "Candidate status", "candidate_status"))
         candidate_status = _first_text(row, "candidate_status", "Candidate status", "status", "execution_domain")
-        latest_eod = _first_text(row, "latest_eod_date", "Latest EOD date/close", "eod_date", "date")
+        latest_eod = _first_text(row, "ai2_latest_eod_date", "latest_eod_date", "Latest EOD date/close", "eod_date", "date")
         if " / " in latest_eod:
             latest_eod = latest_eod.split(" / ", 1)[0].strip()
         rank = _int(row, "shortlist_rank", "execution_rank", "rank", "Rank", "Source rank", "candidate_rank", default=0)
         source_rank = _int(row, "source_rank", "Source rank", default=0)
-        notes = _first_text(row, "notes", "Checks / notes", "Why / notes")
-        identity_parts = ("source_file", "symbol", "Symbol", "shortlist_rank", "source_rank", "execution_decision", "Decision")
+        notes = _first_text(row, "ai2_notes", "notes", "Checks / notes", "Why / notes")
+        identity_parts = ("source_file", "symbol", "Symbol", "shortlist_rank", "source_rank", "ai2_decision", "execution_decision", "Decision")
         return Candidate(
             symbol=_first_text(row, "symbol", "Symbol", "ticker"),
             side=normalize_side(row),
             rank=rank,
             candidate_status=candidate_status,
             ai2_status=ai2_status,
-            decision_label=_first_text(row, "decision_label", "Decision", "execution_decision", "ai2_status"),
+            decision_label=_first_text(row, "decision_label", "ai2_decision", "Decision", "execution_decision", "ai2_status"),
             approved_notional=_float(row, "approved_notional", "Approved notional", "notional", default=0.0),
             qty=_float(row, "qty", "suggested_quantity", "quantity", default=0.0),
             risk_class=_first_text(row, "risk_class", "risk_tier", "Risk tier"),
             latest_eod_date=latest_eod,
-            close_price=_float(row, "close_price", "close", "Latest EOD close", "latest_eod_close", default=0.0),
-            intraday_price=_float(row, "intraday_price", "latest_intraday_price", "Latest intraday", default=0.0),
+            close_price=_float(row, "close_price", "close", "ai2_latest_eod_close", "Latest EOD close", "latest_eod_close", default=0.0),
+            intraday_price=_float(row, "intraday_price", "ai2_latest_intraday_price", "latest_intraday_price", "Latest intraday", "current_price", default=0.0),
             expected_return_bps=_float(row, "expected_return_bps", "validated_expected_return_bps", "net_expected_return_bps", default=0.0),
-            one_day_return=_return_value(row, "one_day_return_pct", "one_day_return", "1D return", "return_1d", default=0.0),
-            five_day_return=_return_value(row, "five_day_return_pct", "five_day_return", "5D return", "return_5d", default=0.0),
-            twenty_day_volatility=_return_value(row, "volatility_20d_pct", "twenty_day_volatility", "20D vol.", "volatility_20d", default=0.0),
-            eod_volume=_float(row, "eod_volume", "EOD volume", "volume", default=0.0),
+            one_day_return=_return_value(row, "ai2_return_1d_pct", "one_day_return_pct", "one_day_return", "1D return", "return_1d", default=0.0),
+            five_day_return=_return_value(row, "ai2_return_5d_pct", "five_day_return_pct", "five_day_return", "5D return", "return_5d", default=0.0),
+            twenty_day_volatility=_return_value(row, "ai2_volatility_20d_pct", "volatility_20d_pct", "twenty_day_volatility", "20D vol.", "volatility_20d", default=0.0),
+            eod_volume=_float(row, "ai2_eod_volume", "eod_volume", "EOD volume", "volume", default=0.0),
             price_check_clear=_price_check_clear(row, warnings),
             source_rank=source_rank,
             notes=notes,
