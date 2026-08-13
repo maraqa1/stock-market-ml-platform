@@ -63,6 +63,22 @@ class AI2StatusInterpreterBlock(PlaceholderBlock):
                 reason="ai2_refresh_required",
                 eligible_for_normal_gates=False,
             )
+        if normalized == "research_only":
+            return AI2StatusDecision(
+                symbol=symbol,
+                ai2_status=normalized,
+                action=EntryAction.BLOCK,
+                reason="ai2_research_only_not_tradable",
+                eligible_for_normal_gates=False,
+            )
+        if normalized == "blocked":
+            return AI2StatusDecision(
+                symbol=symbol,
+                ai2_status=normalized,
+                action=EntryAction.BLOCK,
+                reason="ai2_not_execution_ready",
+                eligible_for_normal_gates=False,
+            )
         return AI2StatusDecision(
             symbol=symbol,
             ai2_status="unknown",

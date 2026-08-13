@@ -119,13 +119,17 @@ class Candidate(SerializableModel):
     twenty_day_volatility: float
     eod_volume: float
     price_check_clear: bool
+    source_rank: int = 0
+    intraday_price: float = 0.0
+    notes: str = ""
+    raw_source_fields: dict[str, Any] = field(default_factory=dict)
     warning_codes: tuple[str, ...] = field(default_factory=tuple)
     signal_id: str = ""
     candidate_id: str = ""
     event_id: str = ""
     source_file: str = ""
 
-    required_fields = ("symbol", "side", "rank", "candidate_status", "signal_id", "candidate_id", "event_id", "source_file")
+    required_fields = ("symbol", "rank", "candidate_status", "signal_id", "candidate_id", "event_id", "source_file")
 
     def __post_init__(self) -> None:
         self.warning_codes = _coerce_sequence(self.warning_codes)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Any
 
 import pandas as pd
@@ -32,6 +33,11 @@ AI2_STATUS_MAP = {
     "refresh": "refresh_required",
     "refresh_required": "refresh_required",
     "do not execute until refreshed": "refresh_required",
+    "research only": "research_only",
+    "research_only": "research_only",
+    "not execution-ready": "blocked",
+    "not execution ready": "blocked",
+    "blocked": "blocked",
 }
 
 SIDE_MAP = {
@@ -69,7 +75,8 @@ def _float(row: dict[str, Any], *names: str, default: float = 0.0) -> float:
         value = row.get(name)
         if _text(value) == "":
             continue
-        parsed = pd.to_numeric(value, errors="coerce")
+        clean = str(value).replace(",", "").replace("%", "").replace("$", "").strip()
+        parsed = pd.to_numeric(clean, errors="coerce")
         if not pd.isna(parsed):
             return float(parsed)
     return default
@@ -85,7 +92,7 @@ def normalize_ai2_status(value: Any) -> str:
 
 
 def normalize_side(row: dict[str, Any]) -> str:
-    raw = _first_text(row, "final_execution_side", "side", "Side/action", "trade_action", "source_trade_action", "decision_side")
+    raw = _first_text(row, "final_execution_side", "side", "side_action", "Side/action", "trade_action", "source_trade_action", "decision_side")
     text = raw.lower().replace("_", " ")
     if text in {"none", "no decision", "no trade"}:
         return ""
@@ -108,16 +115,36 @@ def normalize_warning_codes(row: dict[str, Any]) -> tuple[str, ...]:
         row.get("all_block_reasons"),
     ]
     parts: list[str] = []
+    saw_note_text = False
     for raw in raw_values:
         text = _text(raw)
         if not text:
             continue
+        saw_note_text = True
+        folded_text = text.lower().replace("-", "_")
+        if "5_day move" in folded_text and "extended momentum" in folded_text and "extended_5d_momentum" not in parts:
+            parts.append("extended_5d_momentum")
         for piece in text.replace(",", "|").replace(";", "|").split("|"):
-            clean = piece.strip().lower().replace("warning:", "").replace("ok:", "").strip()
-            clean = clean.replace(" ", "_")
+            lower_piece = piece.strip().lower()
+            prefixed = lower_piece.startswith("warning:") or lower_piece.startswith("ok:")
+            clean = lower_piece.replace("warning:", "").replace("ok:", "").strip()
+            clean = clean.replace("-", "_").replace(" ", "_")
+            if "5_day_move" in clean and "extended_momentum" in clean:
+                clean = "extended_5d_momentum"
+            elif not prefixed and clean not in {
+                "high_volatility",
+                "large_intraday_move",
+                "large_1d_move",
+                "extended_5d_momentum",
+                "price_checks_clear",
+                "price_check_failed",
+                "expected_return_unavailable",
+                "stale_eod",
+            }:
+                continue
             if clean and clean not in parts:
                 parts.append(clean)
-    return tuple(parts)
+    return tuple(parts or (["unknown_warning"] if saw_note_text else []))
 
 
 def _price_check_clear(row: dict[str, Any], warnings: tuple[str, ...]) -> bool:
@@ -130,6 +157,19 @@ def _price_check_clear(row: dict[str, Any], warnings: tuple[str, ...]) -> bool:
         return True
     status = _first_text(row, "session_reject_reason", "primary_block_reason", "order_ready_reason")
     return status == "" or status.lower() in {"order_ready", "none"}
+
+
+def _return_value(row: dict[str, Any], pct_name: str, *decimal_names: str, default: float = 0.0) -> float:
+    if _text(row.get(pct_name)):
+        return _float(row, pct_name, default=default * 100.0) / 100.0
+    return _float(row, *decimal_names, default=default)
+
+
+def _stable_id(prefix: str, row: dict[str, Any], *parts: str) -> str:
+    values = [_first_text(row, part) for part in parts]
+    seed = "|".join(value for value in values if value)
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16] if seed else ""
+    return f"{prefix}-{digest}" if digest else ""
 
 
 class CandidateNormalizerBlock(PlaceholderBlock):
@@ -154,10 +194,14 @@ class CandidateNormalizerBlock(PlaceholderBlock):
         latest_eod = _first_text(row, "latest_eod_date", "Latest EOD date/close", "eod_date", "date")
         if " / " in latest_eod:
             latest_eod = latest_eod.split(" / ", 1)[0].strip()
+        rank = _int(row, "shortlist_rank", "execution_rank", "rank", "Rank", "Source rank", "candidate_rank", default=0)
+        source_rank = _int(row, "source_rank", "Source rank", default=0)
+        notes = _first_text(row, "notes", "Checks / notes", "Why / notes")
+        identity_parts = ("source_file", "symbol", "Symbol", "shortlist_rank", "source_rank", "execution_decision", "Decision")
         return Candidate(
             symbol=_first_text(row, "symbol", "Symbol", "ticker"),
             side=normalize_side(row),
-            rank=_int(row, "shortlist_rank", "execution_rank", "rank", "Rank", "Source rank", "candidate_rank", default=0),
+            rank=rank,
             candidate_status=candidate_status,
             ai2_status=ai2_status,
             decision_label=_first_text(row, "decision_label", "Decision", "execution_decision", "ai2_status"),
@@ -166,16 +210,20 @@ class CandidateNormalizerBlock(PlaceholderBlock):
             risk_class=_first_text(row, "risk_class", "risk_tier", "Risk tier"),
             latest_eod_date=latest_eod,
             close_price=_float(row, "close_price", "close", "Latest EOD close", "latest_eod_close", default=0.0),
+            intraday_price=_float(row, "intraday_price", "latest_intraday_price", "Latest intraday", default=0.0),
             expected_return_bps=_float(row, "expected_return_bps", "validated_expected_return_bps", "net_expected_return_bps", default=0.0),
-            one_day_return=_float(row, "one_day_return", "1D return", "return_1d", default=0.0),
-            five_day_return=_float(row, "five_day_return", "5D return", "return_5d", default=0.0),
-            twenty_day_volatility=_float(row, "twenty_day_volatility", "20D vol.", "volatility_20d", default=0.0),
+            one_day_return=_return_value(row, "one_day_return_pct", "one_day_return", "1D return", "return_1d", default=0.0),
+            five_day_return=_return_value(row, "five_day_return_pct", "five_day_return", "5D return", "return_5d", default=0.0),
+            twenty_day_volatility=_return_value(row, "volatility_20d_pct", "twenty_day_volatility", "20D vol.", "volatility_20d", default=0.0),
             eod_volume=_float(row, "eod_volume", "EOD volume", "volume", default=0.0),
             price_check_clear=_price_check_clear(row, warnings),
+            source_rank=source_rank,
+            notes=notes,
+            raw_source_fields=dict(row),
             warning_codes=warnings,
-            signal_id=_first_text(row, "signal_id"),
-            candidate_id=_first_text(row, "candidate_id"),
-            event_id=_first_text(row, "event_id", "event_key"),
+            signal_id=_first_text(row, "signal_id") or _stable_id("sig", row, *identity_parts),
+            candidate_id=_first_text(row, "candidate_id") or _stable_id("cand", row, *identity_parts),
+            event_id=_first_text(row, "event_id", "event_key") or _stable_id("evt", row, *identity_parts),
             source_file=source_file,
         )
 
