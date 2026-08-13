@@ -120,12 +120,25 @@ def run_ai2_enrichment_bridge(
 
     try:
         body, response_headers = (transport or _http_transport)(cfg.endpoint_url, payload, headers, cfg.timeout_seconds)
-        ai2_frame = _parse_ai2_response(body, response_headers)
     except Exception as exc:
         return _write_manifest(
             Ai2BridgeResult(
                 status="api_error",
                 message=str(exc),
+                **base_result,
+            ),
+            ai2_dir=ai2_dir,
+            stamp=run_stamp,
+            config=cfg,
+        )
+
+    try:
+        ai2_frame = _parse_ai2_response(body, response_headers)
+    except Exception as exc:
+        return _write_manifest(
+            Ai2BridgeResult(
+                status="invalid_response",
+                message=f"ai2_response_parse_error:{exc}",
                 **base_result,
             ),
             ai2_dir=ai2_dir,

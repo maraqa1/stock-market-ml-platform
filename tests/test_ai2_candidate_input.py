@@ -19,6 +19,11 @@ def test_ai2_candidate_input_preserves_execution_context_and_ordering(tmp_path):
                 "order_eligible": True,
                 "order_ready": True,
                 "approved_notional": 500,
+                "current_price": 231.12,
+                "limit_price": 231.12,
+                "active_session_mode": "regular_session",
+                "signal_id": "sig-five",
+                "candidate_id": "cand-five",
                 "primary_block_reason": "",
             },
             {
@@ -32,6 +37,11 @@ def test_ai2_candidate_input_preserves_execution_context_and_ordering(tmp_path):
                 "order_eligible": True,
                 "order_ready": True,
                 "approved_notional": 250,
+                "current_price": 39.49,
+                "limit_price": 39.49,
+                "active_session_mode": "regular_session",
+                "signal_id": "sig-atrc",
+                "candidate_id": "cand-atrc",
                 "primary_block_reason": "",
             },
             {
@@ -55,6 +65,9 @@ def test_ai2_candidate_input_preserves_execution_context_and_ordering(tmp_path):
     assert out["symbol"].tolist() == ["ATRC", "FIVE"]
     assert out.loc[out["symbol"].eq("ATRC"), "execution_domain"].iloc[0] == "execution_candidate"
     assert out.loc[out["symbol"].eq("FIVE"), "approved_notional"].iloc[0] == 500
+    assert out.loc[out["symbol"].eq("ATRC"), "close_price"].iloc[0] == 39.49
+    assert out.loc[out["symbol"].eq("ATRC"), "latest_intraday_price"].iloc[0] == 39.49
+    assert out.loc[out["symbol"].eq("FIVE"), "signal_id"].iloc[0] == "sig-five"
 
     path = write_ai2_candidate_input(candidates, output_dir=tmp_path, limit=3, stamp="20260807_120000")
     written = pd.read_csv(path)

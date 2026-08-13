@@ -29,7 +29,48 @@ AI2_INPUT_COLUMNS = [
     "validated_profit_factor",
     "primary_block_reason",
     "all_block_reasons",
+    "current_price",
+    "limit_price",
+    "close_price",
+    "latest_intraday_price",
+    "active_session_mode",
+    "regular_session_eligible",
+    "overnight_24_5_eligible",
+    "tradable_session_set",
+    "session_reject_reason",
+    "estimated_execution_cost_bps",
+    "validation_quality",
+    "sizing_probability_source",
+    "direction_gate_status",
+    "direction_confidence",
+    "ticker_direction_bias",
+    "ticker_direction_sample_count",
+    "pipeline_run_id",
+    "strategy_version",
+    "cycle_id",
+    "signal_id",
+    "candidate_id",
+    "event_key",
+    "lineage_source_path",
 ]
+
+
+def _first_available_price(out: pd.DataFrame) -> pd.Series:
+    price = pd.Series("", index=out.index, dtype="object")
+    for column in ("current_price", "limit_price"):
+        if column in out.columns:
+            candidate = out[column]
+            has_price = price.astype(str).str.strip().str.lower().isin({"", "nan", "none", "<na>"})
+            price = price.where(~has_price, candidate)
+    return price
+
+
+def _fill_alias(out: pd.DataFrame, column: str, fallback: pd.Series) -> None:
+    if column not in out.columns:
+        out[column] = fallback
+        return
+    missing = out[column].astype(str).str.strip().str.lower().isin({"", "nan", "none", "<na>"})
+    out[column] = out[column].where(~missing, fallback)
 
 
 def build_ai2_candidate_input(candidates: pd.DataFrame, *, limit: int = 300) -> pd.DataFrame:
@@ -39,6 +80,9 @@ def build_ai2_candidate_input(candidates: pd.DataFrame, *, limit: int = 300) -> 
     if "symbol" not in out.columns:
         raise ValueError("candidate frame must include symbol")
     out["symbol"] = out["symbol"].astype(str).str.upper().str.strip()
+    price = _first_available_price(out)
+    _fill_alias(out, "close_price", price)
+    _fill_alias(out, "latest_intraday_price", price)
     for column in AI2_INPUT_COLUMNS:
         if column not in out.columns:
             out[column] = ""
