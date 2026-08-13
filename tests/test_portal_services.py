@@ -370,6 +370,21 @@ def test_trading_context_exposes_ai2_enriched_artifact(tmp_path):
     assert ctx["ai2_enrichment"]["download_url"] == "/trading/ai2-enrichment/latest.csv"
 
 
+def test_trading_context_finds_ai2_artifact_from_stockml_data_root(tmp_path, monkeypatch):
+    app_root = tmp_path / "app"
+    data_root = tmp_path / "runtime" / "data"
+    write_csv(
+        data_root / "ai2" / "ai2_enriched_candidates_20260813_110000.csv",
+        [{"Symbol": "GCT", "Decision": "Proceed candidate"}],
+    )
+    monkeypatch.setenv("STOCKML_DATA_ROOT", str(data_root))
+
+    ctx = trading_context(app_root)
+
+    assert ctx["ai2_enrichment"]["status"] == "ok"
+    assert ctx["ai2_enrichment"]["symbols"] == ["GCT"]
+
+
 def test_trading_context_rejected_trimmed_sources(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",

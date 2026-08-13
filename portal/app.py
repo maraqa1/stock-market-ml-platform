@@ -43,7 +43,7 @@ from portal.services.trading_api_service import (
     position_lineage_context,
     positions_context,
 )
-from portal.services.trading_service import lifecycle_context, position_action, refresh_trading_artifacts, trading_context
+from portal.services.trading_service import lifecycle_context, latest_ai2_enriched_file, position_action, refresh_trading_artifacts, trading_context
 from portal.services.universe_service import universe_context
 from portal.services.validation import table_csv as validation_table_csv, validation_context
 from stockml.intraday.promotion import latest_evaluation
@@ -363,9 +363,7 @@ def create_app(root: Path | None = None) -> Flask:
 
     @app.route("/trading/ai2-enrichment/latest.csv")
     def trading_ai2_enrichment_latest_download():
-        path = latest_file(root_path(), "ai2", "ai2_enriched_candidates_*.csv")
-        if path is None:
-            path = latest_file(root_path(), "ai2", "ai2_candidate_input_*.shortlist.csv", fallback_keys=["portal_outputs"])
+        path = latest_ai2_enriched_file(root_path())
         if path is None or not path.exists():
             abort(404)
         return send_from_directory(path.parent, path.name, mimetype="text/csv", as_attachment=True, download_name=path.name)

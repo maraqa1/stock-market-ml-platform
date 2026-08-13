@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -82,14 +83,38 @@ def _status_counts(results, column: str = "status") -> dict[str, int]:
     return {str(key): int(value) for key, value in results[column].fillna("").value_counts().to_dict().items() if str(key)}
 
 
+def _candidate_roots(root: Path) -> list[Path]:
+    roots = [root]
+    data_root = os.environ.get("STOCKML_DATA_ROOT", "").strip()
+    if data_root:
+        parent = Path(data_root).resolve().parent
+        if parent not in roots:
+            roots.append(parent)
+    return roots
+
+
+def _latest_across_roots(root: Path, key: str, pattern: str, fallback_keys: tuple[str, ...] = ()) -> Path | None:
+    matches = []
+    for candidate_root in _candidate_roots(root):
+        path = latest_file(candidate_root, key, pattern, fallback_keys=fallback_keys)
+        if path is not None:
+            matches.append(path)
+    return max(matches, key=lambda path: path.stat().st_mtime) if matches else None
+
+
+def latest_ai2_enriched_file(root: Path) -> Path | None:
+    canonical = _latest_across_roots(root, "ai2", "ai2_enriched_candidates_*.csv")
+    shortlist = _latest_across_roots(root, "ai2", "ai2_candidate_input_*.shortlist.csv", fallback_keys=("portal_outputs",))
+    paths = [path for path in [canonical, shortlist] if path is not None]
+    return max(paths, key=lambda path: path.stat().st_mtime) if paths else None
+
+
 def _ai2_enrichment_context(root: Path) -> dict:
-    candidate_file = latest_file(root, "portal_outputs", "execution_ranked_candidates_*.csv")
+    candidate_file = _latest_across_roots(root, "portal_outputs", "execution_ranked_candidates_*.csv")
     candidate_frame = safe_read_csv(candidate_file, nrows=1000)
-    ai2_input_file = latest_file(root, "ai2", "ai2_candidate_input_*.csv", fallback_keys=["portal_outputs"])
+    ai2_input_file = _latest_across_roots(root, "ai2", "ai2_candidate_input_*.csv", fallback_keys=("portal_outputs",))
     ai2_input_frame = safe_read_csv(ai2_input_file, nrows=1000)
-    enriched_file = latest_file(root, "ai2", "ai2_candidate_input_*.shortlist.csv", fallback_keys=["portal_outputs"])
-    canonical_file = latest_file(root, "ai2", "ai2_enriched_candidates_*.csv")
-    path = canonical_file or enriched_file
+    path = latest_ai2_enriched_file(root)
     frame = safe_read_csv(path, nrows=1000)
     decision_counts = _status_counts(frame, "Decision") or _status_counts(frame, "ai2_status") or _status_counts(frame, "decision")
     symbol_column = next((column for column in ["Symbol", "symbol", "ticker"] if column in frame.columns), "")
