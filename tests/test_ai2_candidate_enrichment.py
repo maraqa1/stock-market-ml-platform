@@ -136,6 +136,19 @@ def test_ai2_review_and_refresh_do_not_auto_open_by_default():
     assert merged.loc[merged["symbol"].eq("FRPT"), "ai2_block_reason"].iloc[0] == "ai2_refresh_required"
 
 
+def test_ai2_refresh_market_data_phrase_is_refresh_required():
+    ai2 = normalize_ai2_enrichment(
+        pd.DataFrame(
+            [{
+                "symbol": "CDNA",
+                "execution_decision": "Refresh market data before execution",
+            }]
+        )
+    )
+
+    assert ai2.loc[0, "ai2_decision_status"] == "refresh_required"
+
+
 def test_ai2_non_execution_decisions_are_classified():
     ai2 = normalize_ai2_enrichment(
         pd.DataFrame(

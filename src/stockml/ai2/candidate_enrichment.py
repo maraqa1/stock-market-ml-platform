@@ -19,7 +19,12 @@ OUTPUT_DIR = DATA_DIR / "portal_outputs"
 
 PROCEED_DECISIONS = {"proceed candidate", "proceed", "execute", "clean"}
 REVIEW_DECISIONS = {"review before execution", "review", "watch"}
-REFRESH_DECISIONS = {"do not execute until refreshed", "refresh_required", "refresh required"}
+REFRESH_DECISIONS = {
+    "do not execute until refreshed",
+    "refresh market data before execution",
+    "refresh_required",
+    "refresh required",
+}
 RESEARCH_ONLY_DECISIONS = {"research only", "research_only"}
 NOT_READY_DECISIONS = {"not execution-ready", "not execution ready", "not_ready"}
 

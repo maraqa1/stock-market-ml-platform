@@ -90,9 +90,9 @@ def test_bridge_calls_ai2_and_writes_merged_candidates(tmp_path):
     _candidate_file(tmp_path)
 
     def transport(url, payload, headers, timeout):
-        request_payload = json.loads(payload.decode("utf-8"))
         assert url == "https://ai2.local/enrich"
-        assert request_payload["rows"][0]["symbol"] == "ATRC"
+        assert "multipart/form-data" in headers["Content-Type"]
+        assert b"ATRC" in payload
         return (
             json.dumps(
                 {
@@ -124,6 +124,42 @@ def test_bridge_calls_ai2_and_writes_merged_candidates(tmp_path):
     assert merged.loc[0, "ai2_decision_status"] == "proceed"
 
 
+def test_bridge_prefers_nested_enriched_csv_over_json_rows(tmp_path):
+    _candidate_file(tmp_path)
+
+    def transport(_url, _payload, _headers, _timeout):
+        return (
+            json.dumps(
+                {
+                    "rows": [
+                        {
+                            "symbol": "ATRC",
+                            "execution_decision": "Refresh market data before execution",
+                        }
+                    ],
+                    "files": {
+                        "enriched_csv": {
+                            "content": "symbol,execution_decision,latest_eod_date,latest_eod_close\nATRC,Proceed candidate,2026-08-07,40.25\n"
+                        }
+                    },
+                }
+            ).encode("utf-8"),
+            {"content-type": "application/json"},
+        )
+
+    result = run_ai2_enrichment_bridge(
+        root=tmp_path,
+        config=Ai2EnrichmentConfig(enabled=True, api_enabled=True, endpoint_url="https://ai2.local/enrich"),
+        transport=transport,
+    )
+
+    assert result.status == "ok"
+    assert result.ai2_auto_open_allowed == 1
+    merged = pd.read_csv(result.merged_path)
+    assert merged.loc[0, "ai2_decision_status"] == "proceed"
+    assert bool(merged.loc[0, "ai2_auto_open_allowed"]) is True
+
+
 def test_bridge_rebuilds_execution_ranked_when_candidate_pool_is_newer(tmp_path):
     stale_ranked = _candidate_file(tmp_path)
     fresh_pool = _candidate_pool_file(tmp_path, "GCT")
@@ -131,9 +167,8 @@ def test_bridge_rebuilds_execution_ranked_when_candidate_pool_is_newer(tmp_path)
     os.utime(fresh_pool, (200, 200))
 
     def transport(_url, payload, _headers, _timeout):
-        request_payload = json.loads(payload.decode("utf-8"))
-        assert request_payload["rows"][0]["symbol"] == "GCT"
-        assert request_payload["candidate_path"].endswith("execution_ranked_candidates_20260808_121500.csv")
+        assert b"GCT" in payload
+        assert b"ai2_candidate_input_20260808_121500.csv" in payload
         return (
             json.dumps({"rows": [{"symbol": "GCT", "execution_decision": "Proceed candidate"}]}).encode("utf-8"),
             {"content-type": "application/json"},

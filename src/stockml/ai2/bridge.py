@@ -114,8 +114,7 @@ def run_ai2_enrichment_bridge(
             config=cfg,
         )
 
-    payload = _request_payload(input_frame, input_path=input_path, candidate_path=candidate_path)
-    headers = {"Content-Type": "application/json", "Accept": "application/json, text/csv"}
+    payload, headers = _request_payload(input_frame, input_path=input_path, candidate_path=candidate_path)
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
 
@@ -184,14 +183,16 @@ def _ensure_execution_ranked_candidates(*, root: Path | str | None = None, stamp
     )
 
 
-def _request_payload(frame: pd.DataFrame, *, input_path: Path, candidate_path: Path) -> bytes:
-    payload = {
-        "source": "stockml",
-        "candidate_path": str(candidate_path),
-        "input_path": str(input_path),
-        "rows": frame.fillna("").to_dict("records"),
-    }
-    return json.dumps(payload, allow_nan=False).encode("utf-8")
+def _request_payload(frame: pd.DataFrame, *, input_path: Path, candidate_path: Path) -> tuple[bytes, dict[str, str]]:
+    boundary = "----stockml-ai2-bridge-boundary"
+    file_bytes = input_path.read_bytes()
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{input_path.name}"\r\n'
+        "Content-Type: text/csv\r\n\r\n"
+    ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}", "Accept": "application/json, text/csv"}
+    return body, headers
 
 
 def _http_transport(url: str, payload: bytes, headers: dict[str, str], timeout_seconds: int) -> tuple[bytes, dict[str, str]]:
@@ -215,6 +216,9 @@ def _parse_ai2_response(body: bytes, headers: dict[str, str]) -> pd.DataFrame:
             return normalize_ai2_enrichment(pd.DataFrame(payload))
         if not isinstance(payload, dict):
             return pd.DataFrame()
+        nested_csv = _nested_ai2_csv(payload)
+        if nested_csv:
+            return normalize_ai2_enrichment(pd.read_csv(StringIO(nested_csv)))
         for key in ("rows", "data", "candidates", "shortlist"):
             rows = payload.get(key)
             if isinstance(rows, list):
@@ -225,6 +229,28 @@ def _parse_ai2_response(body: bytes, headers: dict[str, str]) -> pd.DataFrame:
                 return normalize_ai2_enrichment(pd.read_csv(StringIO(csv_text)))
         return pd.DataFrame()
     return normalize_ai2_enrichment(pd.read_csv(StringIO(text)))
+
+
+def _nested_ai2_csv(payload: dict[str, Any]) -> str:
+    files = payload.get("files")
+    if isinstance(files, dict):
+        for key in ("enriched_csv", "shortlist_csv", "csv"):
+            value = files.get(key)
+            if isinstance(value, dict):
+                content = value.get("content") or value.get("csv") or value.get("text")
+                if isinstance(content, str) and content.strip():
+                    return content
+            if isinstance(value, str) and value.strip():
+                return value
+    for key in ("enriched_csv", "shortlist_csv"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            content = value.get("content") or value.get("csv") or value.get("text")
+            if isinstance(content, str) and content.strip():
+                return content
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
 
 
 def _write_manifest(
