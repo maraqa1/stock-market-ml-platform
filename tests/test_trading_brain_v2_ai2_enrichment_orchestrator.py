@@ -1,0 +1,166 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+from stockml.trading_brain_v2.enrichment.ai2_enrichment_adapter import AdapterEnrichmentResult
+from stockml.trading_brain_v2.enrichment.ai2_enrichment_orchestrator import AI2EnrichmentOrchestrator
+from stockml.trading_brain_v2.shared.config import TradingBrainConfig
+from stockml.trading_brain_v2.shared.safety import assert_v2_live_execution_allowed
+
+
+class FakeAdapter:
+    adapter_version = "fake_ai2_v1"
+
+    def __init__(self, result: AdapterEnrichmentResult | None = None, *, raises: Exception | None = None):
+        self.result = result
+        self.raises = raises
+        self.calls: list[tuple[Path, Path, str]] = []
+
+    def enrich(self, raw_candidate_file: Path, *, output_dir: Path, run_id: str) -> AdapterEnrichmentResult:
+        self.calls.append((raw_candidate_file, output_dir, run_id))
+        if self.raises:
+            raise self.raises
+        assert self.result is not None
+        return self.result
+
+
+def _raw_candidate_file(path: Path) -> Path:
+    raw = path / "execution_ranked_candidates_20260806_092244.csv"
+    pd.DataFrame([{"symbol": "ATRC", "execution_rank": 1}]).to_csv(raw, index=False)
+    return raw
+
+
+def _enriched_shortlist(path: Path, **overrides) -> Path:
+    row = {
+        "Symbol": "ATRC",
+        "Side/action": "LONG",
+        "Source rank": 1,
+        "Candidate status": "executable",
+        "Decision": "Proceed candidate",
+        "Approved notional": 250,
+        "Latest EOD date/close": "2026-08-06 / 39.49",
+        "Checks / notes": "ok: price_checks_clear",
+        "signal_id": "sig-1",
+        "candidate_id": "cand-1",
+        "event_id": "evt-1",
+    }
+    row.update(overrides)
+    enriched = path / "ai2_candidate_input_20260806_092244.shortlist.csv"
+    pd.DataFrame([row]).to_csv(enriched, index=False)
+    return enriched
+
+
+def _config(output_dir: Path) -> TradingBrainConfig:
+    return TradingBrainConfig(
+        active_version="v2",
+        v2_shadow_mode=False,
+        v2_allow_live_execution=False,
+        v2_paper_execution=True,
+        ai2_enrichment_enabled=True,
+        ai2_enrichment_output_dir=str(output_dir),
+    )
+
+
+def test_raw_candidate_file_exists_orchestrator_persists_enriched_shortlist(tmp_path: Path):
+    raw = _raw_candidate_file(tmp_path)
+    enriched = _enriched_shortlist(tmp_path)
+    output_dir = tmp_path / "data" / "ai2"
+    adapter = FakeAdapter(AdapterEnrichmentResult("ok", enriched_file=enriched, adapter_version="fake_ai2_v1"))
+
+    result = AI2EnrichmentOrchestrator(adapter=adapter, config=_config(output_dir), root=tmp_path).enrich_and_intake(raw, run_id="run-1")
+
+    assert result.ok
+    assert result.canonical_enriched_file == output_dir / "ai2_enriched_candidates_run-1.csv"
+    assert result.canonical_enriched_file.exists()
+    assert result.row_count == 1
+    assert result.intake_status == "ok"
+    assert adapter.calls
+
+
+def test_missing_raw_candidate_file_fails_safe(tmp_path: Path):
+    result = AI2EnrichmentOrchestrator(config=_config(tmp_path / "out"), root=tmp_path).enrich_and_intake(tmp_path / "missing.csv", run_id="run-1")
+
+    assert result.fail_safe
+    assert result.reason == "raw_candidate_file_missing"
+
+
+def test_ai2_adapter_failure_fails_safe(tmp_path: Path):
+    raw = _raw_candidate_file(tmp_path)
+    adapter = FakeAdapter(raises=RuntimeError("provider unavailable"))
+
+    result = AI2EnrichmentOrchestrator(adapter=adapter, config=_config(tmp_path / "out"), root=tmp_path).enrich_and_intake(raw, run_id="run-1")
+
+    assert result.fail_safe
+    assert result.reason == "ai2_adapter_error:provider unavailable"
+
+
+def test_empty_enriched_shortlist_fails_safe(tmp_path: Path):
+    raw = _raw_candidate_file(tmp_path)
+    enriched = tmp_path / "empty.shortlist.csv"
+    pd.DataFrame(columns=["Decision", "Symbol"]).to_csv(enriched, index=False)
+    adapter = FakeAdapter(AdapterEnrichmentResult("ok", enriched_file=enriched))
+
+    result = AI2EnrichmentOrchestrator(adapter=adapter, config=_config(tmp_path / "out"), root=tmp_path).enrich_and_intake(raw, run_id="run-1")
+
+    assert result.fail_safe
+    assert result.reason == "enriched_candidate_file_empty"
+
+
+def test_enriched_shortlist_missing_ai2_status_field_fails_safe(tmp_path: Path):
+    raw = _raw_candidate_file(tmp_path)
+    enriched = tmp_path / "missing_status.shortlist.csv"
+    pd.DataFrame([{"Symbol": "ATRC", "Candidate status": "executable"}]).to_csv(enriched, index=False)
+    adapter = FakeAdapter(AdapterEnrichmentResult("ok", enriched_file=enriched))
+
+    result = AI2EnrichmentOrchestrator(adapter=adapter, config=_config(tmp_path / "out"), root=tmp_path).enrich_and_intake(raw, run_id="run-1")
+
+    assert result.fail_safe
+    assert result.reason == "ai2_status_field_missing"
+
+
+def test_successful_enriched_shortlist_is_passed_into_ap_b01_intake(tmp_path: Path):
+    raw = _raw_candidate_file(tmp_path)
+    enriched = _enriched_shortlist(tmp_path)
+    adapter = FakeAdapter(AdapterEnrichmentResult("ok", enriched_file=enriched))
+
+    result = AI2EnrichmentOrchestrator(adapter=adapter, config=_config(tmp_path / "out"), root=tmp_path).enrich_and_intake(raw, run_id="intake-run")
+
+    assert result.ok
+    assert result.intake_status == "ok"
+    assert result.canonical_enriched_file is not None
+    loaded = pd.read_csv(result.canonical_enriched_file)
+    assert loaded.iloc[0]["Decision"] == "Proceed candidate"
+
+
+def test_audit_events_are_created_for_enrichment_start_and_completion(tmp_path: Path):
+    raw = _raw_candidate_file(tmp_path)
+    enriched = _enriched_shortlist(tmp_path)
+    audit_path = tmp_path / "audit" / "events.jsonl"
+    adapter = FakeAdapter(AdapterEnrichmentResult("ok", enriched_file=enriched))
+
+    result = AI2EnrichmentOrchestrator(adapter=adapter, config=_config(tmp_path / "out"), audit_path=audit_path, root=tmp_path).enrich_and_intake(raw, run_id="audit-run")
+
+    event_types = [event.event_type for event in result.audit_events]
+    assert "ai2_enrichment_started" in event_types
+    assert "ai2_enrichment_completed" in event_types
+    assert "ai2_enriched_shortlist_handed_to_v2_intake" in event_types
+    assert audit_path.exists()
+
+
+def test_no_live_execution_occurs_or_is_allowed(tmp_path: Path):
+    raw = _raw_candidate_file(tmp_path)
+    enriched = _enriched_shortlist(tmp_path)
+    cfg = _config(tmp_path / "out")
+
+    result = AI2EnrichmentOrchestrator(adapter=FakeAdapter(AdapterEnrichmentResult("ok", enriched_file=enriched)), config=cfg, root=tmp_path).enrich_and_intake(raw, run_id="safe-run")
+
+    assert result.ok
+    assert cfg.v2_allow_live_execution is False
+    try:
+        assert_v2_live_execution_allowed(requested_live_execution=True, config=cfg)
+    except RuntimeError as exc:
+        assert str(exc) == "trading_brain_v2_live_execution_disabled"
+    else:
+        raise AssertionError("V2 live execution guard should remain closed")

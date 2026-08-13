@@ -5,6 +5,11 @@ trading_brain:
   v2_shadow_mode: false
   v2_allow_live_execution: false
   v2_paper_execution: true
+  ai2_enrichment:
+    enabled: true
+    input_mode: raw_candidate_pool
+    output_dir: data/ai2
+    fail_safe_on_error: true
   v2_policy:
     max_live_gap_block_pct: 0.05
     max_live_gap_refresh_pct: 0.025
