@@ -83,6 +83,10 @@ def _status_counts(results, column: str = "status") -> dict[str, int]:
 
 
 def _ai2_enrichment_context(root: Path) -> dict:
+    candidate_file = latest_file(root, "portal_outputs", "execution_ranked_candidates_*.csv")
+    candidate_frame = safe_read_csv(candidate_file, nrows=1000)
+    ai2_input_file = latest_file(root, "ai2", "ai2_candidate_input_*.csv", fallback_keys=["portal_outputs"])
+    ai2_input_frame = safe_read_csv(ai2_input_file, nrows=1000)
     enriched_file = latest_file(root, "ai2", "ai2_candidate_input_*.shortlist.csv", fallback_keys=["portal_outputs"])
     canonical_file = latest_file(root, "ai2", "ai2_enriched_candidates_*.csv")
     path = canonical_file or enriched_file
@@ -95,14 +99,64 @@ def _ai2_enrichment_context(root: Path) -> dict:
     status = "ok" if path and not frame.empty else "missing"
     if path and frame.empty:
         status = "empty_or_unreadable"
+    rows = _ai2_rows(frame)
+    proceed_count = sum(1 for row in rows if str(row.get("ai2_decision_status") or "").lower() == "proceed")
+    allowed_count = sum(1 for row in rows if bool(row.get("ai2_auto_open_allowed")))
     return {
+        "enabled": True,
         "status": status,
         "file": file_status(path, "AI2 enriched shortlist"),
+        "files": [
+            file_status(candidate_file, "Execution-ranked source"),
+            file_status(ai2_input_file, "AI2 input file"),
+            file_status(path, "AI2 enriched shortlist"),
+        ],
+        "candidate_rows": len(candidate_frame),
+        "ai2_input_rows": len(ai2_input_frame),
         "row_count": len(frame),
+        "proceed_count": proceed_count,
+        "auto_open_allowed_count": allowed_count,
         "decision_counts": decision_counts,
         "symbols": symbols,
+        "rows": rows,
         "download_url": "/trading/ai2-enrichment/latest.csv" if path else "",
     }
+
+
+def _ai2_rows(frame: pd.DataFrame, limit: int = 25) -> list[dict]:
+    if frame.empty:
+        return []
+    rows = []
+    for index, row in enumerate(frame.head(limit).fillna("").to_dict("records"), start=1):
+        decision = _text_value(row.get("Decision") or row.get("ai2_decision") or row.get("ai2_status") or row.get("decision"))
+        normalized = decision.strip().lower()
+        if "proceed" in normalized:
+            status = "proceed"
+        elif "refresh" in normalized:
+            status = "refresh_required"
+        elif "review" in normalized:
+            status = "review"
+        elif normalized:
+            status = normalized.replace(" ", "_")
+        else:
+            status = "missing"
+        block_reason = _text_value(row.get("ai2_block_reason") or row.get("primary_block_reason") or row.get("block_reason"))
+        allowed = status == "proceed" and not block_reason
+        rows.append(
+            {
+                "symbol": _text_value(row.get("Symbol") or row.get("symbol") or row.get("ticker")).upper(),
+                "execution_rank": row.get("Source rank") or row.get("execution_rank") or row.get("Rank") or index,
+                "final_execution_side": row.get("Side/action") or row.get("final_execution_side") or row.get("side") or "",
+                "execution_domain": row.get("execution_domain") or row.get("Candidate status") or row.get("candidate_status") or row.get("status") or "",
+                "status": row.get("status") or row.get("Candidate status") or "",
+                "ai2_decision": decision,
+                "ai2_decision_status": status,
+                "ai2_latest_intraday_price": row.get("Latest intraday") or row.get("ai2_latest_intraday_price") or row.get("latest_intraday") or "",
+                "ai2_auto_open_allowed": allowed,
+                "ai2_block_reason": block_reason,
+            }
+        )
+    return rows
 
 
 def _latest_autopilot_action_notes(frame: pd.DataFrame) -> str:
