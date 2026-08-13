@@ -143,6 +143,17 @@ def _companion_ai2_config_path(config_path: Path) -> Path:
     return config_path.parent / "ai2_enrichment.yaml"
 
 
+def _merge_non_empty(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for key, value in override.items():
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip() == "":
+            continue
+        out[key] = value
+    return out
+
+
 def load_trading_brain_config(path: Path | str | None = CONFIG_PATH) -> TradingBrainConfig:
     config_path = Path(path) if path is not None else CONFIG_PATH
     payload = _load_yaml(config_path)
@@ -152,12 +163,12 @@ def load_trading_brain_config(path: Path | str | None = CONFIG_PATH) -> TradingB
     legacy_v2_section = legacy_v2_section if isinstance(legacy_v2_section, dict) else {}
     policy = section.get("v2_policy")
     policy = policy if isinstance(policy, dict) else {}
-    ai2_enrichment = section.get("ai2_enrichment") or legacy_v2_section.get("ai2_enrichment")
-    if not isinstance(ai2_enrichment, dict):
-        standalone_payload = _load_yaml(_companion_ai2_config_path(config_path))
-        standalone_section = standalone_payload.get("ai2_enrichment")
-        ai2_enrichment = standalone_section if isinstance(standalone_section, dict) else {}
-    ai2_enrichment = ai2_enrichment if isinstance(ai2_enrichment, dict) else {}
+    standalone_payload = _load_yaml(_companion_ai2_config_path(config_path))
+    standalone_section = standalone_payload.get("ai2_enrichment")
+    standalone_ai2 = standalone_section if isinstance(standalone_section, dict) else {}
+    configured_ai2 = section.get("ai2_enrichment") or legacy_v2_section.get("ai2_enrichment")
+    configured_ai2 = configured_ai2 if isinstance(configured_ai2, dict) else {}
+    ai2_enrichment = _merge_non_empty(standalone_ai2, configured_ai2)
     enrichment_provider = str(ai2_enrichment.get("provider") or "ai2").strip().lower() or "ai2"
     provider_env_prefix = enrichment_provider.upper().replace("-", "_")
     endpoint_url = (

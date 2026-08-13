@@ -312,3 +312,34 @@ ai2_enrichment:
     assert cfg.ai2_enrichment_api_key_env == "AI2_API_KEY"
     assert cfg.ai2_enrichment_api_key == "secret-value"
     assert cfg.ai2_enrichment_timeout_seconds == 45
+
+
+def test_standalone_ai2_config_supplies_endpoint_when_autopilot_endpoint_blank(tmp_path: Path, monkeypatch):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    autopilot_path = config_dir / "autopilot.yaml"
+    autopilot_path.write_text(
+        """
+trading_brain:
+  ai2_enrichment:
+    enabled: true
+    endpoint_url: ''
+    api_key_env: AI2_API_KEY
+""",
+        encoding="utf-8",
+    )
+    (config_dir / "ai2_enrichment.yaml").write_text(
+        """
+ai2_enrichment:
+  endpoint_url: https://ai2.example/enrich
+  timeout_seconds: 45
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AI2_API_KEY", "secret-value")
+
+    cfg = load_trading_brain_config(autopilot_path)
+
+    assert cfg.ai2_enrichment_endpoint_url == "https://ai2.example/enrich"
+    assert cfg.ai2_enrichment_api_key == "secret-value"
+    assert cfg.ai2_enrichment_timeout_seconds == 45
