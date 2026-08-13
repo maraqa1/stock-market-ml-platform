@@ -385,6 +385,20 @@ def test_trading_context_finds_ai2_artifact_from_stockml_data_root(tmp_path, mon
     assert ctx["ai2_enrichment"]["symbols"] == ["GCT"]
 
 
+def test_trading_context_counts_real_ai2_execution_decision_column(tmp_path):
+    write_csv(
+        tmp_path / "data" / "ai2" / "ai2_enriched_candidates_20260813_120000.csv",
+        [
+            {"Symbol": "GCT", "execution_decision": "Proceed candidate"},
+            {"Symbol": "ATRC", "execution_decision": "Review before execution"},
+        ],
+    )
+
+    ctx = trading_context(tmp_path)
+
+    assert ctx["ai2_enrichment"]["decision_counts"] == {"Proceed candidate": 1, "Review before execution": 1}
+
+
 def test_trading_context_rejected_trimmed_sources(tmp_path):
     write_csv(
         tmp_path / "data" / "portal_outputs" / "08_alpaca_paper_order_plan_1.csv",

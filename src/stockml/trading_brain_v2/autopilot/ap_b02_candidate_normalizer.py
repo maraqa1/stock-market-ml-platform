@@ -149,7 +149,7 @@ class CandidateNormalizerBlock(PlaceholderBlock):
     def normalize_record(self, row: dict[str, Any]) -> Candidate:
         warnings = normalize_warning_codes(row)
         source_file = _first_text(row, "source_file", "Source file", "execution_ranked_source_path") or "unknown_source"
-        ai2_status = normalize_ai2_status(_first_text(row, "ai2_status", "Decision", "decision", "Candidate status", "candidate_status"))
+        ai2_status = normalize_ai2_status(_first_text(row, "ai2_status", "Decision", "execution_decision", "decision", "Candidate status", "candidate_status"))
         candidate_status = _first_text(row, "candidate_status", "Candidate status", "status", "execution_domain")
         latest_eod = _first_text(row, "latest_eod_date", "Latest EOD date/close", "eod_date", "date")
         if " / " in latest_eod:
@@ -160,7 +160,7 @@ class CandidateNormalizerBlock(PlaceholderBlock):
             rank=_int(row, "shortlist_rank", "execution_rank", "rank", "Rank", "Source rank", "candidate_rank", default=0),
             candidate_status=candidate_status,
             ai2_status=ai2_status,
-            decision_label=_first_text(row, "decision_label", "Decision", "ai2_status"),
+            decision_label=_first_text(row, "decision_label", "Decision", "execution_decision", "ai2_status"),
             approved_notional=_float(row, "approved_notional", "Approved notional", "notional", default=0.0),
             qty=_float(row, "qty", "suggested_quantity", "quantity", default=0.0),
             risk_class=_first_text(row, "risk_class", "risk_tier", "Risk tier"),

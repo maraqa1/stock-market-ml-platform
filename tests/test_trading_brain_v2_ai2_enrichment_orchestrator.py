@@ -134,6 +134,22 @@ def test_successful_enriched_shortlist_is_passed_into_ap_b01_intake(tmp_path: Pa
     assert loaded.iloc[0]["Decision"] == "Proceed candidate"
 
 
+def test_real_ai2_execution_decision_column_is_accepted(tmp_path: Path):
+    raw = _raw_candidate_file(tmp_path)
+    enriched = _enriched_shortlist(tmp_path)
+    frame = pd.read_csv(enriched)
+    frame = frame.rename(columns={"Decision": "execution_decision"})
+    frame.to_csv(enriched, index=False)
+    adapter = FakeAdapter(AdapterEnrichmentResult("ok", enriched_file=enriched))
+
+    result = AI2EnrichmentOrchestrator(adapter=adapter, config=_config(tmp_path / "out"), root=tmp_path).enrich_and_intake(raw, run_id="real-ai2")
+
+    assert result.ok
+    assert result.canonical_enriched_file is not None
+    loaded = pd.read_csv(result.canonical_enriched_file)
+    assert loaded.iloc[0]["execution_decision"] == "Proceed candidate"
+
+
 def test_audit_events_are_created_for_enrichment_start_and_completion(tmp_path: Path):
     raw = _raw_candidate_file(tmp_path)
     enriched = _enriched_shortlist(tmp_path)

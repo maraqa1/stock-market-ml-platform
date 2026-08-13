@@ -116,7 +116,12 @@ def _ai2_enrichment_context(root: Path) -> dict:
     ai2_input_frame = safe_read_csv(ai2_input_file, nrows=1000)
     path = latest_ai2_enriched_file(root)
     frame = safe_read_csv(path, nrows=1000)
-    decision_counts = _status_counts(frame, "Decision") or _status_counts(frame, "ai2_status") or _status_counts(frame, "decision")
+    decision_counts = (
+        _status_counts(frame, "Decision")
+        or _status_counts(frame, "execution_decision")
+        or _status_counts(frame, "ai2_status")
+        or _status_counts(frame, "decision")
+    )
     symbol_column = next((column for column in ["Symbol", "symbol", "ticker"] if column in frame.columns), "")
     symbols = []
     if symbol_column:
@@ -153,7 +158,7 @@ def _ai2_rows(frame: pd.DataFrame, limit: int = 25) -> list[dict]:
         return []
     rows = []
     for index, row in enumerate(frame.head(limit).fillna("").to_dict("records"), start=1):
-        decision = _text_value(row.get("Decision") or row.get("ai2_decision") or row.get("ai2_status") or row.get("decision"))
+        decision = _text_value(row.get("Decision") or row.get("execution_decision") or row.get("ai2_decision") or row.get("ai2_status") or row.get("decision"))
         normalized = decision.strip().lower()
         if "proceed" in normalized:
             status = "proceed"

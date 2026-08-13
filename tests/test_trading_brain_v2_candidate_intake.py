@@ -72,6 +72,17 @@ def test_ap_b02_normalizes_proceed_review_and_refresh_candidates():
     assert [candidate.side for candidate in result.candidates] == ["LONG", "LONG", "LONG"]
 
 
+def test_ap_b02_accepts_real_ai2_execution_decision_column():
+    row = _row()
+    row.pop("Decision")
+    row["execution_decision"] = "Proceed candidate"
+
+    candidate = CandidateNormalizerBlock().normalize_record(row)
+
+    assert candidate.ai2_status == "proceed"
+    assert candidate.decision_label == "Proceed candidate"
+
+
 def test_ap_b03_validates_fixture_candidates():
     normalizer = CandidateNormalizerBlock()
     records = [

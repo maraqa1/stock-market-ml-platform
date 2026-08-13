@@ -16,7 +16,7 @@ from stockml.trading_brain_v2.enrichment.ai2_enrichment_result import AI2Enrichm
 from stockml.trading_brain_v2.shared.config import TradingBrainConfig, load_trading_brain_config
 
 
-AI2_STATUS_COLUMNS = ("Decision", "ai2_status", "decision", "ai2_decision")
+AI2_STATUS_COLUMNS = ("Decision", "execution_decision", "ai2_status", "decision", "ai2_decision")
 
 
 class AI2EnrichmentOrchestrator:
